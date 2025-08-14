@@ -617,7 +617,14 @@
         const renderJoinScreen = () => {
             const nameList = document.getElementById('name-selection-list');
             nameList.innerHTML = '';
-            Object.values(groupData.members || {}).forEach(m => {
+            // Use the memberOrder array to render buttons in the correct order
+            const memberOrder = groupData.memberOrder || Object.keys(groupData.members || {});
+            const members = groupData.members || {};
+
+            memberOrder.forEach(memberId => {
+                const m = members[memberId];
+                if (!m) return; // Skip if member data is missing for some reason
+
                 const button = document.createElement('button');
                 button.textContent = m.name;
                 button.className = "w-full p-3 rounded-lg transition";
@@ -1594,11 +1601,14 @@
                     return;
                 }
                 const newGroupId = generateId();
-                const membersMap = memberNames.reduce((acc, name) => {
+                const membersMap = {};
+                const memberOrder = []; // Array to store the order of members
+
+                memberNames.forEach(name => {
                     const id = generateId();
-                    acc[id] = { id, name, claimedBy: null };
-                    return acc;
-                }, {});
+                    membersMap[id] = { id, name, claimedBy: null };
+                    memberOrder.push(id); // Add member ID to the order array
+                });
 
                 await setDoc(doc(db, `artifacts/${appId}/public/data/groups`, newGroupId), {
                     groupName,
@@ -1607,7 +1617,8 @@
                     expenseSummary: {},
                     userGrossSpend: {},
                     groupGrossSpend: {},
-                    members: membersMap
+                    members: membersMap,
+                    memberOrder: memberOrder // Save the member order
                 });
                 history.pushState(null, '', `?group=${newGroupId}`);
                 handleGroupJoin(newGroupId);
