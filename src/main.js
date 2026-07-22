@@ -403,7 +403,7 @@
             return '';
         };
 
-        const getStatusHtml = (status, isMe, isPayer, participantId = null, billType = 'advanced') => {
+        const getStatusHtml = (status, isMe, isPayer, participantId = null, billType = 'advanced', isCurrentUserThePayer = false) => {
             const statuses = {
                 incomplete: { text: "Nieuzupełnione", icon: "fa-question-circle", color: "text-orange-500", bg: "bg-orange-100" },
                 completed: { text: "Uzupełnione", icon: "fa-user-check", color: "text-blue-600", bg: "bg-blue-100" },
@@ -456,7 +456,58 @@
                 `;
             }
 
+            if (isCurrentUserThePayer && isPayerConfirmed && (status === 'unpaid' || status === 'paid')) {
+                return `
+                    <div class="status-select-wrapper ${current.bg}">
+                        <i class="fas ${current.icon} ${current.color} mr-2"></i>
+                        <select class="payer-status-select font-semibold ${current.color}" data-participant-id="${participantId}">
+                            <option value="unpaid" ${status === 'unpaid' ? 'selected' : ''}>Nieopłacone</option>
+                            <option value="paid" ${status === 'paid' ? 'selected' : ''}>Opłacone</option>
+                        </select>
+                    </div>
+                `;
+            }
+
             return `<span class="font-semibold ${current.color} flex items-center"><i class="fas ${current.icon} mr-2"></i>${current.text}</span>`;
+        };
+
+        // --- Faza 2: zamrożenie kwoty po zapłacie + ślad kto/kiedy zmienił status ---
+        const getParticipantTotal = (bill, pid) => {
+            const found = calculateAllForBill(bill).participantTotals.find(x => x.participant.id === pid);
+            return found ? found.total : 0;
+        };
+
+        const buildStatusUpdate = (bill, participantId, newStatus, changedByName) => {
+            const base = `participants.${participantId}`;
+            const updates = { [`${base}.status`]: newStatus };
+            // Zamrożenie kwoty w chwili "opłacone" — późniejsza zmiana rachunku ujawni się jako różnica.
+            updates[`${base}.paidAmount`] = newStatus === 'paid' ? getParticipantTotal(bill, participantId) : null;
+            if (newStatus === 'paid' || newStatus === 'unpaid') {
+                updates[`${base}.statusChangedBy`] = changedByName || null;
+                updates[`${base}.statusChangedAt`] = Date.now();
+            } else {
+                updates[`${base}.statusChangedBy`] = null;
+                updates[`${base}.statusChangedAt`] = null;
+            }
+            return updates;
+        };
+
+        const getPaidDeltaHtml = (p, currentTotal, currency) => {
+            if (p.status !== 'paid' || typeof p.paidAmount !== 'number') return '';
+            const diff = currentTotal - p.paidAmount;
+            if (diff > 0.01) {
+                return `<p class="text-sm text-orange-600 font-semibold"><i class="fas fa-exclamation-triangle mr-1"></i>Kwota wzrosła po zapłacie — dopłać ${diff.toFixed(2)} ${currency}</p>`;
+            }
+            if (diff < -0.01) {
+                return `<p class="text-sm text-blue-600 font-semibold"><i class="fas fa-undo mr-1"></i>Nadpłata — do zwrotu ${(-diff).toFixed(2)} ${currency}</p>`;
+            }
+            return '';
+        };
+
+        const getStatusAuditHtml = (p) => {
+            if (!p.statusChangedBy) return '';
+            const when = typeof p.statusChangedAt === 'number' ? ` (${new Date(p.statusChangedAt).toLocaleString('pl-PL')})` : '';
+            return `<p class="text-xs text-gray-400">Status zmieniony przez ${p.statusChangedBy}${when}</p>`;
         };
         
         // ===================================================
@@ -588,8 +639,10 @@
                         }
                     }
                 }
-                
-                const statusDisplayHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'advanced');
+                paymentInfo += getPaidDeltaHtml(p, pt.total, billData.currency);
+                paymentInfo += getStatusAuditHtml(p);
+
+                const statusDisplayHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'advanced', isCurrentUserThePayer);
 
                 let participantHTML;
                 if (isMe) {
@@ -830,9 +883,8 @@
                     
                     if (target.classList.contains('status-select')) {
                         const newStatus = e.target.value;
-                        const shouldClearAmounts = newStatus === 'not_applicable';
-                        updates[`participants.${participantId}.status`] = newStatus;
-                        if (shouldClearAmounts) {
+                        Object.assign(updates, buildStatusUpdate(billData, participantId, newStatus, participant.name));
+                        if (newStatus === 'not_applicable') {
                             updates[`participants.${participantId}.individualAmount`] = 0;
                             updates[`participants.${participantId}.individualAmounts`] = [];
                             updates[`participants.${participantId}.calculatorActive`] = false;
@@ -869,6 +921,16 @@
                     await updateDoc(billDocRef, updates);
                 };
             }
+
+            // Płatnik może zmieniać status opłacenia innych (ze śladem kto/kiedy).
+            document.querySelectorAll('.payer-status-select').forEach(select => {
+                select.onchange = async (e) => {
+                    const pid = e.target.dataset.participantId;
+                    const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
+                    const changedBy = myMember ? myMember.name : 'Płatnik';
+                    await updateDoc(billDocRef, buildStatusUpdate(billData, pid, e.target.value, changedBy));
+                };
+            });
 
             document.querySelectorAll('.remove-shared-cost-btn').forEach(button => {
                 button.onclick = async (e) => {
@@ -1020,8 +1082,10 @@
                         }
                     }
                 }
+                paymentInfo += getPaidDeltaHtml(p, amountPerPerson, billData.currency);
+                paymentInfo += getStatusAuditHtml(p);
 
-                const statusHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'simple');
+                const statusHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'simple', isCurrentUserThePayer);
 
                 const participantHTML = `
                     <div class="p-4 rounded-lg ${isMe ? 'bg-blue-50 border-2 border-blue-200' : 'bg-gray-50 border border-gray-200'}">
@@ -1071,8 +1135,17 @@
             document.querySelectorAll('.simple-status-select').forEach(select => {
                 select.onchange = async (e) => {
                     const participantId = e.target.dataset.participantId;
-                    const newStatus = e.target.value;
-                    await updateDoc(billDocRef, { [`participants.${participantId}.status`]: newStatus });
+                    const changedBy = billData.participants[participantId]?.name;
+                    await updateDoc(billDocRef, buildStatusUpdate(billData, participantId, e.target.value, changedBy));
+                };
+            });
+            // Płatnik może zmieniać status opłacenia innych (ze śladem kto/kiedy).
+            document.querySelectorAll('.payer-status-select').forEach(select => {
+                select.onchange = async (e) => {
+                    const pid = e.target.dataset.participantId;
+                    const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
+                    const changedBy = myMember ? myMember.name : 'Płatnik';
+                    await updateDoc(billDocRef, buildStatusUpdate(billData, pid, e.target.value, changedBy));
                 };
             });
             document.getElementById('delete-bill-btn-simple').onclick = () => document.getElementById('delete-confirm-modal').classList.add('active');
