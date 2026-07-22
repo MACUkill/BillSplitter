@@ -1,0 +1,10 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // PLACEHOLDER dla emulatora (dev). Prawdziwe reguły Storage do przysłania
+    // przez usera + zaostrzenia w Fazie 2.
+    match /{allPaths=**} {
+      allow read, write: if true;
+    }
+  }
+}

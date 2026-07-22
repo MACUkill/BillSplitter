@@ -1,0 +1,22 @@
+{
+  "name": "billsplitter",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "BillSplitter — rozliczenia ze znajomymi (super-wersja V2)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "emulators": "firebase emulators:start --only auth,firestore,functions,storage"
+  },
+  "dependencies": {
+    "firebase": "^12.16.0"
+  },
+  "devDependencies": {
+    "vite": "^8.1.5",
+    "vitest": "^4.1.10"
+  }
+}

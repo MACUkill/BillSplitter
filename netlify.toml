@@ -1,0 +1,5 @@
+# Build config dla brancha BillSplitterV2 (deploy testowy).
+# Produkcja (main) pozostaje bez zmian do czasu merge.
+[build]
+  command = "npm run build"
+  publish = "dist"

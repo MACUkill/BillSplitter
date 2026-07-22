@@ -1,0 +1,22 @@
+# deps & build
+node_modules
+dist
+
+# env
+.env
+.env.local
+.env.*.local
+
+# firebase emulator / logi
+.firebase
+*-debug.log
+firebase-debug.log
+firestore-debug.log
+storage-debug.log
+ui-debug.log
+database-debug.log
+pubsub-debug.log
+emulator-data
+
+# harness-local (launch config itd.)
+.claude/
