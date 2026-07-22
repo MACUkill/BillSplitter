@@ -1,5 +1,5 @@
         // Importy Firebase (npm) + moduł obliczeń
-        import { calculateAll, calculateAllForBill } from './calc.js';
+        import { calculateAll, calculateAllForBill, calculateSimple } from './calc.js';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
@@ -527,30 +527,23 @@
             const calculations = calculateAll(billData);
             
             const controlSumEl = document.getElementById('control-sum');
-            controlSumEl.textContent = `${calculations.controlSum.toFixed(2)} ${billData.currency}`;
+            const controlStatusEl = document.getElementById('control-status');
+            const control = calculations.control;
+            controlSumEl.textContent = `${control.enteredSubtotal.toFixed(2)} ${billData.currency}`;
             controlSumEl.className = "mt-1 text-2xl font-bold ";
+            if (controlStatusEl) controlStatusEl.className = "text-sm font-semibold h-5 ";
 
-            const totalAmount = billData.totalAmount || 0;
-            const controlSum = calculations.controlSum;
-            const tolerance = 0.015;
-
-            if (totalAmount > 0) {
-                const onePercentOver = totalAmount * 1.01;
-                if (controlSum < totalAmount - tolerance) {
-                    controlSumEl.classList.add('control-sum-bad'); 
-                } 
-                else if (controlSum >= totalAmount - tolerance && controlSum <= onePercentOver + tolerance) {
-                    controlSumEl.classList.add('control-sum-ok');
-                } 
-                else { 
-                    controlSumEl.classList.add('control-sum-bad');
-                }
-            } else {
-                 if (Math.abs(controlSum) > tolerance) {
-                    controlSumEl.classList.add('control-sum-bad');
-                 } else {
-                    controlSumEl.classList.add('control-sum-ok');
-                 }
+            if (control.status === 'ok') {
+                controlSumEl.classList.add('control-sum-ok');
+                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-ok'); controlStatusEl.textContent = '✓ zgadza się z kwotą rachunku'; }
+            } else if (control.status === 'over') {
+                controlSumEl.classList.add('control-sum-bad');
+                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-bad'); controlStatusEl.textContent = `⚠ Nadwyżka ${control.diff.toFixed(2)} ${billData.currency} — ktoś przeliczył lub podwójna pozycja`; }
+            } else if (control.status === 'under') {
+                controlSumEl.classList.add('control-sum-bad');
+                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-bad'); controlStatusEl.textContent = `⚠ Brakuje ${control.diff.toFixed(2)} ${billData.currency} — ktoś nie wpisał pozycji`; }
+            } else if (controlStatusEl) { // empty (kwota nie wpisana)
+                controlStatusEl.textContent = '';
             }
             
             const plnDisplay = document.getElementById('pln-conversion-display');
@@ -993,7 +986,8 @@
 
             const includedParticipants = Object.values(billData.participants || {}).filter(p => p.status !== 'not_applicable');
             const participantCount = includedParticipants.length;
-            const amountPerPerson = participantCount > 0 ? billData.totalAmount / participantCount : 0;
+            const simpleCalc = calculateSimple(billData);
+            const amountPerPerson = simpleCalc.amountPerPerson; // zaokrąglone W GÓRĘ (płatnik nie stratny)
 
             document.getElementById('simple-bill-participant-count').textContent = participantCount === Object.keys(groupData.members).length ? 'wszystkich' : `${participantCount}`;
             document.getElementById('simple-bill-amount-per-person').textContent = `${amountPerPerson.toFixed(2)} ${billData.currency}`;
@@ -1016,7 +1010,7 @@
                 let paymentInfo = '';
                 if (payer && isPayerConfirmed && p.status !== 'not_applicable') {
                     if (isPayer) {
-                        const amountToReceive = billData.totalAmount - amountPerPerson;
+                        const amountToReceive = simpleCalc.controlSum - amountPerPerson;
                         if (amountToReceive > 0.01) {
                             paymentInfo = `<p class="text-sm text-green-600 font-semibold">Otrzymasz: ${amountToReceive.toFixed(2)} ${billData.currency}</p>`;
                         }
