@@ -27,7 +27,7 @@
         // --- DEV: podłączenie do Firebase Emulator Suite (pełna izolacja od produkcji) ---
         if (import.meta.env.DEV) {
             connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-            connectFirestoreEmulator(db, '127.0.0.1', 8088);
+            connectFirestoreEmulator(db, '127.0.0.1', 8770);
             connectStorageEmulator(storage, '127.0.0.1', 9199);
             console.info('[BillSplitter] Tryb DEV — podłączono do emulatora Firebase (127.0.0.1). Żywe dane nietknięte.');
         }
