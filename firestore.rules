@@ -1,11 +1,35 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // STAN OBECNY (produkcja) = w pełni otwarte.
-    // DO ZAOSTRZENIA w Fazie 2 (security pass) — reguły świadome członkostwa,
-    // podsumowania tylko z Cloud Function, brak kasowania cudzego.
-    match /artifacts/{appId}/public/data/{document=**} {
-      allow read, write: if true;
+
+    match /artifacts/{appId}/public/data/groups/{groupId} {
+      // Odczyt: każdy zalogowany, kto ma link (ID grupy = klucz dostępu).
+      allow read: if request.auth != null;
+
+      // Tworzenie grupy: zalogowany, i musi być adminem tworzonej grupy.
+      allow create: if request.auth != null
+                    && request.resource.data.adminId == request.auth.uid;
+
+      // Aktualizacja: zalogowany, ale NIE wolno ruszać pól podsumowań —
+      // te zapisuje WYŁĄCZNIE Cloud Function (admin SDK omija reguły).
+      // To broni bilansów przed sfałszowaniem z klienta.
+      allow update: if request.auth != null
+                    && !request.resource.data.diff(resource.data)
+                          .affectedKeys()
+                          .hasAny(['expenseSummary', 'userGrossSpend', 'groupGrossSpend']);
+
+      // Grupy nie kasujemy z klienta.
+      allow delete: if false;
+
+      // Rachunki w grupie: pełny CRUD dla zalogowanych (członków z linkiem).
+      match /bills/{billId} {
+        allow read, create, update, delete: if request.auth != null;
+      }
+    }
+
+    // Wszystko inne — zamknięte (domyślny deny, jawnie dla czytelności).
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

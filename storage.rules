@@ -1,10 +1,19 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // PLACEHOLDER dla emulatora (dev). Prawdziwe reguły Storage do przysłania
-    // przez usera + zaostrzenia w Fazie 2.
+    // Zdjęcia paragonów: groups/{groupId}/bills/{billId}/{plik}
+    match /groups/{groupId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      // Wgrywanie: tylko zalogowany, tylko obrazy, max 20 MB.
+      allow write: if request.auth != null
+                   && request.resource.size < 20 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null;
+    }
+
+    // Reszta bucketu zamknięta.
     match /{allPaths=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

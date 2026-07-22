@@ -11,6 +11,7 @@ export default defineConfig({
   test: {
     // Testy matmy są czyste (bez DOM) — środowisko node wystarcza i jest szybkie.
     environment: 'node',
-    include: ['src/**/*.test.js', 'test/**/*.test.js'],
+    // test/ (np. testy reguł na emulatorze) uruchamiamy osobno przez `npm run test:rules`.
+    include: ['src/**/*.test.js'],
   },
 });
