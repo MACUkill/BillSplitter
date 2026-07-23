@@ -813,12 +813,32 @@
             });
         };
         
-        const getPlnConversionHtml = (amount, currency) => {
-            if (currency !== 'PLN' && exchangeRates && exchangeRates.rates.PLN && amount > 0) {
-                const plnAmount = amount * exchangeRates.rates.PLN;
-                return `(≈ ${plnAmount.toFixed(2)} PLN)`;
+        // Kurs do PLN: preferuj ZAPISANY na rachunku (kurs z dnia dodania), fallback = bieżący (jeśli pobrany dla tej waluty).
+        const plnRateFor = (currency, savedRate) => {
+            if (typeof savedRate === 'number' && savedRate > 0) return savedRate;
+            if (exchangeRates && exchangeRates.base === currency && exchangeRates.rates && exchangeRates.rates.PLN) return exchangeRates.rates.PLN;
+            return null;
+        };
+        const getPlnConversionHtml = (amount, currency, savedRate) => {
+            const r = plnRateFor(currency, savedRate);
+            if (currency !== 'PLN' && r && amount > 0) {
+                return `(≈ ${(amount * r).toFixed(2)} PLN)`;
             }
             return '';
+        };
+
+        // Patch przy zmianie waluty: zapisuje KURS Z DNIA (waluta→PLN) na rachunku,
+        // żeby historyczne przeliczenia nie zmieniały się wraz z bieżącym kursem.
+        const currencyPatch = async (cur) => {
+            const patch = { currency: cur };
+            if (cur && cur !== 'PLN') {
+                const rates = await fetchExchangeRates(cur);
+                if (rates && rates.rates && rates.rates.PLN) {
+                    patch.exchangeRatePLN = rates.rates.PLN;
+                    patch.exchangeRateAt = serverTimestamp();
+                }
+            }
+            return patch;
         };
 
         const getStatusHtml = (status, isMe, isPayer, participantId = null, billType = 'advanced', isCurrentUserThePayer = false) => {
@@ -1016,9 +1036,11 @@
             }
             
             const plnDisplay = document.getElementById('pln-conversion-display');
-            if (billData.currency !== 'PLN' && exchangeRates && exchangeRates.rates.PLN) {
-                const plnTotal = calculations.controlSum * exchangeRates.rates.PLN;
-                plnDisplay.textContent = `≈ ${plnTotal.toFixed(2)} PLN (kurs: ${exchangeRates.rates.PLN.toFixed(4)})`;
+            const advRate = plnRateFor(billData.currency, billData.exchangeRatePLN);
+            if (billData.currency !== 'PLN' && advRate) {
+                const plnTotal = calculations.controlSum * advRate;
+                const label = (typeof billData.exchangeRatePLN === 'number' && billData.exchangeRatePLN > 0) ? 'kurs z dnia dodania' : 'kurs bieżący';
+                plnDisplay.textContent = `≈ ${plnTotal.toFixed(2)} PLN (${label}: ${advRate.toFixed(4)})`;
             } else {
                 plnDisplay.textContent = '';
             }
@@ -1048,12 +1070,12 @@
                         if (p.status === 'completed' || p.status === 'incomplete') {
                             const amountToReceive = calculations.controlSum - pt.total;
                             if (amountToReceive > 0.01) {
-                                paymentInfo = `<p class="text-sm text-green-600 font-semibold">Otrzymasz: ${amountToReceive.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(amountToReceive, billData.currency)}</p>`;
+                                paymentInfo = `<p class="text-sm text-green-600 font-semibold">Otrzymasz: ${amountToReceive.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(amountToReceive, billData.currency, billData.exchangeRatePLN)}</p>`;
                             }
                         }
                     } else if (pt.total > 0) {
                          if (p.status !== 'paid') {
-                            paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency)}</p>${getPaymentMethodsHtml(billData.payerId)}`;
+                            paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency, billData.exchangeRatePLN)}</p>${getPaymentMethodsHtml(billData.payerId)}`;
                         }
                     }
                 }
@@ -1133,7 +1155,7 @@
                             <p>Koszty dzielone: <span class="font-medium">${pt.sharedAmount.toFixed(2)} ${billData.currency}</span></p>
                             <p>Koszty ogólne: <span class="font-medium">${pt.globalCostsAmount.toFixed(2)} ${billData.currency}</span></p>
                             <div class="mt-2 pt-2 border-t">
-                                <p class="text-base font-bold">ŁĄCZNIE: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency)}</p>
+                                <p class="text-base font-bold">ŁĄCZNIE: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency, billData.exchangeRatePLN)}</p>
                                 ${paymentInfo}
                             </div>
                         </div>
@@ -1157,7 +1179,7 @@
                             <p>Koszty dzielone: <span class="font-medium">${pt.sharedAmount.toFixed(2)} ${billData.currency}</span></p>
                             <p>Koszty ogólne: <span class="font-medium">${pt.globalCostsAmount.toFixed(2)} ${billData.currency}</span></p>
                             <div class="mt-2 pt-2 border-t">
-                                <p class="text-base font-bold">ŁĄCZNIE: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency)}</p>
+                                <p class="text-base font-bold">ŁĄCZNIE: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency, billData.exchangeRatePLN)}</p>
                                 ${paymentInfo}
                             </div>
                         </div>
@@ -1212,7 +1234,7 @@
                 await updateDoc(billDocRef, { totalAmount: parseLocalFloat(e.target.value) });
             };
             document.getElementById('currency-select').onchange = async (e) => {
-                await updateDoc(billDocRef, { currency: e.target.value });
+                await updateDoc(billDocRef, await currencyPatch(e.target.value));
             };
             
             document.getElementById('payer-select').onchange = async (e) => {
@@ -1471,7 +1493,7 @@
 
             document.getElementById('simple-bill-participant-count').textContent = participantCount === Object.keys(groupData.members).length ? 'wszystkich' : `${participantCount}`;
             document.getElementById('simple-bill-amount-per-person').textContent = `${amountPerPerson.toFixed(2)} ${billData.currency}`;
-            document.getElementById('simple-pln-conversion-display').innerHTML = getPlnConversionHtml(amountPerPerson, billData.currency);
+            document.getElementById('simple-pln-conversion-display').innerHTML = getPlnConversionHtml(amountPerPerson, billData.currency, billData.exchangeRatePLN);
 
             const participantsList = document.getElementById('simple-bill-participants-list');
             participantsList.innerHTML = '';
@@ -1542,7 +1564,7 @@
                 await updateDoc(billDocRef, { totalAmount: newTotal });
             };
             document.getElementById('simple-bill-currency-select').onchange = async (e) => {
-                await updateDoc(billDocRef, { currency: e.target.value });
+                await updateDoc(billDocRef, await currencyPatch(e.target.value));
             };
             document.getElementById('simple-bill-payer-select').onchange = async (e) => {
                 await updateDoc(billDocRef, { 
