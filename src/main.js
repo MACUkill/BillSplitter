@@ -155,16 +155,16 @@
             setupGlobalModalListeners();
             setupPwaInstallButton();
 
-            // Faza 3: kopiowanie numeru konta (delegacja — przetrwa przerenderowania).
+            // Faza 3/4: kopiowanie danych płatności (delegacja — przetrwa przerenderowania; uniwersalne dla każdej metody).
             document.addEventListener('click', (e) => {
                 const copyBtn = e.target.closest('.copy-account-btn');
                 if (!copyBtn) return;
                 e.stopPropagation();
                 const acc = copyBtn.dataset.account || '';
                 if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(acc).then(() => showToast('Skopiowano numer konta!')).catch(() => showToast('Numer konta: ' + acc));
+                    navigator.clipboard.writeText(acc).then(() => showToast('Skopiowano!')).catch(() => showToast('Do skopiowania: ' + acc));
                 } else {
-                    showToast('Numer konta: ' + acc);
+                    showToast('Do skopiowania: ' + acc);
                 }
             });
 
