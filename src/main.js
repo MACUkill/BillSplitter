@@ -151,6 +151,19 @@
             setupPhotoUploadListeners();
             setupGlobalModalListeners();
             setupPwaInstallButton();
+
+            // Faza 3: kopiowanie numeru konta (delegacja — przetrwa przerenderowania).
+            document.addEventListener('click', (e) => {
+                const copyBtn = e.target.closest('.copy-account-btn');
+                if (!copyBtn) return;
+                e.stopPropagation();
+                const acc = copyBtn.dataset.account || '';
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(acc).then(() => showToast('Skopiowano numer konta!')).catch(() => showToast('Numer konta: ' + acc));
+                } else {
+                    showToast('Numer konta: ' + acc);
+                }
+            });
         };
 
         const showScreen = (screenName) => {
@@ -236,6 +249,10 @@
             renderGroupDashboard();
         };
         
+        // --- Faza 3: filtry i ukrywanie rachunków ---
+        let latestBills = [];
+        let currentBillFilter = 'all';
+
         const renderGroupDashboard = () => {
             if (unsubscribeGroup) unsubscribeGroup();
             
@@ -267,39 +284,24 @@
 
                     document.getElementById('summary-my-gross-spend').textContent = formatSummary(myGrossSpend);
                     document.getElementById('summary-group-gross-spend').textContent = formatSummary(groupGrossSpend);
+
+                    const accInput = document.getElementById('dashboard-account-number');
+                    if (accInput) {
+                        if (document.activeElement !== accInput) accInput.value = myMember.accountNumber || '';
+                        accInput.onchange = async () => {
+                            await updateDoc(groupDocRef, { [`members.${myMember.id}.accountNumber`]: accInput.value.trim() });
+                            showToast('Zapisano numer konta.');
+                        };
+                    }
                 }
+                // Numery kont mogły się zmienić — odśwież listę (linie należności ich używają).
+                renderBillsList();
             });
             
             const billsQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`), orderBy('createdAt', 'desc'));
             unsubscribeGroup = onSnapshot(billsQuery, (snapshot) => {
-                const billsList = document.getElementById('bills-history-list');
-                billsList.innerHTML = '';
-                if (snapshot.empty) {
-                    billsList.innerHTML = '<p class="text-gray-500">Brak rachunków. Dodaj pierwszy!</p>';
-                } else {
-                    snapshot.forEach(doc => {
-                        const bill = doc.data();
-                        const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
-                        if (!myMember) return;
-                        const myParticipant = bill.participants ? bill.participants[myMember.id] : null;
-                        
-                        const billEl = document.createElement('div');
-                        billEl.className = "bg-gray-100 p-4 rounded-lg flex flex-col sm:flex-row justify-between sm:items-center cursor-pointer hover:bg-gray-200";
-                        
-                        const summaryHtml = getBillSummaryHtml(bill, myMember, myParticipant);
-
-                        billEl.innerHTML = `
-                            <div class="w-full">
-                                <p class="font-semibold text-lg flex items-center">${bill.billName}</p>
-                                <p class="text-xs text-gray-500">Utworzono: ${new Date(bill.createdAt?.toDate()).toLocaleString('pl-PL')}</p>
-                                <div class="mt-2">${summaryHtml}</div>
-                            </div>
-                            <i class="fas fa-chevron-right text-gray-400 mt-2 sm:mt-0 self-end sm:self-center"></i>
-                        `;
-                        billEl.onclick = () => joinBill(currentGroupId, doc.id);
-                        billsList.appendChild(billEl);
-                    });
-                }
+                latestBills = snapshot.docs.map(d => ({ id: d.id, data: d.data() }));
+                renderBillsList();
             });
 
             document.getElementById('copy-group-link-btn').onclick = () => {
@@ -311,6 +313,10 @@
                 document.getElementById('summary-content').classList.toggle('hidden');
                 document.getElementById('summary-arrow-icon').classList.toggle('rotated');
             };
+
+            document.querySelectorAll('.bill-filter-btn').forEach(btn => {
+                btn.onclick = () => { currentBillFilter = btn.dataset.filter; renderBillsList(); };
+            });
 
             showScreen('group-dashboard');
         };
@@ -360,6 +366,87 @@
             }
 
             return `<p class="text-sm text-gray-500"><i class="fas fa-check-circle mr-2"></i>Wszystko uregulowane</p>`;
+        };
+
+        // --- Faza 3: stan rachunku dla filtrów, linia z numerem konta, render z filtrem/ukrywaniem ---
+        const getBillUserState = (bill, myMember) => {
+            const myP = bill.participants ? bill.participants[myMember.id] : null;
+            if (!myP || myP.status === 'not_applicable' || (bill.hiddenBy || []).includes(myMember.id)) return 'hidden';
+            if (bill.payerId === myMember.id) {
+                const debtors = Object.values(bill.participants || {}).filter(p => p.id !== myMember.id && p.status !== 'not_applicable');
+                return debtors.every(p => p.status === 'paid') ? 'paid' : 'unpaid';
+            }
+            if (myP.status === 'paid') return 'paid';
+            const myCalc = calculateAllForBill(bill).participantTotals.find(pt => pt.participant.id === myMember.id);
+            return (!myCalc || myCalc.total <= 0.01) ? 'paid' : 'unpaid';
+        };
+
+        const getAccountLine = (payerId) => {
+            const acc = ((groupData && groupData.members && groupData.members[payerId]) || {}).accountNumber;
+            if (!acc) return '';
+            return `<span class="block text-xs text-gray-500 mt-0.5"><i class="fas fa-university mr-1"></i>${acc} <button class="copy-account-btn text-blue-600 hover:underline ml-1" data-account="${acc}">kopiuj</button></span>`;
+        };
+
+        const renderBillsList = () => {
+            const billsList = document.getElementById('bills-history-list');
+            if (!billsList || !groupData) return;
+            const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
+            if (!myMember) return;
+
+            document.querySelectorAll('.bill-filter-btn').forEach(btn => {
+                const active = btn.dataset.filter === currentBillFilter;
+                btn.className = `bill-filter-btn px-3 py-1 rounded-full text-sm font-semibold ${active ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`;
+            });
+
+            const visible = latestBills.filter(({ data }) => {
+                const state = getBillUserState(data, myMember);
+                return currentBillFilter === 'all' ? state !== 'hidden' : state === currentBillFilter;
+            });
+
+            billsList.innerHTML = '';
+            if (visible.length === 0) {
+                billsList.innerHTML = latestBills.length === 0
+                    ? '<p class="text-gray-500">Brak rachunków. Dodaj pierwszy!</p>'
+                    : '<p class="text-gray-500">Brak rachunków w tym widoku.</p>';
+                return;
+            }
+
+            visible.forEach(({ id, data: bill }) => {
+                const myParticipant = bill.participants ? bill.participants[myMember.id] : null;
+                const isHidden = (bill.hiddenBy || []).includes(myMember.id);
+                const canToggleHide = myParticipant && myParticipant.status !== 'not_applicable';
+                const summaryHtml = getBillSummaryHtml(bill, myMember, myParticipant);
+                const hideBtn = canToggleHide
+                    ? `<button class="hide-bill-btn text-gray-400 hover:text-gray-700 p-2" title="${isHidden ? 'Przywróć' : 'Ukryj'}"><i class="fas ${isHidden ? 'fa-eye' : 'fa-eye-slash'}"></i></button>`
+                    : '';
+
+                const billEl = document.createElement('div');
+                billEl.className = "bg-gray-100 p-4 rounded-lg flex flex-col sm:flex-row justify-between sm:items-center cursor-pointer hover:bg-gray-200";
+                billEl.innerHTML = `
+                    <div class="w-full">
+                        <p class="font-semibold text-lg flex items-center">${bill.billName}</p>
+                        <p class="text-xs text-gray-500">Utworzono: ${new Date(bill.createdAt?.toDate()).toLocaleString('pl-PL')}</p>
+                        <div class="mt-2">${summaryHtml}</div>
+                    </div>
+                    <div class="flex items-center self-end sm:self-center mt-2 sm:mt-0">
+                        ${hideBtn}
+                        <i class="fas fa-chevron-right text-gray-400 ml-1"></i>
+                    </div>
+                `;
+                billEl.onclick = (e) => {
+                    if (e.target.closest('button')) return;
+                    joinBill(currentGroupId, id);
+                };
+                const hb = billEl.querySelector('.hide-bill-btn');
+                if (hb) {
+                    hb.onclick = async (e) => {
+                        e.stopPropagation();
+                        const billRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, id);
+                        await updateDoc(billRef, { hiddenBy: isHidden ? arrayRemove(myMember.id) : arrayUnion(myMember.id) });
+                    };
+                }
+                billsList.appendChild(billEl);
+            });
         };
 
         const joinBill = async (groupId, billId) => {
@@ -635,7 +722,7 @@
                         }
                     } else if (pt.total > 0) {
                          if (p.status !== 'paid') {
-                            paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency)}</p>`;
+                            paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency)}</p>${getAccountLine(billData.payerId)}`;
                         }
                     }
                 }
@@ -1078,7 +1165,7 @@
                         }
                     } else {
                         if (amountPerPerson > 0 && p.status !== 'paid') {
-                           paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${amountPerPerson.toFixed(2)} ${billData.currency}</p>`;
+                           paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${amountPerPerson.toFixed(2)} ${billData.currency}</p>${getAccountLine(billData.payerId)}`;
                         }
                     }
                 }
