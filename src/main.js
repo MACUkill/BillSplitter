@@ -1,5 +1,5 @@
         // Importy Firebase (npm) + moduł obliczeń
-        import { calculateAll, calculateAllForBill, calculateSimple } from './calc.js';
+        import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze } from './calc.js';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
@@ -43,6 +43,7 @@
         let unsubscribeBill = null;
         let isAuthReady = false;
         let currentScreenName = null;
+        let settlementMode = 'net'; // 'net' = kto komu ile | 'min' = najmniej przelewów
         let paymentEditMethods = [];
         let paymentEditMemberId = null;
         let newBillState = { name: '', type: null, participantIds: [] };
@@ -421,14 +422,16 @@
                         });
                     }
                 }
-                // Numery kont mogły się zmienić — odśwież listę (linie należności ich używają).
+                // Numery kont / metody / imiona mogły się zmienić — odśwież listę i rozliczenia.
                 renderBillsList();
+                renderSettlements();
             });
-            
+
             const billsQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`), orderBy('createdAt', 'desc'));
             unsubscribeGroup = onSnapshot(billsQuery, (snapshot) => {
                 latestBills = snapshot.docs.map(d => ({ id: d.id, data: d.data() }));
                 renderBillsList();
+                renderSettlements();
             });
 
             document.getElementById('copy-group-link-btn').onclick = () => {
@@ -572,6 +575,101 @@
             valInput.value = '';
             valInput.placeholder = PAYMENT_TYPES.account.placeholder;
             document.getElementById('payment-methods-modal').classList.add('active');
+        };
+
+        // --- Faza 5: widok „Rozliczenia" (ledger kto komu ile / min. przelewów) + „Ureguluj" ---
+        const CURRENCY_ORDER = ['PLN', 'EUR', 'USD'];
+        const memberName = (id) => ((groupData && groupData.members && groupData.members[id]) || {}).name || 'Ktoś';
+        const fmtMoney = (amountG, currency) => `${fromGrosze(amountG).toFixed(2).replace('.', ',')} ${currency}`;
+
+        const settleRowHtml = (name, id, rightHtml) =>
+            `<div class="flex items-center justify-between gap-2 p-2 bg-white rounded-lg border border-gray-200">
+                <span class="flex items-center min-w-0">${avatarHtml(name, id)}<span class="truncate font-medium">${escapeHtml(name)}</span></span>
+                <span class="flex items-center gap-2 flex-shrink-0">${rightHtml}</span>
+            </div>`;
+
+        const renderSettlements = () => {
+            const container = document.getElementById('settlements-list');
+            if (!container || !groupData) return;
+            const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
+            const myId = myMember ? myMember.id : null;
+
+            document.querySelectorAll('.settle-mode-btn').forEach(btn => {
+                const active = btn.dataset.mode === settlementMode;
+                btn.className = `settle-mode-btn px-3 py-1 rounded-full text-sm font-semibold ${active ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`;
+            });
+
+            const bills = latestBills.map(({ id, data }) => ({ ...data, id }));
+            const ledger = buildLedger(bills);
+            const currencies = Object.keys(ledger).sort((a, b) => {
+                const ia = CURRENCY_ORDER.indexOf(a), ib = CURRENCY_ORDER.indexOf(b);
+                return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || (a < b ? -1 : 1);
+            });
+
+            const nothing = `<p class="text-gray-500 text-sm"><i class="fas fa-check-circle mr-2 text-green-600"></i>Brak długów — wszystko rozliczone.</p>`;
+            if (currencies.length === 0) { container.innerHTML = nothing; return; }
+
+            let html = '';
+            currencies.forEach(cur => {
+                const transfers = settlementMode === 'min' ? simplifyDebts(ledger[cur].directed) : ledger[cur].net;
+                if (transfers.length === 0) return;
+                const mineOwe = transfers.filter(t => t.from === myId);
+                const mineGet = transfers.filter(t => t.to === myId);
+                const others = transfers.filter(t => t.from !== myId && t.to !== myId);
+
+                html += `<div>`;
+                if (currencies.length > 1) html += `<p class="text-xs font-bold text-gray-400 uppercase mb-2">${cur}</p>`;
+
+                if (mineOwe.length) {
+                    html += `<p class="text-sm font-semibold text-red-600 mb-1">Płacisz:</p><div class="space-y-1.5 mb-3">`;
+                    mineOwe.forEach(t => {
+                        html += settleRowHtml(memberName(t.to), t.to,
+                            `<span class="font-bold text-red-600">${fmtMoney(t.amountG, cur)}</span>
+                             <button class="settle-btn bg-green-600 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-green-700" data-to="${t.to}" data-amount-g="${t.amountG}" data-currency="${cur}">Ureguluj</button>`);
+                    });
+                    html += `</div>`;
+                }
+                if (mineGet.length) {
+                    html += `<p class="text-sm font-semibold text-green-600 mb-1">Dostajesz:</p><div class="space-y-1.5 mb-3">`;
+                    mineGet.forEach(t => {
+                        html += settleRowHtml(memberName(t.from), t.from, `<span class="font-bold text-green-600">${fmtMoney(t.amountG, cur)}</span>`);
+                    });
+                    html += `</div>`;
+                }
+                if (others.length) {
+                    html += `<p class="text-sm font-semibold text-gray-500 mb-1">Pozostałe w grupie:</p><div class="space-y-1.5">`;
+                    others.forEach(t => {
+                        html += `<div class="flex items-center justify-between gap-2 p-2 text-sm text-gray-600">
+                            <span class="flex items-center min-w-0"><span class="truncate">${escapeHtml(memberName(t.from))}</span><i class="fas fa-arrow-right mx-2 text-gray-400"></i><span class="truncate">${escapeHtml(memberName(t.to))}</span></span>
+                            <span class="font-semibold flex-shrink-0">${fmtMoney(t.amountG, cur)}</span>
+                        </div>`;
+                    });
+                    html += `</div>`;
+                }
+                html += `</div>`;
+            });
+
+            container.innerHTML = html || nothing;
+        };
+
+        const openSettleModal = (creditorId, amountG, currency) => {
+            document.getElementById('settle-name').textContent = memberName(creditorId);
+            const amountStr = fromGrosze(Number(amountG) || 0).toFixed(2);
+            document.getElementById('settle-amount').textContent = `${amountStr.replace('.', ',')} ${currency}`;
+            document.getElementById('settle-copy-amount').dataset.account = amountStr;
+            const methods = getPaymentMethods((groupData && groupData.members && groupData.members[creditorId]) || null);
+            document.getElementById('settle-methods').innerHTML = methods.length === 0
+                ? `<p class="text-sm text-gray-400 italic">Odbiorca nie zapisał metod płatności.</p>`
+                : methods.map(m => `
+                    <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg">
+                        <i class="${paymentIconClass(m.type)} text-gray-400 w-4 text-center"></i>
+                        <div class="flex-grow min-w-0">
+                            <p class="text-xs text-gray-500">${escapeHtml(paymentLabel(m))}</p>
+                            <p class="text-sm break-all">${escapeHtml(m.value)}</p>
+                        </div>
+                        <button class="copy-account-btn text-blue-600 hover:underline text-sm flex-shrink-0" data-account="${escapeHtml(m.value)}">kopiuj</button>
+                    </div>`).join('');
+            document.getElementById('settle-modal').classList.add('active');
         };
 
         // --- Faza 3: stan rachunku dla filtrów, linia z numerem konta, render z filtrem/ukrywaniem ---
@@ -1670,6 +1768,23 @@
                 renderPaymentEditor();
                 showToast('Usunięto metodę.');
             });
+
+            // Rozliczenia: zwijanie, przełącznik trybu, „Ureguluj", modal
+            document.getElementById('toggle-settlements-btn').onclick = () => {
+                document.getElementById('settlements-content').classList.toggle('hidden');
+                document.getElementById('settlements-arrow-icon').classList.toggle('rotated');
+            };
+            document.querySelectorAll('.settle-mode-btn').forEach(btn => {
+                btn.onclick = () => { settlementMode = btn.dataset.mode; renderSettlements(); };
+            });
+            document.getElementById('settlements-list').addEventListener('click', (e) => {
+                const b = e.target.closest('.settle-btn');
+                if (!b) return;
+                openSettleModal(b.dataset.to, Number(b.dataset.amountG), b.dataset.currency);
+            });
+            const settleModal = document.getElementById('settle-modal');
+            document.getElementById('close-settle-modal').onclick = () => settleModal.classList.remove('active');
+            settleModal.onclick = (e) => { if (e.target === settleModal) settleModal.classList.remove('active'); };
 
             document.getElementById('cancel-delete-bill').onclick = () => document.getElementById('delete-confirm-modal').classList.remove('active');
             // Modal potwierdzenia zastąpiony flow „Cofnij"; gdyby był kiedyś pokazany, kieruje w to samo miejsce.
