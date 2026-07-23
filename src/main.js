@@ -156,6 +156,15 @@
             setupGlobalModalListeners();
             setupPwaInstallButton();
 
+            // Faza 5: wskaźnik offline (Firestore persistentLocalCache i tak kolejkuje zmiany).
+            const updateOnlineStatus = () => {
+                const banner = document.getElementById('offline-banner');
+                if (banner) banner.classList.toggle('hidden', navigator.onLine);
+            };
+            window.addEventListener('online', updateOnlineStatus);
+            window.addEventListener('offline', updateOnlineStatus);
+            updateOnlineStatus();
+
             // Faza 3/4: kopiowanie danych płatności (delegacja — przetrwa przerenderowania; uniwersalne dla każdej metody).
             document.addEventListener('click', (e) => {
                 const copyBtn = e.target.closest('.copy-account-btn');
