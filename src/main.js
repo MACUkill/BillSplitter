@@ -42,6 +42,7 @@
         let unsubscribeGroup = null;
         let unsubscribeBill = null;
         let isAuthReady = false;
+        let currentScreenName = null;
         let newBillState = { name: '', type: null, participantIds: [] };
         let photoToDelete = null; 
         let memberIdToTakeover = null;
@@ -174,6 +175,67 @@
             });
         };
 
+        // --- Faza 4: kontekstowy tutorial „?" per ekran ---
+        const HELP_CONTENT = {
+            'start': {
+                title: 'Jak zacząć',
+                html: `<p>BillSplitter dzieli rachunki w grupie znajomych i liczy, kto komu ile jest winien.</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>Podaj nazwę grupy i imiona osób (po przecinku).</li>
+                        <li>Dostaniesz link — wyślij go znajomym. Każdy wybiera swoje imię z listy.</li>
+                        <li>Dodajecie rachunki, a apka sama liczy podział (grosze zawsze na korzyść płatnika).</li>
+                    </ul>
+                    <p>Twoje pokoje zapiszą się na tym urządzeniu — wrócisz do nich z ekranu głównego.</p>`
+            },
+            'join': {
+                title: 'Dołączanie do grupy',
+                html: `<ul class="list-disc pl-5 space-y-1">
+                        <li>Wybierz swoje imię z listy, aby dołączyć.</li>
+                        <li>Szare imię = już zajęte. Jeśli to Ty na innym urządzeniu — możesz przejąć sesję.</li>
+                        <li>Po wejściu ustawisz swój kolor profilu i numer konta.</li>
+                    </ul>`
+            },
+            'group-dashboard': {
+                title: 'Twoja grupa',
+                html: `<ul class="list-disc pl-5 space-y-1">
+                        <li><b>Udostępnij link</b>, aby zaprosić znajomych.</li>
+                        <li><b>Nowy rachunek</b> — prosty (kwota po równo) lub zaawansowany (różne pozycje).</li>
+                        <li><b>Filtry</b>: Wszystkie / Nieopłacone / Opłacone / Ukryte.</li>
+                        <li><b>Kolor profilu</b> i <b>numer konta</b> (Revolut/IBAN) — znajomi zobaczą go przy Twoich należnościach.</li>
+                        <li><b>Podsumowanie</b> pokazuje Twoje udziały i sumę całej grupy.</li>
+                    </ul>`
+            },
+            'simple-bill': {
+                title: 'Rachunek prosty',
+                html: `<ul class="list-disc pl-5 space-y-1">
+                        <li>Cała kwota dzieli się po równo między uczestników.</li>
+                        <li>Wpisz kwotę i wybierz, kto zapłacił.</li>
+                        <li>Płatnik potwierdza płatność — to blokuje zmianę płatnika.</li>
+                        <li>Grosze zaokrąglane w górę, żeby płatnik nigdy nie był stratny.</li>
+                        <li>Płatnik może usunąć rachunek — masz kilka sekund na „Cofnij".</li>
+                    </ul>`
+            },
+            'bill': {
+                title: 'Rachunek zaawansowany',
+                html: `<p>Dla rachunków z różnymi pozycjami (np. restauracja):</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li><b>Koszty dzielone</b> — wspólne pozycje, dzielone po równo między uczestników.</li>
+                        <li><b>Koszty ogólne</b> — np. napiwek/serwis, doliczane do całości i dzielone.</li>
+                        <li><b>Koszty indywidualne</b> — każdy wpisuje to, co zamówił dla siebie.</li>
+                        <li><b>Suma kontrolna</b> sprawdza, czy pozycje zgadzają się z kwotą rachunku (✓ / za dużo / za mało).</li>
+                        <li>Wybierz płatnika i potwierdź płatność.</li>
+                    </ul>`
+            }
+        };
+
+        const showHelp = () => {
+            const content = HELP_CONTENT[currentScreenName];
+            if (!content) return;
+            document.getElementById('help-modal-title').textContent = content.title;
+            document.getElementById('help-modal-body').innerHTML = content.html;
+            document.getElementById('help-modal').classList.add('active');
+        };
+
         const showScreen = (screenName) => {
             ['loading', 'start', 'join', 'group-dashboard', 'bill', 'simple-bill'].forEach(s => {
                 const screenEl = document.getElementById(`${s}-screen`);
@@ -181,6 +243,10 @@
             });
             const targetScreen = document.getElementById(`${screenName}-screen`);
             if (targetScreen) targetScreen.classList.remove('hidden');
+            currentScreenName = screenName;
+            // Kontekstowy przycisk pomocy „?" — widoczny tylko na ekranach z treścią.
+            const fab = document.getElementById('help-fab');
+            if (fab) fab.classList.toggle('hidden', !HELP_CONTENT[screenName]);
         };
 
         const handleGroupJoin = async (groupId) => {
@@ -1440,6 +1506,13 @@
         };
 
         const setupGlobalModalListeners = () => {
+            // Kontekstowy help „?"
+            const helpFab = document.getElementById('help-fab');
+            if (helpFab) helpFab.onclick = showHelp;
+            const helpModal = document.getElementById('help-modal');
+            document.getElementById('close-help-modal').onclick = () => helpModal.classList.remove('active');
+            helpModal.onclick = (e) => { if (e.target === helpModal) helpModal.classList.remove('active'); };
+
             document.getElementById('cancel-delete-bill').onclick = () => document.getElementById('delete-confirm-modal').classList.remove('active');
             // Modal potwierdzenia zastąpiony flow „Cofnij"; gdyby był kiedyś pokazany, kieruje w to samo miejsce.
             document.getElementById('confirm-delete-bill').onclick = () => {
