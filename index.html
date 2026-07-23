@@ -152,7 +152,9 @@
                      <div class="mt-4 md:mt-0 text-left md:text-right">
                         <p class="font-semibold text-gray-700">Jesteś w grupie jako:</p>
                         <p id="dashboard-user-name" class="text-lg text-blue-600 font-semibold cursor-pointer hover:underline" title="Kliknij, aby zmienić imię"></p>
-                        <input type="text" id="dashboard-account-number" class="mt-2 w-full md:w-64 text-sm p-1.5 border border-gray-300 rounded-lg" placeholder="Twój nr konta (Revolut/IBAN)" title="Widoczny dla znajomych przy Twoich należnościach">
+                        <button id="dashboard-payment-btn" class="mt-2 w-full md:w-64 text-sm p-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2" title="Twoje sposoby płatności – widoczne dla znajomych przy Twoich należnościach">
+                            <i class="fas fa-wallet text-gray-400"></i><span id="dashboard-payment-summary">Dodaj sposób płatności</span>
+                        </button>
                         <div id="dashboard-color-picker" class="mt-2 flex items-center gap-1.5 flex-wrap md:justify-end" title="Twój kolor profilu"></div>
                     </div>
                 </div>
@@ -372,6 +374,28 @@
                 <button id="close-help-modal" class="text-gray-400 hover:text-gray-700 text-3xl leading-none" title="Zamknij">&times;</button>
             </div>
             <div id="help-modal-body" class="p-5 overflow-y-auto text-gray-700 text-sm space-y-3"></div>
+        </div>
+    </div>
+
+    <div id="payment-methods-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-40">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col" style="max-height:85vh">
+            <div class="flex items-center justify-between p-5 border-b">
+                <h3 class="text-xl font-bold flex items-center"><i class="fas fa-wallet text-blue-500 mr-2"></i>Twoje sposoby płatności</h3>
+                <button id="close-payment-methods-modal" class="text-gray-400 hover:text-gray-700 text-3xl leading-none" title="Zamknij">&times;</button>
+            </div>
+            <div class="p-5 overflow-y-auto">
+                <p class="text-sm text-gray-500 mb-4">Widoczne dla znajomych przy Twoich należnościach. Dodaj ile chcesz — konto, telefon, Revolut, PayPal lub własne.</p>
+                <div id="payment-methods-list" class="space-y-2 mb-5"></div>
+                <div class="border-t pt-4">
+                    <p class="text-sm font-semibold text-gray-600 mb-2">Dodaj metodę</p>
+                    <div class="flex flex-col gap-2">
+                        <select id="pm-add-type" class="p-2 border border-gray-300 rounded-lg text-sm"></select>
+                        <input id="pm-add-label" type="text" class="hidden p-2 border border-gray-300 rounded-lg text-sm" placeholder="Nazwa metody (np. Wise)">
+                        <input id="pm-add-value" type="text" class="p-2 border border-gray-300 rounded-lg text-sm" placeholder="Numer / adres / uchwyt">
+                        <button id="pm-add-btn" class="bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700"><i class="fas fa-plus mr-2"></i>Dodaj</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 

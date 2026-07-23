@@ -43,6 +43,8 @@
         let unsubscribeBill = null;
         let isAuthReady = false;
         let currentScreenName = null;
+        let paymentEditMethods = [];
+        let paymentEditMemberId = null;
         let newBillState = { name: '', type: null, participantIds: [] };
         let photoToDelete = null; 
         let memberIdToTakeover = null;
@@ -236,7 +238,7 @@
                         <li><b>Udostępnij link</b>, aby zaprosić znajomych.</li>
                         <li><b>Nowy rachunek</b> — prosty (kwota po równo) lub zaawansowany (różne pozycje).</li>
                         <li><b>Filtry</b>: Wszystkie / Nieopłacone / Opłacone / Ukryte.</li>
-                        <li><b>Kolor profilu</b> i <b>numer konta</b> (Revolut/IBAN) — znajomi zobaczą go przy Twoich należnościach.</li>
+                        <li><b>Kolor profilu</b> i <b>sposoby płatności</b> (konto, telefon, Revolut, PayPal, własne) — znajomi zobaczą je przy Twoich należnościach.</li>
                         <li><b>Podsumowanie</b> pokazuje Twoje udziały i sumę całej grupy.</li>
                     </ul>`
             },
@@ -397,13 +399,12 @@
                     document.getElementById('summary-my-gross-spend').textContent = formatSummary(myGrossSpend);
                     document.getElementById('summary-group-gross-spend').textContent = formatSummary(groupGrossSpend);
 
-                    const accInput = document.getElementById('dashboard-account-number');
-                    if (accInput) {
-                        if (document.activeElement !== accInput) accInput.value = myMember.accountNumber || '';
-                        accInput.onchange = async () => {
-                            await updateDoc(groupDocRef, { [`members.${myMember.id}.accountNumber`]: accInput.value.trim() });
-                            showToast('Zapisano numer konta.');
-                        };
+                    const paySummary = document.getElementById('dashboard-payment-summary');
+                    const payBtn = document.getElementById('dashboard-payment-btn');
+                    if (paySummary && payBtn) {
+                        const methods = getPaymentMethods(myMember);
+                        paySummary.textContent = methods.length === 0 ? 'Dodaj sposób płatności' : `Sposoby płatności (${methods.length})`;
+                        payBtn.onclick = () => openPaymentModal();
                     }
 
                     const picker = document.getElementById('dashboard-color-picker');
@@ -507,6 +508,72 @@
             return `<div class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-lg mr-3 flex-shrink-0 ${extraClass}" style="background-color:${colorForMember(memberId, name)}">${initial}</div>`;
         };
 
+        // --- Faza 4/5-bridge: metody płatności per osoba (wiele: konto, telefon, Revolut, PayPal, własne) ---
+        const PAYMENT_TYPES = {
+            account: { label: 'Konto / IBAN', icon: 'fa-university', placeholder: 'Numer konta / IBAN' },
+            phone:   { label: 'Telefon (BLIK/Revolut)', icon: 'fa-mobile-screen-button', placeholder: 'Numer telefonu' },
+            revolut: { label: 'Revolut @tag / link', icon: 'fa-at', placeholder: '@nick lub revolut.me/...' },
+            paypal:  { label: 'PayPal', icon: 'fa-paypal', brand: true, placeholder: 'paypal.me/... lub email' },
+            other:   { label: 'Inne (własna nazwa)', icon: 'fa-money-bill-wave', placeholder: 'Numer / adres / uchwyt' },
+        };
+        const paymentIconClass = (type) => { const t = PAYMENT_TYPES[type] || PAYMENT_TYPES.other; return `${t.brand ? 'fab' : 'fas'} ${t.icon}`; };
+        const paymentLabel = (m) => (m && m.type === 'other' && m.label) ? m.label : (PAYMENT_TYPES[(m && m.type)] || PAYMENT_TYPES.other).label;
+        // Backward-compat: stare pojedyncze accountNumber czytane jako jedna metoda „konto".
+        const getPaymentMethods = (member) => {
+            if (!member) return [];
+            if (Array.isArray(member.paymentMethods)) return member.paymentMethods.filter(m => m && m.value);
+            if (member.accountNumber) return [{ type: 'account', value: member.accountNumber }];
+            return [];
+        };
+        // Zwięzła lista metod odbiorcy z przyciskami kopiuj (przy „Należność dla X"). Pełne „Ureguluj" → Faza 5.
+        const getPaymentMethodsHtml = (payerId) => {
+            const methods = getPaymentMethods((groupData && groupData.members && groupData.members[payerId]) || null);
+            if (methods.length === 0) return '';
+            return `<div class="mt-1 space-y-0.5">` + methods.map(m =>
+                `<span class="flex items-center text-xs text-gray-500"><i class="${paymentIconClass(m.type)} mr-1 w-3.5 text-center"></i><span class="font-medium mr-1">${escapeHtml(paymentLabel(m))}:</span>${escapeHtml(m.value)} <button class="copy-account-btn text-blue-600 hover:underline ml-1" data-account="${escapeHtml(m.value)}">kopiuj</button></span>`
+            ).join('') + `</div>`;
+        };
+
+        // Edytor metod płatności (modal). Pracuje na kopii roboczej, zapisuje całą tablicę do Firestore.
+        const savePaymentMethods = async () => {
+            if (!paymentEditMemberId || !currentGroupId) return;
+            const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
+            await updateDoc(groupDocRef, { [`members.${paymentEditMemberId}.paymentMethods`]: paymentEditMethods });
+        };
+        const renderPaymentEditor = () => {
+            const list = document.getElementById('payment-methods-list');
+            if (!list) return;
+            if (paymentEditMethods.length === 0) {
+                list.innerHTML = `<p class="text-sm text-gray-400 italic">Brak metod. Dodaj pierwszą poniżej.</p>`;
+                return;
+            }
+            list.innerHTML = paymentEditMethods.map((m, i) => `
+                <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg">
+                    <i class="${paymentIconClass(m.type)} text-gray-400 w-4 text-center"></i>
+                    <div class="flex-grow min-w-0">
+                        <p class="text-xs text-gray-500">${escapeHtml(paymentLabel(m))}</p>
+                        <input class="pm-value-edit w-full text-sm p-1 border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none" value="${escapeHtml(m.value)}" data-index="${i}" placeholder="wartość">
+                    </div>
+                    <button class="pm-remove-btn text-gray-400 hover:text-red-500 px-1" data-index="${i}" title="Usuń"><i class="fas fa-trash"></i></button>
+                </div>
+            `).join('');
+        };
+        const openPaymentModal = () => {
+            const myMember = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === currentUser.uid);
+            if (!myMember) return;
+            paymentEditMemberId = myMember.id;
+            paymentEditMethods = getPaymentMethods(myMember).map(m => ({ ...m }));
+            renderPaymentEditor();
+            const typeSel = document.getElementById('pm-add-type');
+            typeSel.value = 'account';
+            document.getElementById('pm-add-label').value = '';
+            document.getElementById('pm-add-label').classList.add('hidden');
+            const valInput = document.getElementById('pm-add-value');
+            valInput.value = '';
+            valInput.placeholder = PAYMENT_TYPES.account.placeholder;
+            document.getElementById('payment-methods-modal').classList.add('active');
+        };
+
         // --- Faza 3: stan rachunku dla filtrów, linia z numerem konta, render z filtrem/ukrywaniem ---
         const getBillUserState = (bill, myMember) => {
             const myP = bill.participants ? bill.participants[myMember.id] : null;
@@ -518,12 +585,6 @@
             if (myP.status === 'paid') return 'paid';
             const myCalc = calculateAllForBill(bill).participantTotals.find(pt => pt.participant.id === myMember.id);
             return (!myCalc || myCalc.total <= 0.01) ? 'paid' : 'unpaid';
-        };
-
-        const getAccountLine = (payerId) => {
-            const acc = ((groupData && groupData.members && groupData.members[payerId]) || {}).accountNumber;
-            if (!acc) return '';
-            return `<span class="block text-xs text-gray-500 mt-0.5"><i class="fas fa-university mr-1"></i>${acc} <button class="copy-account-btn text-blue-600 hover:underline ml-1" data-account="${acc}">kopiuj</button></span>`;
         };
 
         const renderBillsList = () => {
@@ -875,7 +936,7 @@
                         }
                     } else if (pt.total > 0) {
                          if (p.status !== 'paid') {
-                            paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency)}</p>${getAccountLine(billData.payerId)}`;
+                            paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency)}</p>${getPaymentMethodsHtml(billData.payerId)}`;
                         }
                     }
                 }
@@ -1318,7 +1379,7 @@
                         }
                     } else {
                         if (amountPerPerson > 0 && p.status !== 'paid') {
-                           paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${amountPerPerson.toFixed(2)} ${billData.currency}</p>${getAccountLine(billData.payerId)}`;
+                           paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${amountPerPerson.toFixed(2)} ${billData.currency}</p>${getPaymentMethodsHtml(billData.payerId)}`;
                         }
                     }
                 }
@@ -1564,6 +1625,51 @@
             const helpModal = document.getElementById('help-modal');
             document.getElementById('close-help-modal').onclick = () => helpModal.classList.remove('active');
             helpModal.onclick = (e) => { if (e.target === helpModal) helpModal.classList.remove('active'); };
+
+            // Metody płatności (modal edytora)
+            const pmModal = document.getElementById('payment-methods-modal');
+            document.getElementById('close-payment-methods-modal').onclick = () => pmModal.classList.remove('active');
+            pmModal.onclick = (e) => { if (e.target === pmModal) pmModal.classList.remove('active'); };
+            const pmTypeSel = document.getElementById('pm-add-type');
+            pmTypeSel.innerHTML = Object.entries(PAYMENT_TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('');
+            const pmLabelInput = document.getElementById('pm-add-label');
+            const pmValueInput = document.getElementById('pm-add-value');
+            pmTypeSel.onchange = () => {
+                const t = PAYMENT_TYPES[pmTypeSel.value] || PAYMENT_TYPES.other;
+                pmLabelInput.classList.toggle('hidden', pmTypeSel.value !== 'other');
+                pmValueInput.placeholder = t.placeholder;
+            };
+            document.getElementById('pm-add-btn').onclick = async () => {
+                const type = pmTypeSel.value;
+                const value = pmValueInput.value.trim();
+                const label = pmLabelInput.value.trim();
+                if (!value) { showToast('Podaj numer / adres.', true); return; }
+                if (type === 'other' && !label) { showToast('Nazwij metodę „Inne".', true); return; }
+                const method = { type, value };
+                if (type === 'other') method.label = label;
+                paymentEditMethods.push(method);
+                await savePaymentMethods();
+                pmValueInput.value = '';
+                pmLabelInput.value = '';
+                renderPaymentEditor();
+                showToast('Dodano metodę płatności.');
+            };
+            const pmList = document.getElementById('payment-methods-list');
+            pmList.addEventListener('change', async (e) => {
+                const inp = e.target.closest('.pm-value-edit');
+                if (!inp) return;
+                const i = Number(inp.dataset.index);
+                if (paymentEditMethods[i]) { paymentEditMethods[i].value = inp.value.trim(); await savePaymentMethods(); showToast('Zapisano.'); }
+            });
+            pmList.addEventListener('click', async (e) => {
+                const rem = e.target.closest('.pm-remove-btn');
+                if (!rem) return;
+                const i = Number(rem.dataset.index);
+                paymentEditMethods.splice(i, 1);
+                await savePaymentMethods();
+                renderPaymentEditor();
+                showToast('Usunięto metodę.');
+            });
 
             document.getElementById('cancel-delete-bill').onclick = () => document.getElementById('delete-confirm-modal').classList.remove('active');
             // Modal potwierdzenia zastąpiony flow „Cofnij"; gdyby był kiedyś pokazany, kieruje w to samo miejsce.
