@@ -164,6 +164,14 @@
                     showToast('Numer konta: ' + acc);
                 }
             });
+
+            // Faza 4: na focusie przewiń pole nad klawiaturę (mobile).
+            document.addEventListener('focusin', (e) => {
+                const t = e.target;
+                if (window.innerWidth < 768 && t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
+                    setTimeout(() => { try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {} }, 300);
+                }
+            });
         };
 
         const showScreen = (screenName) => {
@@ -449,6 +457,20 @@
             });
         };
 
+        // --- Faza 4: zachowaj to, co użytkownik wpisuje, przy zdalnym przerenderowaniu ---
+        const withFocusPreserved = async (renderFn) => {
+            const el = document.activeElement;
+            const editable = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.id;
+            const snap = editable ? { id: el.id, value: el.value, start: el.selectionStart, end: el.selectionEnd } : null;
+            await renderFn();
+            if (!snap) return;
+            const again = document.getElementById(snap.id);
+            if (!again) return;
+            try { again.value = snap.value; } catch (_) {}
+            again.focus();
+            try { again.setSelectionRange(snap.start, snap.end); } catch (_) {}
+        };
+
         const joinBill = async (groupId, billId) => {
             currentGroupId = groupId;
             currentBillId = billId;
@@ -472,10 +494,10 @@
                 if (billData) {
                     billData.photos = billData.photos || [];
                     if (billData.type === 'simple') {
-                        renderSimpleBillScreen();
+                        withFocusPreserved(renderSimpleBillScreen);
                         showScreen('simple-bill');
-                    } else { 
-                        renderBillScreen();
+                    } else {
+                        withFocusPreserved(renderBillScreen);
                         showScreen('bill');
                     }
                 }
@@ -783,7 +805,7 @@
                                     <div id="calculator-inputs-container-${p.id}" class="flex flex-col items-end space-y-2 mt-2 w-full ${isCalculatorActive ? '' : 'hidden'}">
                                         ${(p.individualAmounts && p.individualAmounts.length > 0) ? p.individualAmounts.map((amount, index) => `
                                             <div class="flex items-center w-full justify-end">
-                                                 <input type="text" inputmode="decimal" class="individual-amount-component w-32 text-right font-semibold p-1 border-b-2 rounded-none bg-transparent border-gray-400 focus:border-blue-500 outline-none" value="${amount > 0 ? String(amount.toFixed(2)).replace('.',',') : ''}" placeholder="0,00" data-index="${index}" ${isDisabled ? 'disabled' : ''}>
+                                                 <input type="text" inputmode="decimal" class="individual-amount-component w-32 text-right font-semibold p-1 border-b-2 rounded-none bg-transparent border-gray-400 focus:border-blue-500 outline-none" value="${amount > 0 ? String(amount.toFixed(2)).replace('.',',') : ''}" placeholder="0,00" data-index="${index}" id="individual-amount-component-${p.id}-${index}" ${isDisabled ? 'disabled' : ''}>
                                                  <span class="ml-2 mr-2 font-semibold text-gray-400">${billData.currency}</span>
                                                  <div class="w-7 h-7 flex items-center justify-center">
                                                  ${index === p.individualAmounts.length - 1 ? `
