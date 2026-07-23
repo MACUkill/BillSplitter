@@ -192,3 +192,102 @@ export function aggregateGroupSummary(bills) {
 
   return { userGrossSpend, groupGrossSpend };
 }
+
+// ====================================================================
+// Faza 5 — LEDGER (kto komu ile) + minimalizacja przelewów.
+//
+// Wszystko w GROSZACH (int). Rozliczenia SĄ per-waluta — walut NIE mieszamy
+// (bez kursu netowanie PLN vs EUR byłoby zmyśleniem; kurs = osobny krok).
+// Dług z rachunku istnieje tylko gdy: płatnik POTWIERDZONY i kwota > 0.
+// Dłużnik = aktywny uczestnik (≠ not_applicable), ≠ płatnik, status ≠ 'paid'.
+// Kwota długu = zaokrąglony w górę udział (pt.total) — DOKŁADNIE to, co dłużnik
+// widzi na rachunku jako „Do zapłaty" / „Należność dla X" (zero rozjazdu).
+// ====================================================================
+
+// Długi z JEDNEGO rachunku: [{ from, to, amountG, currency, billId, billName }].
+export function computeBillDebts(bill) {
+  if (!bill || !bill.payerConfirmed || !bill.payerId) return [];
+  if (toGrosze(bill.totalAmount || 0) <= 0) return [];
+  const currency = bill.currency || 'PLN';
+  const billId = bill.id || null;
+  const billName = bill.billName || '';
+  const debts = [];
+  calculateAllForBill(bill).participantTotals.forEach((pt) => {
+    const p = pt.participant;
+    if (!p || p.id === bill.payerId) return;
+    if (p.status === 'paid' || p.status === 'not_applicable') return;
+    const amountG = toGrosze(pt.total);
+    if (amountG > 0) debts.push({ from: p.id, to: bill.payerId, amountG, currency, billId, billName });
+  });
+  return debts;
+}
+
+// Zwija długi przeciwnych kierunków w jednej walucie (A→B 30, B→A 10 ⇒ A→B 20).
+function netDirected(directed) {
+  const amt = new Map();
+  directed.forEach((e) => amt.set(e.from + '|' + e.to, (amt.get(e.from + '|' + e.to) || 0) + e.amountG));
+  const seen = new Set();
+  const net = [];
+  directed.forEach((e) => {
+    const a = e.from, b = e.to;
+    const k = a + '|' + b, rk = b + '|' + a;
+    if (seen.has(k)) return;
+    seen.add(k); seen.add(rk);
+    const diff = (amt.get(k) || 0) - (amt.get(rk) || 0);
+    if (diff > 0) net.push({ from: a, to: b, amountG: diff });
+    else if (diff < 0) net.push({ from: b, to: a, amountG: -diff });
+  });
+  return net;
+}
+
+// Ledger całej grupy z listy rachunków. Zwraca { [currency]: { directed, net } }:
+//   directed — surowe długi kierunkowe A→B z detalem rachunków (do widoku „z detalem"),
+//   net      — znetowane pary (kto komu ile, jeden kierunek na parę).
+export function buildLedger(bills) {
+  const byCur = {}; // currency -> Map("from|to" -> { from, to, amountG, contributions:[] })
+  (bills || []).forEach((bill) => {
+    computeBillDebts(bill).forEach((d) => {
+      const map = byCur[d.currency] || (byCur[d.currency] = new Map());
+      const key = d.from + '|' + d.to;
+      let e = map.get(key);
+      if (!e) { e = { from: d.from, to: d.to, amountG: 0, contributions: [] }; map.set(key, e); }
+      e.amountG += d.amountG;
+      e.contributions.push({ billId: d.billId, billName: d.billName, amountG: d.amountG });
+    });
+  });
+  const result = {};
+  for (const [cur, map] of Object.entries(byCur)) {
+    const directed = [...map.values()];
+    result[cur] = { directed, net: netDirected(directed) };
+  }
+  return result;
+}
+
+// Minimalizacja liczby przelewów (standardowy zachłanny „max dłużnik ↔ max wierzyciel").
+// Wejście: [{ from, to, amountG }] JEDNEJ waluty. Wynik: minimalny zestaw przelewów (≤ n-1).
+// Deterministyczny (sort malejąco po kwocie, remis po id) → stabilny i testowalny.
+export function simplifyDebts(debts) {
+  const balance = new Map();
+  (debts || []).forEach((d) => {
+    balance.set(d.from, (balance.get(d.from) || 0) - d.amountG);
+    balance.set(d.to, (balance.get(d.to) || 0) + d.amountG);
+  });
+  const creditors = [], debtors = [];
+  for (const [id, bal] of balance) {
+    if (bal > 0) creditors.push({ id, amt: bal });
+    else if (bal < 0) debtors.push({ id, amt: -bal });
+  }
+  const cmp = (x, y) => (y.amt - x.amt) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0);
+  creditors.sort(cmp); debtors.sort(cmp);
+  const transfers = [];
+  let i = 0, j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const d = debtors[i], c = creditors[j];
+    const t = Math.min(d.amt, c.amt);
+    if (t > 0) transfers.push({ from: d.id, to: c.id, amountG: t });
+    d.amt -= t; c.amt -= t;
+    if (d.amt === 0) i++;
+    if (c.amt === 0) j++;
+  }
+  return transfers;
+}
