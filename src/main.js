@@ -175,6 +175,41 @@
             });
         };
 
+        // --- Faza 4: „Moje pokoje" — lista dołączonych pokoi (localStorage, przypięta do urządzenia) ---
+        const ROOMS_KEY = 'billsplitter_rooms';
+        const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const getMyRooms = () => { try { return JSON.parse(localStorage.getItem(ROOMS_KEY)) || []; } catch { return []; } };
+        const saveMyRooms = (rooms) => { try { localStorage.setItem(ROOMS_KEY, JSON.stringify(rooms)); } catch {} };
+        const rememberRoom = (id, name) => {
+            if (!id) return;
+            const rooms = getMyRooms().filter(r => r.id !== id);
+            rooms.unshift({ id, name: name || 'Pokój', lastVisited: Date.now() });
+            saveMyRooms(rooms);
+        };
+        const forgetRoom = (id) => saveMyRooms(getMyRooms().filter(r => r.id !== id));
+
+        const renderMyRooms = () => {
+            const container = document.getElementById('my-rooms');
+            if (!container) return;
+            const rooms = getMyRooms().sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
+            if (rooms.length === 0) { container.innerHTML = ''; return; }
+            container.innerHTML = `
+                <h3 class="text-lg font-semibold text-gray-700 mb-3 text-left">Twoje pokoje</h3>
+                <div class="space-y-2">
+                    ${rooms.map(r => `
+                        <div class="flex items-center gap-2">
+                            <button class="enter-room-btn flex-grow flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 text-left" data-room-id="${r.id}">
+                                <span class="font-semibold text-gray-800">${escapeHtml(r.name)}</span>
+                                <i class="fas fa-arrow-right text-gray-400"></i>
+                            </button>
+                            <button class="forget-room-btn p-3 text-gray-400 hover:text-red-500" data-room-id="${r.id}" title="Usuń z listy (nie kasuje pokoju)"><i class="fas fa-times"></i></button>
+                        </div>
+                    `).join('')}
+                </div>
+                <div class="flex items-center my-6"><div class="flex-grow border-t border-gray-200"></div><span class="px-3 text-sm text-gray-400">lub stwórz nowy pokój</span><div class="flex-grow border-t border-gray-200"></div></div>
+            `;
+        };
+
         // --- Faza 4: kontekstowy tutorial „?" per ekran ---
         const HELP_CONTENT = {
             'start': {
@@ -247,6 +282,7 @@
             // Kontekstowy przycisk pomocy „?" — widoczny tylko na ekranach z treścią.
             const fab = document.getElementById('help-fab');
             if (fab) fab.classList.toggle('hidden', !HELP_CONTENT[screenName]);
+            if (screenName === 'start') renderMyRooms();
         };
 
         const handleGroupJoin = async (groupId) => {
@@ -258,11 +294,13 @@
             const groupDoc = await getDoc(groupDocRef);
             if (!groupDoc.exists()) {
                 showToast("Taka grupa nie istnieje!", true);
+                forgetRoom(groupId); // usuń martwy skrót z „Moich pokoi"
                 history.pushState(null, '', window.location.pathname);
                 showScreen('start');
                 return;
             }
             groupData = groupDoc.data();
+            rememberRoom(groupId, groupData.groupName); // zapamiętaj pokój lokalnie (łatwy powrót)
             const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
 
             if (myMember) {
@@ -1383,6 +1421,20 @@
         };
 
         const setupStartScreenListeners = () => {
+            // „Moje pokoje" — delegacja (kontener przerendrowuje innerHTML).
+            const roomsContainer = document.getElementById('my-rooms');
+            if (roomsContainer) roomsContainer.addEventListener('click', (e) => {
+                const enter = e.target.closest('.enter-room-btn');
+                if (enter) {
+                    const id = enter.dataset.roomId;
+                    history.pushState(null, '', `?group=${id}`);
+                    handleGroupJoin(id);
+                    return;
+                }
+                const forget = e.target.closest('.forget-room-btn');
+                if (forget) { forgetRoom(forget.dataset.roomId); renderMyRooms(); }
+            });
+
             document.getElementById('create-group-btn').addEventListener('click', async () => {
                 const groupName = document.getElementById('group-name').value.trim();
                 const memberNames = document.getElementById('member-names').value.trim()
