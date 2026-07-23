@@ -224,7 +224,7 @@
                 if (!m) return; // Skip if member data is missing for some reason
 
                 const button = document.createElement('button');
-                button.textContent = m.name;
+                button.innerHTML = `<span class="flex items-center justify-center">${avatarHtml(m.name, m.id)}<span>${m.name}</span></span>`;
                 button.className = "w-full p-3 rounded-lg transition";
                 if (m.claimedBy) {
                     button.className += " bg-gray-300 text-gray-500 cursor-pointer hover:bg-gray-400";
@@ -301,6 +301,20 @@
                             showToast('Zapisano numer konta.');
                         };
                     }
+
+                    const picker = document.getElementById('dashboard-color-picker');
+                    if (picker) {
+                        const current = colorForMember(myMember.id, myMember.name);
+                        picker.innerHTML = PROFILE_COLORS.map(c =>
+                            `<button class="profile-color-swatch w-6 h-6 rounded-full border-2 ${c === current ? 'border-gray-800 scale-110' : 'border-transparent'} transition" style="background-color:${c}" data-color="${c}" title="Ustaw kolor profilu"></button>`
+                        ).join('');
+                        picker.querySelectorAll('.profile-color-swatch').forEach(sw => {
+                            sw.onclick = async () => {
+                                await updateDoc(groupDocRef, { [`members.${myMember.id}.color`]: sw.dataset.color });
+                                showToast('Zmieniono kolor profilu.');
+                            };
+                        });
+                    }
                 }
                 // Numery kont mogły się zmienić — odśwież listę (linie należności ich używają).
                 renderBillsList();
@@ -374,6 +388,19 @@
             }
 
             return `<p class="text-sm text-gray-500"><i class="fas fa-check-circle mr-2"></i>Wszystko uregulowane</p>`;
+        };
+
+        // --- Faza 4: personalizacja profilu (kolor + awatar z inicjałem) ---
+        const PROFILE_COLORS = ['#ef4444','#f97316','#f59e0b','#eab308','#22c55e','#10b981','#06b6d4','#3b82f6','#6366f1','#8b5cf6','#d946ef','#ec4899'];
+        const hashStr = (s) => { let h = 0; for (let i = 0; i < s.length; i++) { h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0; } return Math.abs(h); };
+        const colorForMember = (memberId, name) => {
+            const explicit = ((groupData && groupData.members && groupData.members[memberId]) || {}).color;
+            if (explicit) return explicit;
+            return PROFILE_COLORS[hashStr(memberId || name || '?') % PROFILE_COLORS.length];
+        };
+        const avatarHtml = (name, memberId, extraClass = '') => {
+            const initial = ((name || '?').trim().charAt(0) || '?').toUpperCase();
+            return `<div class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-lg mr-3 flex-shrink-0 ${extraClass}" style="background-color:${colorForMember(memberId, name)}">${initial}</div>`;
         };
 
         // --- Faza 3: stan rachunku dla filtrów, linia z numerem konta, render z filtrem/ukrywaniem ---
@@ -790,7 +817,7 @@
                     <div class="p-4 rounded-lg bg-blue-50 border-2 border-blue-200" data-participant-id="${p.id}">
                         <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
                             <div class="flex items-center">
-                                <i class="fas fa-user-circle text-2xl text-blue-600 mr-3"></i>
+                                ${avatarHtml(p.name, p.id)}
                                 <div class="flex flex-col">
                                     <div class="flex items-center">
                                         <span class="text-xl font-semibold">${p.name}</span>
@@ -834,7 +861,7 @@
                     <div class="p-4 rounded-lg bg-gray-50 border border-gray-200">
                         <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
                             <div class="flex items-center">
-                                <i class="fas fa-user-circle text-2xl text-gray-400 mr-3"></i>
+                                ${avatarHtml(p.name, p.id)}
                                 <div class="flex flex-col">
                                     <div class="flex items-center">
                                         <span class="text-xl font-semibold">${p.name}</span>
@@ -1200,7 +1227,7 @@
                     <div class="p-4 rounded-lg ${isMe ? 'bg-blue-50 border-2 border-blue-200' : 'bg-gray-50 border border-gray-200'}">
                         <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
                             <div class="flex items-center">
-                                <i class="fas fa-user-circle text-2xl ${isMe ? 'text-blue-600' : 'text-gray-400'} mr-3"></i>
+                                ${avatarHtml(p.name, p.id)}
                                 <div class="flex flex-col">
                                     <div class="flex items-center">
                                         <span class="text-xl font-semibold">${p.name}</span>
@@ -1303,9 +1330,9 @@
                 const membersMap = {};
                 const memberOrder = []; // Array to store the order of members
 
-                memberNames.forEach(name => {
+                memberNames.forEach((name, index) => {
                     const id = generateId();
-                    membersMap[id] = { id, name, claimedBy: null };
+                    membersMap[id] = { id, name, claimedBy: null, color: PROFILE_COLORS[index % PROFILE_COLORS.length] };
                     memberOrder.push(id); // Add member ID to the order array
                 });
 
