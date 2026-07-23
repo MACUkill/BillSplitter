@@ -961,7 +961,7 @@
                 await updateDoc(billDocRef, updates);
             };
 
-            document.getElementById('delete-bill-btn-advanced').onclick = () => document.getElementById('delete-confirm-modal').classList.add('active');
+            document.getElementById('delete-bill-btn-advanced').onclick = () => deleteBillWithUndo();
 
             const myCard = document.getElementById('my-participant-card');
             if (myCard) {
@@ -1284,7 +1284,7 @@
                     await updateDoc(billDocRef, buildStatusUpdate(billData, pid, e.target.value, changedBy));
                 };
             });
-            document.getElementById('delete-bill-btn-simple').onclick = () => document.getElementById('delete-confirm-modal').classList.add('active');
+            document.getElementById('delete-bill-btn-simple').onclick = () => deleteBillWithUndo();
         };
         
         
@@ -1351,50 +1351,102 @@
             });
         };
 
+        // --- Faza 4: usuwanie rachunku z opcją „Cofnij" (undo) zamiast modala potwierdzenia ---
+        let pendingBillDeletion = null; // { groupId, billId, data, photos, size, finalizeTimer, toast }
+
+        // Domknięcie usunięcia PO oknie undo: dopiero teraz kasujemy zdjęcia ze Storage.
+        const finalizeBillDeletion = async (pending) => {
+            if (!pending) return;
+            clearTimeout(pending.finalizeTimer);
+            if (pending.toast) pending.toast.remove();
+            if (pendingBillDeletion === pending) pendingBillDeletion = null;
+            const photos = pending.photos || [];
+            if (photos.length === 0) return;
+            await Promise.all(photos.map(p => (p && p.url)
+                ? deleteObject(ref(storage, p.url)).catch(err => console.error("Błąd usuwania zdjęcia ze storage:", err))
+                : Promise.resolve()));
+            if (pending.size > 0) {
+                const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, pending.groupId);
+                await updateDoc(groupDocRef, { totalStorageUsed: increment(-pending.size) }).catch(err => console.error(err));
+            }
+        };
+
+        // Cofnięcie: odtwarzamy rachunek z ORYGINALNYM id (zdjęcia nietknięte, URL-e nadal ważne, storage bez zmian).
+        const undoBillDeletion = async (pending) => {
+            if (!pending) return;
+            clearTimeout(pending.finalizeTimer);
+            if (pendingBillDeletion === pending) pendingBillDeletion = null;
+            const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${pending.groupId}/bills`, pending.billId);
+            try {
+                await setDoc(billDocRef, pending.data);
+                showToast("Przywrócono rachunek.");
+            } catch (err) {
+                console.error("Błąd przywracania rachunku:", err);
+                showToast("Nie udało się przywrócić rachunku.", true);
+            }
+        };
+
+        const showUndoToast = (message, onUndo) => {
+            const toastId = 'toast-notification';
+            const existing = document.getElementById(toastId);
+            if (existing) existing.remove();
+            const toast = document.createElement('div');
+            toast.id = toastId;
+            toast.className = 'fixed bottom-5 right-5 p-4 rounded-lg shadow-lg text-white z-50 bg-gray-800 flex items-center gap-4';
+            const span = document.createElement('span');
+            span.textContent = message;
+            const btn = document.createElement('button');
+            btn.textContent = 'Cofnij';
+            btn.className = 'font-bold underline text-blue-300 hover:text-blue-200 whitespace-nowrap';
+            btn.onclick = () => { toast.remove(); onUndo(); };
+            toast.append(span, btn);
+            document.body.appendChild(toast);
+            return toast;
+        };
+
+        const deleteBillWithUndo = async () => {
+            if (!currentGroupId || !currentBillId || !billData) return;
+            const myGroupMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
+            // Tylko potwierdzony płatnik może usunąć (spójne z regułami).
+            if (!myGroupMember || !billData.payerId || billData.payerId !== myGroupMember.id || !billData.payerConfirmed) {
+                showToast("Tylko potwierdzony płatnik może usunąć rachunek.", true);
+                return;
+            }
+            // Jeśli inne usunięcie wciąż czeka na domknięcie — domknij je najpierw.
+            if (pendingBillDeletion) await finalizeBillDeletion(pendingBillDeletion);
+
+            const groupId = currentGroupId;
+            const billId = currentBillId;
+            const savedData = billData; // żywa referencja — zachowuje typy Firestore (np. Timestamp createdAt → kolejność listy).
+            const photos = (billData.photos || []).slice();
+            const size = photos.reduce((s, p) => s + (p && typeof p.size === 'number' ? p.size : 0), 0);
+
+            const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${groupId}/bills`, billId);
+            try {
+                if (unsubscribeBill) unsubscribeBill();
+                await deleteDoc(billDocRef);
+            } catch (error) {
+                console.error("Błąd podczas usuwania rachunku:", error);
+                showToast("Nie udało się usunąć rachunku.", true);
+                return;
+            }
+
+            const pending = { groupId, billId, data: savedData, photos, size, finalizeTimer: null, toast: null };
+            pending.finalizeTimer = setTimeout(() => finalizeBillDeletion(pending), 6000);
+            pending.toast = showUndoToast("Rachunek usunięty.", () => undoBillDeletion(pending));
+            pendingBillDeletion = pending;
+
+            navigateToGroup(groupId);
+        };
+
         const setupGlobalModalListeners = () => {
             document.getElementById('cancel-delete-bill').onclick = () => document.getElementById('delete-confirm-modal').classList.remove('active');
-            document.getElementById('confirm-delete-bill').onclick = async () => {
-                if (!currentGroupId || !currentBillId) return;
-
-                const myGroupMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
-                // FIX: This client-side check ensures only the confirmed payer can delete.
-                if (!myGroupMember || !billData.payerId || billData.payerId !== myGroupMember.id || !billData.payerConfirmed) {
-                    showToast("Tylko potwierdzony płatnik może usunąć rachunek.", true);
-                    return;
-                }
-
-                if (billData && billData.photos && billData.photos.length > 0) {
-                    const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
-                    let totalSizeToDelete = 0;
-
-                    const deletePromises = billData.photos.map(photo => {
-                        if (photo && photo.url) {
-                            totalSizeToDelete += (typeof photo.size === 'number' ? photo.size : 0);
-                            const photoRef = ref(storage, photo.url);
-                            return deleteObject(photoRef).catch(err => console.error("Błąd usuwania zdjęcia ze storage:", err));
-                        }
-                        return Promise.resolve();
-                    });
-                    
-                    await Promise.all(deletePromises);
-                    if (totalSizeToDelete > 0) {
-                        await updateDoc(groupDocRef, { totalStorageUsed: increment(-totalSizeToDelete) });
-                    }
-                }
-
-                const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId);
-                try {
-                    if(unsubscribeBill) unsubscribeBill();
-                    await deleteDoc(billDocRef);
-                    showToast("Rachunek został usunięty.");
-                    document.getElementById('delete-confirm-modal').classList.remove('active');
-                    navigateToGroup(currentGroupId);
-                } catch (error) {
-                    console.error("Błąd podczas usuwania rachunku:", error);
-                    showToast("Nie udało się usunąć rachunku.", true);
-                }
+            // Modal potwierdzenia zastąpiony flow „Cofnij"; gdyby był kiedyś pokazany, kieruje w to samo miejsce.
+            document.getElementById('confirm-delete-bill').onclick = () => {
+                document.getElementById('delete-confirm-modal').classList.remove('active');
+                deleteBillWithUndo();
             };
-            
+
             document.getElementById('cancel-takeover-name').onclick = () => {
                 document.getElementById('takeover-name-modal').classList.remove('active');
                 memberIdToTakeover = null;
