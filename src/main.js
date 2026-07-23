@@ -582,11 +582,25 @@
         const memberName = (id) => ((groupData && groupData.members && groupData.members[id]) || {}).name || 'Ktoś';
         const fmtMoney = (amountG, currency) => `${fromGrosze(amountG).toFixed(2).replace('.', ',')} ${currency}`;
 
-        const settleRowHtml = (name, id, rightHtml) =>
-            `<div class="flex items-center justify-between gap-2 p-2 bg-white rounded-lg border border-gray-200">
-                <span class="flex items-center min-w-0">${avatarHtml(name, id)}<span class="truncate font-medium">${escapeHtml(name)}</span></span>
-                <span class="flex items-center gap-2 flex-shrink-0">${rightHtml}</span>
+        const settleRowHtml = (name, id, rightHtml, detailHtml = '') =>
+            `<div class="p-2 bg-white rounded-lg border border-gray-200">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="flex items-center min-w-0">${avatarHtml(name, id)}<span class="truncate font-medium">${escapeHtml(name)}</span></span>
+                    <span class="flex items-center gap-2 flex-shrink-0">${rightHtml}</span>
+                </div>
+                ${detailHtml}
             </div>`;
+
+        // Rozkład długu netto na rachunki (do „z detalem"): wkłady w stronę from→to (+) i offset to→from (−).
+        const debtDetailHtml = (directed, from, to, cur) => {
+            const fwd = ((directed.find(d => d.from === from && d.to === to) || {}).contributions) || [];
+            const rev = ((directed.find(d => d.from === to && d.to === from) || {}).contributions) || [];
+            if (fwd.length === 0 && rev.length === 0) return '';
+            const line = (c, neg) =>
+                `<div class="flex justify-between gap-2 text-xs py-0.5"><span class="truncate text-gray-500">${escapeHtml(c.billName || 'Rachunek')}</span><span class="flex-shrink-0 ${neg ? 'text-green-600' : 'text-gray-500'}">${neg ? '−' : ''}${fmtMoney(c.amountG, cur)}</span></div>`;
+            return `<details class="mt-1.5"><summary class="text-xs text-blue-600 cursor-pointer select-none">szczegóły</summary>
+                <div class="mt-1 pl-2 border-l-2 border-gray-100">${fwd.map(c => line(c, false)).join('')}${rev.map(c => line(c, true)).join('')}</div></details>`;
+        };
 
         const renderSettlements = () => {
             const container = document.getElementById('settlements-list');
@@ -616,6 +630,8 @@
                 const mineOwe = transfers.filter(t => t.from === myId);
                 const mineGet = transfers.filter(t => t.to === myId);
                 const others = transfers.filter(t => t.from !== myId && t.to !== myId);
+                // Detal (które rachunki) tylko w trybie netto — „min" to zoptymalizowane przelewy bez mapowania 1:1 na rachunki.
+                const detailOf = (t) => settlementMode === 'net' ? debtDetailHtml(ledger[cur].directed, t.from, t.to, cur) : '';
 
                 html += `<div>`;
                 if (currencies.length > 1) html += `<p class="text-xs font-bold text-gray-400 uppercase mb-2">${cur}</p>`;
@@ -625,23 +641,26 @@
                     mineOwe.forEach(t => {
                         html += settleRowHtml(memberName(t.to), t.to,
                             `<span class="font-bold text-red-600">${fmtMoney(t.amountG, cur)}</span>
-                             <button class="settle-btn bg-green-600 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-green-700" data-to="${t.to}" data-amount-g="${t.amountG}" data-currency="${cur}">Ureguluj</button>`);
+                             <button class="settle-btn bg-green-600 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-green-700" data-to="${t.to}" data-amount-g="${t.amountG}" data-currency="${cur}">Ureguluj</button>`,
+                            detailOf(t));
                     });
                     html += `</div>`;
                 }
                 if (mineGet.length) {
                     html += `<p class="text-sm font-semibold text-green-600 mb-1">Dostajesz:</p><div class="space-y-1.5 mb-3">`;
                     mineGet.forEach(t => {
-                        html += settleRowHtml(memberName(t.from), t.from, `<span class="font-bold text-green-600">${fmtMoney(t.amountG, cur)}</span>`);
+                        html += settleRowHtml(memberName(t.from), t.from, `<span class="font-bold text-green-600">${fmtMoney(t.amountG, cur)}</span>`, detailOf(t));
                     });
                     html += `</div>`;
                 }
                 if (others.length) {
                     html += `<p class="text-sm font-semibold text-gray-500 mb-1">Pozostałe w grupie:</p><div class="space-y-1.5">`;
                     others.forEach(t => {
-                        html += `<div class="flex items-center justify-between gap-2 p-2 text-sm text-gray-600">
-                            <span class="flex items-center min-w-0"><span class="truncate">${escapeHtml(memberName(t.from))}</span><i class="fas fa-arrow-right mx-2 text-gray-400"></i><span class="truncate">${escapeHtml(memberName(t.to))}</span></span>
-                            <span class="font-semibold flex-shrink-0">${fmtMoney(t.amountG, cur)}</span>
+                        const rightHtml = `<span class="font-semibold text-gray-600">${fmtMoney(t.amountG, cur)}</span>`;
+                        const nameHtml = `<span class="flex items-center min-w-0 text-sm text-gray-600"><span class="truncate">${escapeHtml(memberName(t.from))}</span><i class="fas fa-arrow-right mx-2 text-gray-400"></i><span class="truncate">${escapeHtml(memberName(t.to))}</span></span>`;
+                        html += `<div class="p-2 bg-white rounded-lg border border-gray-200">
+                            <div class="flex items-center justify-between gap-2">${nameHtml}${rightHtml}</div>
+                            ${detailOf(t)}
                         </div>`;
                     });
                     html += `</div>`;
