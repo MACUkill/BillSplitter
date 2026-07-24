@@ -204,7 +204,10 @@ export function aggregateGroupSummary(bills) {
 // widzi na rachunku jako „Do zapłaty" / „Należność dla X" (zero rozjazdu).
 // ====================================================================
 
-// Długi z JEDNEGO rachunku: [{ from, to, amountG, currency, billId, billName }].
+// Długi (UDZIAŁY) z JEDNEGO rachunku: [{ from, to, amountG, currency, billId, billName }].
+// MODEL WPŁAT: rachunek mówi tylko o KONSUMPCJI (kto ile jest winien płatnikowi z tytułu udziału).
+// Rozliczenie (czy zapłacone) NIE jest już flagą na rachunku — robi to osobny rejestr wpłat,
+// który redukuje te długi w buildLedger. Dlatego NIE wykluczamy tu statusu „paid".
 export function computeBillDebts(bill) {
   if (!bill || !bill.payerConfirmed || !bill.payerId) return [];
   if (toGrosze(bill.totalAmount || 0) <= 0) return [];
@@ -215,7 +218,7 @@ export function computeBillDebts(bill) {
   calculateAllForBill(bill).participantTotals.forEach((pt) => {
     const p = pt.participant;
     if (!p || p.id === bill.payerId) return;
-    if (p.status === 'paid' || p.status === 'not_applicable') return;
+    if (p.status === 'not_applicable') return; // tylko „nie dotyczy" wypada z udziałów
     const amountG = toGrosze(pt.total);
     if (amountG > 0) debts.push({ from: p.id, to: bill.payerId, amountG, currency, billId, billName });
   });
@@ -240,21 +243,35 @@ function netDirected(directed) {
   return net;
 }
 
-// Ledger całej grupy z listy rachunków. Zwraca { [currency]: { directed, net } }:
-//   directed — surowe długi kierunkowe A→B z detalem rachunków (do widoku „z detalem"),
+// Ledger całej grupy: rachunki (udziały) MINUS wpłaty (rejestr spłat). Zwraca { [currency]: { directed, net } }:
+//   directed — krawędzie kierunkowe A→B z detalem (contributions: kind 'bill' | 'payment'),
 //   net      — znetowane pary (kto komu ile, jeden kierunek na parę).
-export function buildLedger(bills) {
+// WPŁATA from→to (from zapłacił to) redukuje dług from→to → dodajemy krawędź ODWROTNĄ to→from.
+export function buildLedger(bills, settlements) {
   const byCur = {}; // currency -> Map("from|to" -> { from, to, amountG, contributions:[] })
+  const addEdge = (cur, from, to, amountG, contribution) => {
+    if (!from || !to || amountG <= 0) return;
+    const map = byCur[cur] || (byCur[cur] = new Map());
+    const key = from + '|' + to;
+    let e = map.get(key);
+    if (!e) { e = { from, to, amountG: 0, contributions: [] }; map.set(key, e); }
+    e.amountG += amountG;
+    if (contribution) e.contributions.push(contribution);
+  };
+
   (bills || []).forEach((bill) => {
     computeBillDebts(bill).forEach((d) => {
-      const map = byCur[d.currency] || (byCur[d.currency] = new Map());
-      const key = d.from + '|' + d.to;
-      let e = map.get(key);
-      if (!e) { e = { from: d.from, to: d.to, amountG: 0, contributions: [] }; map.set(key, e); }
-      e.amountG += d.amountG;
-      e.contributions.push({ billId: d.billId, billName: d.billName, amountG: d.amountG });
+      addEdge(d.currency, d.from, d.to, d.amountG, { kind: 'bill', billId: d.billId, label: d.billName, amountG: d.amountG });
     });
   });
+  (settlements || []).forEach((s) => {
+    if (!s || !s.from || !s.to || s.from === s.to) return;
+    const cur = s.currency || 'PLN';
+    const amountG = toGrosze(s.amount || 0);
+    // wpłata from→to = krawędź odwrotna to→from (kredyt redukujący dług)
+    addEdge(cur, s.to, s.from, amountG, { kind: 'payment', settlementId: s.id || null, label: s.note || 'Wpłata', amountG });
+  });
+
   const result = {};
   for (const [cur, map] of Object.entries(byCur)) {
     const directed = [...map.values()];

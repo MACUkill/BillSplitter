@@ -55,11 +55,11 @@ describe('computeBillDebts — długi z jednego rachunku', () => {
     expect(computeBillDebts(b)).toEqual([]);
   });
 
-  it('dłużnik ze statusem paid → nie jest winien; paid ≠ not_applicable (nadal dzieli na 3)', () => {
-    // b zapłacił → wypada z długów, ale wciąż jest aktywny → 100/3 = 33,34; c winien 33,34
+  it('MODEL WPŁAT: status „paid" na rachunku NIE zeruje długu (spłata jest w rejestrze wpłat)', () => {
+    // b oznaczony „paid" wciąż ma udział — rozliczenie robi rejestr wpłat, nie flaga na rachunku
     const b = simple(100, 'PLN', 'a', true, [['a', 'unpaid'], ['b', 'paid'], ['c', 'unpaid']]);
     const debts = computeBillDebts(b).map(debtKey).sort();
-    expect(debts).toEqual(['c->a:3334']);
+    expect(debts).toEqual(['b->a:3334', 'c->a:3334']);
   });
 
   it('not_applicable wykluczony (i nie zmienia liczby aktywnych po zapłacie)', () => {
@@ -123,9 +123,58 @@ describe('buildLedger — agregacja i netowanie', () => {
     expect(directed).toHaveLength(1); // jedna para b→a
     expect(directed[0].amountG).toBe(5000); // 30 + 20
     expect(directed[0].contributions).toEqual([
-      { billId: 'r1', billName: 'Obiad', amountG: 3000 },
-      { billId: 'r2', billName: 'Kino', amountG: 2000 },
+      { kind: 'bill', billId: 'r1', label: 'Obiad', amountG: 3000 },
+      { kind: 'bill', billId: 'r2', label: 'Kino', amountG: 2000 },
     ]);
+  });
+});
+
+describe('buildLedger — MODEL WPŁAT (rejestr spłat redukuje długi)', () => {
+  const pay = (from, to, amount, currency = 'PLN') => ({ from, to, amount, currency });
+
+  it('wpłata redukuje dług (b winien a 50, wpłata b→a 20 ⇒ b→a 30)', () => {
+    const bills = [simple(100, 'PLN', 'a', true, [['a', 'unpaid'], ['b', 'unpaid']])];
+    const ledger = buildLedger(bills, [pay('b', 'a', 20)]);
+    expect(ledger.PLN.net).toEqual([{ from: 'b', to: 'a', amountG: 3000 }]);
+  });
+
+  it('pełna wpłata → dług znika', () => {
+    const bills = [simple(100, 'PLN', 'a', true, [['a', 'unpaid'], ['b', 'unpaid']])];
+    const ledger = buildLedger(bills, [pay('b', 'a', 50)]);
+    expect(ledger.PLN.net).toEqual([]);
+  });
+
+  it('nadpłata → dług odwraca się (b nadpłacił a o 20)', () => {
+    const bills = [simple(100, 'PLN', 'a', true, [['a', 'unpaid'], ['b', 'unpaid']])];
+    const ledger = buildLedger(bills, [pay('b', 'a', 70)]);
+    expect(ledger.PLN.net).toEqual([{ from: 'a', to: 'b', amountG: 2000 }]);
+  });
+
+  it('wpłaty osobno per waluta', () => {
+    const bills = [
+      simple(100, 'PLN', 'a', true, [['a', 'unpaid'], ['b', 'unpaid']]), // b→a 50 PLN
+      simple(100, 'EUR', 'a', true, [['a', 'unpaid'], ['b', 'unpaid']]), // b→a 50 EUR
+    ];
+    const ledger = buildLedger(bills, [pay('b', 'a', 50, 'PLN')]); // spłaca tylko PLN
+    expect(ledger.PLN.net).toEqual([]);
+    expect(ledger.EUR.net).toEqual([{ from: 'b', to: 'a', amountG: 5000 }]);
+  });
+
+  it('detal: wpłata jako kind „payment" (offset przeciwnej krawędzi)', () => {
+    const bills = [{ ...simple(100, 'PLN', 'a', true, [['a', 'unpaid'], ['b', 'unpaid']]), id: 'r1', billName: 'Obiad' }];
+    const ledger = buildLedger(bills, [pay('b', 'a', 20)]);
+    const dir = ledger.PLN.directed;
+    const billEdge = dir.find(e => e.from === 'b' && e.to === 'a');
+    const payEdge = dir.find(e => e.from === 'a' && e.to === 'b');
+    expect(billEdge.contributions).toEqual([{ kind: 'bill', billId: 'r1', label: 'Obiad', amountG: 5000 }]);
+    expect(payEdge.contributions[0].kind).toBe('payment');
+    expect(payEdge.contributions[0].amountG).toBe(2000);
+  });
+
+  it('wpłata bez pokrycia w rachunkach też liczy się do salda', () => {
+    const ledger = buildLedger([], [pay('b', 'a', 30)]);
+    // b zapłacił a 30 bez rachunku → a jest teraz winien b 30
+    expect(ledger.PLN.net).toEqual([{ from: 'a', to: 'b', amountG: 3000 }]);
   });
 });
 
@@ -191,7 +240,15 @@ describe('simplifyDebts — niezmienniki (losowe)', () => {
         const amount = 1 + Math.floor(rand() * 50000) / 100; // 0,01–500 zł
         bills.push(simple(amount, 'PLN', payer, true, statuses));
       }
-      const ledger = buildLedger(bills);
+      // losowe wpłaty (rejestr spłat) — mogą przekraczać dług (nadpłaty) i nie mieć pokrycia
+      const settlements = [];
+      const numPays = Math.floor(rand() * 4);
+      for (let k = 0; k < numPays; k++) {
+        const from = pick(people); let to = pick(people);
+        if (from === to) continue;
+        settlements.push({ from, to, amount: 1 + Math.floor(rand() * 30000) / 100, currency: 'PLN' });
+      }
+      const ledger = buildLedger(bills, settlements);
       const cur = ledger.PLN;
       if (!cur) continue;
 
