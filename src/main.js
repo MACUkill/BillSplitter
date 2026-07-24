@@ -161,6 +161,7 @@
             setupPhotoUploadListeners();
             setupGlobalModalListeners();
             setupPwaInstallButton();
+            registerServiceWorker();
 
             // Faza 5: wskaźnik offline (Firestore persistentLocalCache i tak kolejkuje zmiany).
             const updateOnlineStatus = () => {
@@ -1696,16 +1697,37 @@
         // ===== SETUP LISTENERS =====
         // ===================================================
 
+        // Faza 6.1: rejestracja service workera (offline + kryterium instalowalności).
+        // Tylko w PROD — w dev Vite HMR nie współpracuje z SW (cache modułów).
+        const registerServiceWorker = () => {
+            if (!('serviceWorker' in navigator)) return;
+            if (!import.meta.env.PROD) return;
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch((err) => {
+                    console.warn('[BillSplitter] Rejestracja service workera nieudana:', err);
+                });
+            });
+        };
+
         const setupPwaInstallButton = () => {
             const installButton = document.getElementById('install-pwa-btn');
+            const iosHint = document.getElementById('ios-install-hint');
+
+            // Czy apka już działa jako zainstalowana (standalone)? Wtedy nic nie pokazujemy.
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+                || window.navigator.standalone === true;
+            // iOS Safari nie odpala `beforeinstallprompt` — trzeba pokazać ręczną instrukcję.
+            const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+            if (isIos && !isStandalone && iosHint) iosHint.classList.remove('hidden');
 
             window.addEventListener('beforeinstallprompt', (e) => {
                 e.preventDefault();
                 deferredInstallPrompt = e;
-                installButton.classList.remove('hidden');
+                if (installButton) installButton.classList.remove('hidden');
             });
 
-            installButton.addEventListener('click', async () => {
+            if (installButton) installButton.addEventListener('click', async () => {
+                if (!deferredInstallPrompt) return;
                 installButton.classList.add('hidden');
                 deferredInstallPrompt.prompt();
                 const { outcome } = await deferredInstallPrompt.userChoice;
@@ -1714,7 +1736,7 @@
             });
 
             window.addEventListener('appinstalled', () => {
-                installButton.classList.add('hidden');
+                if (installButton) installButton.classList.add('hidden');
                 deferredInstallPrompt = null;
                 showToast('Aplikacja została zainstalowana!');
             });
