@@ -154,12 +154,10 @@
                         </div>
                     </div>
                      <div class="mt-4 md:mt-0 text-left md:text-right">
-                        <p class="font-semibold text-gray-700">Jesteś w grupie jako:</p>
-                        <p id="dashboard-user-name" class="text-lg text-blue-600 font-semibold cursor-pointer hover:underline" title="Kliknij, aby zmienić imię"></p>
-                        <button id="dashboard-payment-btn" class="mt-2 w-full md:w-64 text-sm p-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2" title="Twoje sposoby płatności – widoczne dla znajomych przy Twoich należnościach">
-                            <i class="fas fa-wallet text-gray-400"></i><span id="dashboard-payment-summary">Dodaj sposób płatności</span>
+                        <p class="font-semibold text-gray-700">Jesteś jako:</p>
+                        <button id="open-profile-btn" class="mt-1 inline-flex items-center gap-2 text-lg text-blue-600 font-semibold hover:underline">
+                            <span id="dashboard-user-name-display"></span><i class="fas fa-user-gear"></i><span class="text-sm">Profil</span>
                         </button>
-                        <div id="dashboard-color-picker" class="mt-2 flex items-center gap-1.5 flex-wrap md:justify-end" title="Twój kolor profilu"></div>
                     </div>
                 </div>
 
@@ -222,6 +220,38 @@
                     </div>
                 </div>
 
+            </div>
+        </div>
+
+        <div id="profile-screen" class="hidden">
+            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-lg">
+                <button id="back-to-dashboard-from-profile-btn" class="text-blue-600 hover:underline mb-4 flex items-center"><i class="fas fa-arrow-left mr-2"></i>Wróć do grupy</button>
+                <h2 class="text-3xl font-bold text-gray-800 mb-6">Twój profil</h2>
+
+                <div class="flex items-center gap-4 mb-6">
+                    <div id="profile-avatar-preview"></div>
+                    <div>
+                        <p class="text-sm text-gray-500">Imię (kliknij, aby zmienić)</p>
+                        <p id="dashboard-user-name" class="text-2xl font-semibold text-blue-600 cursor-pointer hover:underline" title="Kliknij, aby zmienić imię"></p>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <p class="font-semibold text-gray-700 mb-2">Kolor profilu</p>
+                    <div id="dashboard-color-picker" class="flex items-center gap-1.5 flex-wrap" title="Twój kolor profilu"></div>
+                </div>
+
+                <div class="mb-6">
+                    <p class="font-semibold text-gray-700 mb-2">Sposoby płatności</p>
+                    <button id="dashboard-payment-btn" class="w-full md:w-72 text-sm p-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2" title="Widoczne dla znajomych przy Twoich należnościach">
+                        <i class="fas fa-wallet text-gray-400"></i><span id="dashboard-payment-summary">Dodaj sposób płatności</span>
+                    </button>
+                </div>
+
+                <div class="border-t pt-6">
+                    <h3 class="text-xl font-semibold mb-3">Ile kto wydał w grupie</h3>
+                    <div id="profile-spending" class="space-y-2"></div>
+                </div>
             </div>
         </div>
 

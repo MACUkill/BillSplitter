@@ -290,7 +290,7 @@
         };
 
         const showScreen = (screenName) => {
-            ['loading', 'start', 'join', 'group-dashboard', 'bill', 'simple-bill'].forEach(s => {
+            ['loading', 'start', 'join', 'group-dashboard', 'bill', 'simple-bill', 'profile'].forEach(s => {
                 const screenEl = document.getElementById(`${s}-screen`);
                 if (screenEl) screenEl.classList.add('hidden');
             });
@@ -397,6 +397,8 @@
                 document.getElementById('dashboard-group-name').textContent = groupData.groupName;
                 const userNameEl = document.getElementById('dashboard-user-name');
                 userNameEl.textContent = myMember ? myMember.name : '...';
+                const nameDisplay = document.getElementById('dashboard-user-name-display');
+                if (nameDisplay) nameDisplay.textContent = myMember ? myMember.name : '...';
                 userNameEl.onclick = async () => {
                     if (!myMember) return;
                     await updateDoc(groupDocRef, {
@@ -792,6 +794,42 @@
                 await updateDoc(billDocRef, { [`participants.${id}`]: deleteField() });
                 showToast(`Usunięto: ${m.name}`);
             }
+        };
+
+        // --- Krok 5: ekran „Profil" — personalizacja (przeniesiona) + „ile kto wydał" ---
+        // onSelf = suma udziałów (co skonsumował); fronted = ile wyłożył jako płatnik. Per waluta, w groszach.
+        const computeSpending = (bills) => {
+            const res = {};
+            const ensure = (id) => res[id] || (res[id] = { onSelf: {}, fronted: {} });
+            (bills || []).forEach(b => {
+                const cur = b.currency || 'PLN';
+                if (b.payerId && b.payerConfirmed && toGrosze(b.totalAmount || 0) > 0) {
+                    const f = ensure(b.payerId).fronted; f[cur] = (f[cur] || 0) + toGrosze(b.totalAmount || 0);
+                }
+                calculateAllForBill(b).participantTotals.forEach(pt => {
+                    const g = toGrosze(pt.total); if (g <= 0) return;
+                    const s = ensure(pt.participant.id).onSelf; s[cur] = (s[cur] || 0) + g;
+                });
+            });
+            return res;
+        };
+        const renderProfile = () => {
+            if (!groupData) return;
+            const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
+            const av = document.getElementById('profile-avatar-preview');
+            if (av && myMember) av.innerHTML = avatarHtml(myMember.name, myMember.id);
+            const bills = latestBills.map(({ id, data }) => ({ ...data, id }));
+            const sp = computeSpending(bills);
+            const order = groupData.memberOrder || Object.keys(groupData.members || {});
+            const fmtMap = (m) => Object.keys(m).length ? Object.entries(m).map(([c, g]) => fmtMoney(g, c)).join(', ') : '—';
+            document.getElementById('profile-spending').innerHTML = order.map(id => {
+                const mm = groupData.members[id]; if (!mm) return '';
+                const s = sp[id] || { onSelf: {}, fronted: {} };
+                return `<div class="flex items-center justify-between gap-2 p-2 bg-gray-50 rounded-lg">
+                    <span class="flex items-center min-w-0">${avatarHtml(mm.name, id)}<span class="truncate font-medium">${escapeHtml(mm.name)}</span></span>
+                    <span class="text-sm text-right"><span class="block text-gray-700">na siebie: <b>${fmtMap(s.onSelf)}</b></span><span class="block text-gray-400 text-xs">wyłożył/a: ${fmtMap(s.fronted)}</span></span>
+                </div>`;
+            }).join('');
         };
 
         // Model wpłat: rachunki nie mają stanu „opłacone" (settlement w Rozliczeniach).
@@ -1886,6 +1924,12 @@
                 if (!cb) return;
                 await toggleBillMember(cb.dataset.id, cb.checked);
             });
+
+            // Ekran „Profil"
+            const openProfileBtn = document.getElementById('open-profile-btn');
+            if (openProfileBtn) openProfileBtn.onclick = () => { renderProfile(); showScreen('profile'); };
+            const backProfileBtn = document.getElementById('back-to-dashboard-from-profile-btn');
+            if (backProfileBtn) backProfileBtn.onclick = () => showScreen('group-dashboard');
             // kopiuj-kwotę bierze aktualną wartość z pola
             document.getElementById('settle-amount-input').oninput = (e) => {
                 const v = parseLocalFloat(e.target.value);
