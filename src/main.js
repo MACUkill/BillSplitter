@@ -2,7 +2,7 @@
         import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
-        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
+        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
         import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, connectStorageEmulator } from "firebase/storage";
 
         const firebaseConfig = {
@@ -749,6 +749,51 @@
             document.getElementById('settle-modal').classList.add('active');
         };
 
+        // --- Krok 4: edycja członków rachunku (dodaj/usuń uczestnika) ---
+        const renderBillMembersList = () => {
+            const list = document.getElementById('bill-members-list');
+            if (!list || !billData || !groupData) return;
+            const order = groupData.memberOrder || Object.keys(groupData.members || {});
+            const participants = billData.participants || {};
+            list.innerHTML = order.map(id => {
+                const m = groupData.members[id];
+                if (!m) return '';
+                const p = participants[id];
+                const inBill = p && p.status !== 'not_applicable';
+                const isPayer = billData.payerId === id;
+                return `<label class="flex items-center gap-3 p-2 rounded-lg ${isPayer ? 'bg-gray-100' : 'hover:bg-gray-50 cursor-pointer'}">
+                    <input type="checkbox" class="bill-member-cb w-4 h-4" data-id="${id}" ${inBill ? 'checked' : ''} ${isPayer ? 'disabled' : ''}>
+                    ${avatarHtml(m.name, id)}
+                    <span class="flex-grow font-medium">${escapeHtml(m.name)}${isPayer ? ' <span class="text-xs text-gray-400">(płatnik)</span>' : ''}</span>
+                </label>`;
+            }).join('');
+        };
+        const openBillMembersModal = () => {
+            if (!billData || !groupData) return;
+            renderBillMembersList();
+            document.getElementById('bill-members-modal').classList.add('active');
+        };
+        const toggleBillMember = async (id, include) => {
+            if (!currentBillId) return;
+            const m = (groupData.members || {})[id];
+            if (!m) return;
+            const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId);
+            if (include) {
+                const activeStatus = billData.type === 'advanced' ? 'incomplete' : 'unpaid';
+                // dotted updates: tworzą/aktualizują wpis bez kasowania np. individualAmount
+                await updateDoc(billDocRef, {
+                    [`participants.${id}.id`]: id,
+                    [`participants.${id}.name`]: m.name,
+                    [`participants.${id}.status`]: activeStatus,
+                });
+                showToast(`Dodano: ${m.name}`);
+            } else {
+                // czyste usunięcie z rachunku (płatnika nie da się odznaczyć — checkbox disabled)
+                await updateDoc(billDocRef, { [`participants.${id}`]: deleteField() });
+                showToast(`Usunięto: ${m.name}`);
+            }
+        };
+
         // Model wpłat: rachunki nie mają stanu „opłacone" (settlement w Rozliczeniach).
         // Zostają filtry Wszystkie / Ukryte (not_applicable lub ręcznie ukryte).
         const getBillUserState = (bill, myMember) => {
@@ -1060,7 +1105,7 @@
                 // Zostaje sam udział (linia ŁĄCZNIE niżej). Płatnikowi pokazujemy tylko info że wyłożył całość.
                 let paymentInfo = '';
                 if (payer && isPayerConfirmed && isPayer) {
-                    paymentInfo = `<p class="text-sm text-gray-500"><i class="fas fa-wallet mr-2"></i>Wyłożył/a całość: ${calculations.controlSum.toFixed(2)} ${billData.currency}</p>`;
+                    paymentInfo = `<p class="text-sm text-gray-500"><i class="fas fa-wallet mr-2"></i>Wyłożył/a całość: ${Number(billData.totalAmount || 0).toFixed(2)} ${billData.currency}</p>`;
                 }
 
                 const statusDisplayHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'advanced', isCurrentUserThePayer);
@@ -1494,7 +1539,7 @@
                 // Model wpłat: rozliczenie (należność) jest w „Rozliczeniach", nie na rachunku.
                 let paymentInfo = '';
                 if (payer && isPayerConfirmed && isPayer) {
-                    paymentInfo = `<p class="text-sm text-gray-500"><i class="fas fa-wallet mr-2"></i>Wyłożył/a całość: ${simpleCalc.controlSum.toFixed(2)} ${billData.currency}</p>`;
+                    paymentInfo = `<p class="text-sm text-gray-500"><i class="fas fa-wallet mr-2"></i>Wyłożył/a całość: ${Number(billData.totalAmount || 0).toFixed(2)} ${billData.currency}</p>`;
                 }
 
                 const statusHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'simple');
@@ -1827,6 +1872,20 @@
             const settleModal = document.getElementById('settle-modal');
             document.getElementById('close-settle-modal').onclick = () => settleModal.classList.remove('active');
             settleModal.onclick = (e) => { if (e.target === settleModal) settleModal.classList.remove('active'); };
+
+            // Edycja członków rachunku
+            const bmBtnA = document.getElementById('edit-members-btn-advanced');
+            const bmBtnS = document.getElementById('edit-members-btn-simple');
+            if (bmBtnA) bmBtnA.onclick = openBillMembersModal;
+            if (bmBtnS) bmBtnS.onclick = openBillMembersModal;
+            const bmModal = document.getElementById('bill-members-modal');
+            document.getElementById('close-bill-members-modal').onclick = () => bmModal.classList.remove('active');
+            bmModal.onclick = (e) => { if (e.target === bmModal) bmModal.classList.remove('active'); };
+            document.getElementById('bill-members-list').addEventListener('change', async (e) => {
+                const cb = e.target.closest('.bill-member-cb');
+                if (!cb) return;
+                await toggleBillMember(cb.dataset.id, cb.checked);
+            });
             // kopiuj-kwotę bierze aktualną wartość z pola
             document.getElementById('settle-amount-input').oninput = (e) => {
                 const v = parseLocalFloat(e.target.value);
