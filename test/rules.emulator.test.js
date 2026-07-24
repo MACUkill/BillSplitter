@@ -83,3 +83,27 @@ describe('reguły Firestore — security pass Fazy 2', () => {
     await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), `${g('g1')}/bills/b1`)));
   });
 });
+
+describe('reguły Firestore — rejestr wpłat (model wpłat)', () => {
+  const s = (id) => `${g('g1')}/settlements/${id}`;
+
+  it('zalogowany może dodać i odczytać wpłatę', async () => {
+    const db = env.authenticatedContext('user-a').firestore();
+    await assertSucceeds(setDoc(doc(db, s('s1')), { from: 'm1', to: 'm2', amount: 20, currency: 'PLN', createdBy: 'user-a' }));
+    await assertSucceeds(getDoc(doc(db, s('s1'))));
+  });
+
+  it('niezalogowany nie odczyta wpłat', async () => {
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), s('s1'))));
+  });
+
+  it('wpłaty nie można edytować', async () => {
+    const db = env.authenticatedContext('user-a').firestore();
+    await assertFails(updateDoc(doc(db, s('s1')), { amount: 999 }));
+  });
+
+  it('usunąć wpłatę może TYLKO twórca', async () => {
+    await assertFails(deleteDoc(doc(env.authenticatedContext('user-b').firestore(), s('s1'))));
+    await assertSucceeds(deleteDoc(doc(env.authenticatedContext('user-a').firestore(), s('s1'))));
+  });
+});

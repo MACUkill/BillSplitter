@@ -1,5 +1,5 @@
         // Importy Firebase (npm) + moduł obliczeń
-        import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze } from './calc.js';
+        import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
@@ -41,9 +41,11 @@
         let exchangeRates = null;
         let unsubscribeGroup = null;
         let unsubscribeBill = null;
+        let unsubscribeSettlements = null;
         let isAuthReady = false;
         let currentScreenName = null;
         let settlementMode = 'net'; // 'net' = kto komu ile | 'min' = najmniej przelewów
+        let settleContext = null; // { to, currency } — kontekst modala „Ureguluj"
         let paymentEditMethods = [];
         let paymentEditMemberId = null;
         let newBillState = { name: '', type: null, participantIds: [] };
@@ -107,8 +109,10 @@
         const handleUrlChange = () => {
             if (unsubscribeGroup) unsubscribeGroup();
             if (unsubscribeBill) unsubscribeBill();
+            if (unsubscribeSettlements) unsubscribeSettlements();
             unsubscribeGroup = null;
             unsubscribeBill = null;
+            unsubscribeSettlements = null;
 
             const urlParams = new URLSearchParams(window.location.search);
             const groupId = urlParams.get('group');
@@ -375,11 +379,13 @@
         
         // --- Faza 3: filtry i ukrywanie rachunków ---
         let latestBills = [];
+        let latestSettlements = []; // rejestr wpłat (model wpłat)
         let currentBillFilter = 'all';
 
         const renderGroupDashboard = () => {
             if (unsubscribeGroup) unsubscribeGroup();
-            
+            if (unsubscribeSettlements) unsubscribeSettlements();
+
             const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
             
             onSnapshot(groupDocRef, (docSnap) => {
@@ -440,6 +446,12 @@
             unsubscribeGroup = onSnapshot(billsQuery, (snapshot) => {
                 latestBills = snapshot.docs.map(d => ({ id: d.id, data: d.data() }));
                 renderBillsList();
+                renderSettlements();
+            });
+
+            const settlementsQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`), orderBy('createdAt', 'desc'));
+            unsubscribeSettlements = onSnapshot(settlementsQuery, (snapshot) => {
+                latestSettlements = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 renderSettlements();
             });
 
@@ -623,7 +635,7 @@
             });
 
             const bills = latestBills.map(({ id, data }) => ({ ...data, id }));
-            const ledger = buildLedger(bills);
+            const ledger = buildLedger(bills, latestSettlements);
             const currencies = Object.keys(ledger).sort((a, b) => {
                 const ia = CURRENCY_ORDER.indexOf(a), ib = CURRENCY_ORDER.indexOf(b);
                 return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || (a < b ? -1 : 1);
@@ -677,13 +689,30 @@
                 html += `</div>`;
             });
 
-            container.innerHTML = html || nothing;
+            // Historia wpłat (transparentność + undo własnej pomyłki)
+            let historyHtml = '';
+            if (latestSettlements.length) {
+                historyHtml = `<details class="mt-3"><summary class="text-sm text-blue-600 cursor-pointer select-none">Historia wpłat (${latestSettlements.length})</summary><div class="mt-2 space-y-1">`
+                    + latestSettlements.map(s => {
+                        const canDelete = s.createdBy === currentUser.uid;
+                        const when = (s.createdAt && s.createdAt.toDate) ? s.createdAt.toDate().toLocaleDateString('pl-PL') : '';
+                        return `<div class="flex items-center justify-between gap-2 text-sm p-2 bg-gray-50 rounded">
+                            <span class="min-w-0 truncate"><b>${escapeHtml(memberName(s.from))}</b> → ${escapeHtml(memberName(s.to))} · ${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}${when ? ` · <span class="text-gray-400">${when}</span>` : ''}</span>
+                            ${canDelete ? `<button class="settle-delete-btn text-gray-400 hover:text-red-500 flex-shrink-0" data-id="${s.id}" title="Usuń wpłatę"><i class="fas fa-trash"></i></button>` : ''}
+                        </div>`;
+                    }).join('')
+                    + `</div></details>`;
+            }
+            container.innerHTML = (html || nothing) + historyHtml;
         };
 
         const openSettleModal = (creditorId, amountG, currency) => {
+            settleContext = { to: creditorId, currency };
             document.getElementById('settle-name').textContent = memberName(creditorId);
             const amountStr = fromGrosze(Number(amountG) || 0).toFixed(2);
-            document.getElementById('settle-amount').textContent = `${amountStr.replace('.', ',')} ${currency}`;
+            const input = document.getElementById('settle-amount-input');
+            input.value = amountStr.replace('.', ',');
+            document.getElementById('settle-currency').textContent = currency;
             document.getElementById('settle-copy-amount').dataset.account = amountStr;
             const methods = getPaymentMethods((groupData && groupData.members && groupData.members[creditorId]) || null);
             document.getElementById('settle-methods').innerHTML = methods.length === 0
@@ -1827,14 +1856,41 @@
             document.querySelectorAll('.settle-mode-btn').forEach(btn => {
                 btn.onclick = () => { settlementMode = btn.dataset.mode; renderSettlements(); };
             });
-            document.getElementById('settlements-list').addEventListener('click', (e) => {
+            document.getElementById('settlements-list').addEventListener('click', async (e) => {
                 const b = e.target.closest('.settle-btn');
-                if (!b) return;
-                openSettleModal(b.dataset.to, Number(b.dataset.amountG), b.dataset.currency);
+                if (b) { openSettleModal(b.dataset.to, Number(b.dataset.amountG), b.dataset.currency); return; }
+                const del = e.target.closest('.settle-delete-btn');
+                if (del) {
+                    await deleteDoc(doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, del.dataset.id));
+                    showToast('Usunięto wpłatę.');
+                }
             });
             const settleModal = document.getElementById('settle-modal');
             document.getElementById('close-settle-modal').onclick = () => settleModal.classList.remove('active');
             settleModal.onclick = (e) => { if (e.target === settleModal) settleModal.classList.remove('active'); };
+            // kopiuj-kwotę bierze aktualną wartość z pola
+            document.getElementById('settle-amount-input').oninput = (e) => {
+                const v = parseLocalFloat(e.target.value);
+                document.getElementById('settle-copy-amount').dataset.account = (v > 0 ? v : 0).toFixed(2);
+            };
+            // zapis wpłaty do rejestru
+            document.getElementById('settle-record-btn').onclick = async () => {
+                if (!settleContext) return;
+                const amount = parseLocalFloat(document.getElementById('settle-amount-input').value);
+                if (!(amount > 0)) { showToast('Podaj kwotę wpłaty.', true); return; }
+                const myMember = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === currentUser.uid);
+                if (!myMember) { showToast('Najpierw dołącz do grupy.', true); return; }
+                await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`), {
+                    from: myMember.id,
+                    to: settleContext.to,
+                    amount,
+                    currency: settleContext.currency || 'PLN',
+                    createdAt: serverTimestamp(),
+                    createdBy: currentUser.uid,
+                });
+                settleModal.classList.remove('active');
+                showToast('Zapisano wpłatę.');
+            };
 
             document.getElementById('cancel-delete-bill').onclick = () => document.getElementById('delete-confirm-modal').classList.remove('active');
             // Modal potwierdzenia zastąpiony flow „Cofnij"; gdyby był kiedyś pokazany, kieruje w to samo miejsce.
