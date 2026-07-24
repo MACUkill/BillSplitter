@@ -97,9 +97,11 @@ describe('reguły Firestore — rejestr wpłat (model wpłat)', () => {
     await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), s('s1'))));
   });
 
-  it('wpłaty nie można edytować', async () => {
-    const db = env.authenticatedContext('user-a').firestore();
+  it('wpłatę można POTWIERDZIĆ (pola confirmed), ale nie zmienić kwoty/stron', async () => {
+    const db = env.authenticatedContext('user-b').firestore();
+    await assertSucceeds(updateDoc(doc(db, s('s1')), { confirmed: true, confirmedBy: 'user-b' }));
     await assertFails(updateDoc(doc(db, s('s1')), { amount: 999 }));
+    await assertFails(updateDoc(doc(db, s('s1')), { to: 'hacker' }));
   });
 
   it('usunąć wpłatę może TYLKO twórca', async () => {

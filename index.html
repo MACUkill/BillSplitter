@@ -402,19 +402,21 @@
                 <button id="close-settle-modal" class="text-gray-400 hover:text-gray-700 text-3xl leading-none" title="Zamknij">&times;</button>
             </div>
             <div class="p-5 overflow-y-auto">
-                <p class="text-gray-700 mb-2">Wpłata do <b id="settle-name">…</b>:</p>
+                <p class="text-gray-700 mb-2"><span id="settle-name-label">Wpłata do</span> <b id="settle-name">…</b>:</p>
                 <div class="flex items-center gap-2 mb-1">
                     <input id="settle-amount-input" type="text" inputmode="decimal" class="w-32 text-2xl font-bold text-gray-900 p-1 border-b-2 border-gray-300 focus:border-blue-500 outline-none">
                     <span id="settle-currency" class="text-lg font-semibold text-gray-500">PLN</span>
                     <button id="settle-copy-amount" class="copy-account-btn text-sm text-blue-600 hover:underline ml-auto" title="Kopiuj kwotę"><i class="fas fa-copy mr-1"></i>kopiuj</button>
                 </div>
                 <p class="text-xs text-gray-400 mb-4">Możesz wpisać część kwoty (spłata częściowa).</p>
-                <p class="text-sm font-semibold text-gray-600 mb-2">Sposoby płatności odbiorcy:</p>
-                <div id="settle-methods" class="space-y-2"></div>
+                <div id="settle-methods-wrap">
+                    <p class="text-sm font-semibold text-gray-600 mb-2">Sposoby płatności odbiorcy:</p>
+                    <div id="settle-methods" class="space-y-2"></div>
+                </div>
             </div>
             <div class="p-5 border-t">
                 <button id="settle-record-btn" class="w-full bg-green-600 text-white font-bold py-2.5 rounded-lg hover:bg-green-700"><i class="fas fa-check mr-2"></i>Zapisz wpłatę</button>
-                <p class="text-xs text-gray-400 mt-2 text-center">Zapisuje, że przelałeś tę kwotę — zaktualizuje salda.</p>
+                <p id="settle-record-note" class="text-xs text-gray-400 mt-2 text-center">Zapisuje, że przelałeś tę kwotę — odbiorca potwierdzi.</p>
             </div>
         </div>
     </div>

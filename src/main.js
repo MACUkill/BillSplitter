@@ -619,8 +619,12 @@
             const fwd = ((directed.find(d => d.from === from && d.to === to) || {}).contributions) || [];
             const rev = ((directed.find(d => d.from === to && d.to === from) || {}).contributions) || [];
             if (fwd.length === 0 && rev.length === 0) return '';
-            const line = (c, neg) =>
-                `<div class="flex justify-between gap-2 text-xs py-0.5"><span class="truncate text-gray-500">${escapeHtml(c.billName || 'Rachunek')}</span><span class="flex-shrink-0 ${neg ? 'text-green-600' : 'text-gray-500'}">${neg ? '−' : ''}${fmtMoney(c.amountG, cur)}</span></div>`;
+            const line = (c, neg) => {
+                const isPay = c.kind === 'payment';
+                const label = c.label || (isPay ? 'Wpłata' : 'Rachunek');
+                const icon = isPay ? '<i class="fas fa-hand-holding-usd mr-1 text-green-600"></i>' : '';
+                return `<div class="flex justify-between gap-2 text-xs py-0.5"><span class="truncate text-gray-500">${icon}${escapeHtml(label)}</span><span class="flex-shrink-0 ${neg ? 'text-green-600' : 'text-gray-500'}">${neg ? '−' : ''}${fmtMoney(c.amountG, cur)}</span></div>`;
+            };
             return `<details class="mt-1.5"><summary class="text-xs text-blue-600 cursor-pointer select-none">szczegóły</summary>
                 <div class="mt-1 pl-2 border-l-2 border-gray-100">${fwd.map(c => line(c, false)).join('')}${rev.map(c => line(c, true)).join('')}</div></details>`;
         };
@@ -647,6 +651,9 @@
             if (currencies.length === 0) { container.innerHTML = nothing; return; }
 
             let html = '';
+            if (settlementMode === 'min') {
+                html += `<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3"><i class="fas fa-info-circle mr-1"></i>Plan „najmniej przelewów" może się zmienić, gdy dojdą nowe rachunki. Do bieżących spłat pewniej jest w trybie „Kto komu ile".</p>`;
+            }
             currencies.forEach(cur => {
                 const transfers = settlementMode === 'min' ? simplifyDebts(ledger[cur].directed) : ledger[cur].net;
                 if (transfers.length === 0) return;
@@ -672,7 +679,10 @@
                 if (mineGet.length) {
                     html += `<p class="text-sm font-semibold text-green-600 mb-1">Dostajesz:</p><div class="space-y-1.5 mb-3">`;
                     mineGet.forEach(t => {
-                        html += settleRowHtml(memberName(t.from), t.from, `<span class="font-bold text-green-600">${fmtMoney(t.amountG, cur)}</span>`, detailOf(t));
+                        html += settleRowHtml(memberName(t.from), t.from,
+                            `<span class="font-bold text-green-600">${fmtMoney(t.amountG, cur)}</span>
+                             <button class="receive-btn bg-blue-600 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-blue-700" data-from="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}">Otrzymałem</button>`,
+                            detailOf(t));
                     });
                     html += `</div>`;
                 }
@@ -697,10 +707,17 @@
                 historyHtml = `<details class="mt-3"><summary class="text-sm text-blue-600 cursor-pointer select-none">Historia wpłat (${latestSettlements.length})</summary><div class="mt-2 space-y-1">`
                     + latestSettlements.map(s => {
                         const canDelete = s.createdBy === currentUser.uid;
+                        const canConfirm = !s.confirmed && s.to === myId;
                         const when = (s.createdAt && s.createdAt.toDate) ? s.createdAt.toDate().toLocaleDateString('pl-PL') : '';
+                        const badge = s.confirmed
+                            ? `<span class="text-xs text-green-600 whitespace-nowrap"><i class="fas fa-check-circle mr-0.5"></i>potwierdzona</span>`
+                            : `<span class="text-xs text-amber-600 whitespace-nowrap">niepotwierdzona</span>`;
                         return `<div class="flex items-center justify-between gap-2 text-sm p-2 bg-gray-50 rounded">
-                            <span class="min-w-0 truncate"><b>${escapeHtml(memberName(s.from))}</b> → ${escapeHtml(memberName(s.to))} · ${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}${when ? ` · <span class="text-gray-400">${when}</span>` : ''}</span>
-                            ${canDelete ? `<button class="settle-delete-btn text-gray-400 hover:text-red-500 flex-shrink-0" data-id="${s.id}" title="Usuń wpłatę"><i class="fas fa-trash"></i></button>` : ''}
+                            <span class="min-w-0 truncate"><b>${escapeHtml(memberName(s.from))}</b> → ${escapeHtml(memberName(s.to))} · ${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}${when ? ` · <span class="text-gray-400">${when}</span>` : ''} · ${badge}</span>
+                            <span class="flex items-center gap-2 flex-shrink-0">
+                                ${canConfirm ? `<button class="confirm-settle-btn text-blue-600 hover:underline text-xs" data-id="${s.id}">Potwierdź</button>` : ''}
+                                ${canDelete ? `<button class="settle-delete-btn text-gray-400 hover:text-red-500" data-id="${s.id}" title="Usuń wpłatę"><i class="fas fa-trash"></i></button>` : ''}
+                            </span>
                         </div>`;
                     }).join('')
                     + `</div></details>`;
@@ -708,26 +725,41 @@
             container.innerHTML = (html || nothing) + historyHtml;
         };
 
-        const openSettleModal = (creditorId, amountG, currency) => {
-            settleContext = { to: creditorId, currency };
-            document.getElementById('settle-name').textContent = memberName(creditorId);
+        // mode: 'send' = ja płacę (Ureguluj, do potwierdzenia) | 'receive' = ja otrzymałem (od razu potwierdzone)
+        const openSettleModal = (otherId, amountG, currency, mode = 'send') => {
+            settleContext = { mode, other: otherId, currency };
             const amountStr = fromGrosze(Number(amountG) || 0).toFixed(2);
             const input = document.getElementById('settle-amount-input');
             input.value = amountStr.replace('.', ',');
             document.getElementById('settle-currency').textContent = currency;
             document.getElementById('settle-copy-amount').dataset.account = amountStr;
-            const methods = getPaymentMethods((groupData && groupData.members && groupData.members[creditorId]) || null);
-            document.getElementById('settle-methods').innerHTML = methods.length === 0
-                ? `<p class="text-sm text-gray-400 italic">Odbiorca nie zapisał metod płatności.</p>`
-                : methods.map(m => `
-                    <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg">
-                        <i class="${paymentIconClass(m.type)} text-gray-400 w-4 text-center"></i>
-                        <div class="flex-grow min-w-0">
-                            <p class="text-xs text-gray-500">${escapeHtml(paymentLabel(m))}</p>
-                            <p class="text-sm break-all">${escapeHtml(m.value)}</p>
-                        </div>
-                        <button class="copy-account-btn text-blue-600 hover:underline text-sm flex-shrink-0" data-account="${escapeHtml(m.value)}">kopiuj</button>
-                    </div>`).join('');
+            document.getElementById('settle-name').textContent = memberName(otherId);
+            document.getElementById('settle-name-label').textContent = mode === 'receive' ? 'Otrzymano od' : 'Wpłata do';
+            document.getElementById('settle-record-btn').innerHTML = mode === 'receive'
+                ? '<i class="fas fa-check mr-2"></i>Zapisz otrzymaną wpłatę'
+                : '<i class="fas fa-check mr-2"></i>Zapisz wpłatę';
+            document.getElementById('settle-record-note').textContent = mode === 'receive'
+                ? 'Potwierdzasz, że otrzymałeś tę kwotę.'
+                : 'Zapisuje, że przelałeś tę kwotę — odbiorca potwierdzi.';
+            // Metody płatności pokazujemy tylko gdy JA płacę (send).
+            const methodsWrap = document.getElementById('settle-methods-wrap');
+            if (mode === 'receive') {
+                methodsWrap.classList.add('hidden');
+            } else {
+                methodsWrap.classList.remove('hidden');
+                const methods = getPaymentMethods((groupData && groupData.members && groupData.members[otherId]) || null);
+                document.getElementById('settle-methods').innerHTML = methods.length === 0
+                    ? `<p class="text-sm text-gray-400 italic">Odbiorca nie zapisał metod płatności.</p>`
+                    : methods.map(m => `
+                        <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg">
+                            <i class="${paymentIconClass(m.type)} text-gray-400 w-4 text-center"></i>
+                            <div class="flex-grow min-w-0">
+                                <p class="text-xs text-gray-500">${escapeHtml(paymentLabel(m))}</p>
+                                <p class="text-sm break-all">${escapeHtml(m.value)}</p>
+                            </div>
+                            <button class="copy-account-btn text-blue-600 hover:underline text-sm flex-shrink-0" data-account="${escapeHtml(m.value)}">kopiuj</button>
+                        </div>`).join('');
+            }
             document.getElementById('settle-modal').classList.add('active');
         };
 
@@ -1859,11 +1891,36 @@
                 btn.onclick = () => { settlementMode = btn.dataset.mode; renderSettlements(); };
             });
             document.getElementById('settlements-list').addEventListener('click', async (e) => {
+                const settleRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
                 const b = e.target.closest('.settle-btn');
-                if (b) { openSettleModal(b.dataset.to, Number(b.dataset.amountG), b.dataset.currency); return; }
+                if (b) { openSettleModal(b.dataset.to, Number(b.dataset.amountG), b.dataset.currency, 'send'); return; }
+
+                const rb = e.target.closest('.receive-btn');
+                if (rb) {
+                    const myMember = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === currentUser.uid);
+                    if (!myMember) return;
+                    const debtorId = rb.dataset.from;
+                    // jeśli dłużnik już zgłosił niepotwierdzoną wpłatę do mnie — POTWIERDŹ ją (zamiast tworzyć duplikat)
+                    const pending = latestSettlements.filter(s => s.from === debtorId && s.to === myMember.id && !s.confirmed);
+                    if (pending.length) {
+                        await Promise.all(pending.map(s => updateDoc(settleRef(s.id), { confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp() })));
+                        showToast(pending.length === 1 ? 'Potwierdzono wpłatę.' : 'Potwierdzono wpłaty.');
+                    } else {
+                        openSettleModal(debtorId, Number(rb.dataset.amountG), rb.dataset.currency, 'receive');
+                    }
+                    return;
+                }
+
+                const conf = e.target.closest('.confirm-settle-btn');
+                if (conf) {
+                    await updateDoc(settleRef(conf.dataset.id), { confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp() });
+                    showToast('Potwierdzono wpłatę.');
+                    return;
+                }
+
                 const del = e.target.closest('.settle-delete-btn');
                 if (del) {
-                    await deleteDoc(doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, del.dataset.id));
+                    await deleteDoc(settleRef(del.dataset.id));
                     showToast('Usunięto wpłatę.');
                 }
             });
@@ -1882,16 +1939,20 @@
                 if (!(amount > 0)) { showToast('Podaj kwotę wpłaty.', true); return; }
                 const myMember = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === currentUser.uid);
                 if (!myMember) { showToast('Najpierw dołącz do grupy.', true); return; }
-                await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`), {
-                    from: myMember.id,
-                    to: settleContext.to,
+                const receive = settleContext.mode === 'receive';
+                const rec = {
+                    from: receive ? settleContext.other : myMember.id,
+                    to: receive ? myMember.id : settleContext.other,
                     amount,
                     currency: settleContext.currency || 'PLN',
                     createdAt: serverTimestamp(),
                     createdBy: currentUser.uid,
-                });
+                    confirmed: receive, // otrzymana przeze mnie = od razu potwierdzona; wysłana = do potwierdzenia
+                };
+                if (receive) { rec.confirmedBy = currentUser.uid; rec.confirmedAt = serverTimestamp(); }
+                await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`), rec);
                 settleModal.classList.remove('active');
-                showToast('Zapisano wpłatę.');
+                showToast(receive ? 'Zapisano otrzymaną wpłatę.' : 'Zapisano wpłatę.');
             };
 
             document.getElementById('cancel-delete-bill').onclick = () => document.getElementById('delete-confirm-modal').classList.remove('active');
