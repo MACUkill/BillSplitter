@@ -500,25 +500,11 @@
             const myTotal = myCalc ? myCalc.total : 0;
             const payer = bill.participants[bill.payerId];
 
+            // Model wpłat: lista pokazuje KONSUMPCJĘ (udział), nie rozliczenie. Rozliczenie → sekcja „Rozliczenia".
             if (payer && payer.id === myParticipant.id) {
-                const amountToReceive = calculations.controlSum - myTotal;
-                if (amountToReceive > 0.01) {
-                    return `<p class="text-sm text-green-600 font-semibold"><i class="fas fa-hand-holding-usd mr-2"></i>Otrzymasz: ${amountToReceive.toFixed(2)} ${bill.currency}</p>`;
-                } else {
-                    return `<p class="text-sm text-gray-500"><i class="fas fa-check-circle mr-2"></i>Wszystko uregulowane</p>`;
-                }
+                return `<p class="text-sm text-gray-600"><i class="fas fa-wallet mr-2"></i>Wyłożyłeś/aś ${calculations.controlSum.toFixed(2)} ${bill.currency} · Twój udział: ${myTotal.toFixed(2)}</p>`;
             }
-            
-            if (payer) {
-                if (myParticipant.status === 'paid') {
-                    return `<p class="text-sm text-green-600 font-semibold"><i class="fas fa-check-circle mr-2"></i>Przelałeś: ${myTotal.toFixed(2)} ${bill.currency} do ${payer.name}</p>`;
-                }
-                if (myTotal > 0.01) {
-                    return `<p class="text-sm text-red-600 font-semibold"><i class="fas fa-exclamation-circle mr-2"></i>Do zapłaty: ${myTotal.toFixed(2)} ${bill.currency} dla ${payer.name}</p>`;
-                }
-            }
-
-            return `<p class="text-sm text-gray-500"><i class="fas fa-check-circle mr-2"></i>Wszystko uregulowane</p>`;
+            return `<p class="text-sm text-gray-600"><i class="fas fa-user mr-2"></i>Twój udział: ${myTotal.toFixed(2)} ${bill.currency}${payer ? ` · płaci ${memberName(bill.payerId)}` : ''}</p>`;
         };
 
         // --- Faza 4: personalizacja profilu (kolor + awatar z inicjałem) ---
@@ -763,17 +749,12 @@
             document.getElementById('settle-modal').classList.add('active');
         };
 
-        // --- Faza 3: stan rachunku dla filtrów, linia z numerem konta, render z filtrem/ukrywaniem ---
+        // Model wpłat: rachunki nie mają stanu „opłacone" (settlement w Rozliczeniach).
+        // Zostają filtry Wszystkie / Ukryte (not_applicable lub ręcznie ukryte).
         const getBillUserState = (bill, myMember) => {
             const myP = bill.participants ? bill.participants[myMember.id] : null;
             if (!myP || myP.status === 'not_applicable' || (bill.hiddenBy || []).includes(myMember.id)) return 'hidden';
-            if (bill.payerId === myMember.id) {
-                const debtors = Object.values(bill.participants || {}).filter(p => p.id !== myMember.id && p.status !== 'not_applicable');
-                return debtors.every(p => p.status === 'paid') ? 'paid' : 'unpaid';
-            }
-            if (myP.status === 'paid') return 'paid';
-            const myCalc = calculateAllForBill(bill).participantTotals.find(pt => pt.participant.id === myMember.id);
-            return (!myCalc || myCalc.total <= 0.01) ? 'paid' : 'unpaid';
+            return 'visible';
         };
 
         const renderBillsList = () => {
@@ -913,69 +894,38 @@
             return patch;
         };
 
-        const getStatusHtml = (status, isMe, isPayer, participantId = null, billType = 'advanced', isCurrentUserThePayer = false) => {
+        // Model wpłat: rachunek = KONSUMPCJA. Status = tylko członkostwo/uzupełnienie,
+        // BEZ opłacone/nieopłacone (rozliczenie żyje w „Rozliczeniach", nie na rachunku).
+        const getStatusHtml = (status, isMe, isPayer, participantId = null, billType = 'advanced') => {
             const statuses = {
                 incomplete: { text: "Nieuzupełnione", icon: "fa-question-circle", color: "text-orange-500", bg: "bg-orange-100" },
                 completed: { text: "Uzupełnione", icon: "fa-user-check", color: "text-blue-600", bg: "bg-blue-100" },
                 not_applicable: { text: "Nie dotyczy", icon: "fa-ban", color: "text-gray-600", bg: "bg-gray-200" },
-                unpaid: { text: "Nieopłacone", icon: "fa-exclamation-circle", color: "text-red-600", bg: "bg-red-100" },
-                paid: { text: "Opłacone", icon: "fa-check-circle", color: "text-green-500", bg: "bg-green-100" }
             };
-            const current = statuses[status] || statuses.unpaid;
+            const active = { text: "W rachunku", icon: "fa-user", color: "text-gray-600", bg: "bg-gray-100" };
+            const current = statuses[status] || active; // legacy unpaid/paid → „w rachunku"
             const isPayerConfirmed = billData.payerConfirmed === true;
 
             if (isPayer) {
-                 if (billType === 'simple') {
-                    if(isPayerConfirmed) {
-                       return `<span class="font-semibold text-gray-600 flex items-center"><i class="fas fa-user-check text-green-500 mr-2"></i>Płatnik (potwierdzony)</span>`;
-                    }
-                    return `<span class="font-semibold text-gray-600 flex items-center"><i class="fas fa-user-tag mr-2"></i>Płatnik</span>`;
-                 }
-                 if(isPayerConfirmed) {
+                if (isPayerConfirmed) {
                     return `<span class="font-semibold text-green-500 flex items-center"><i class="fas fa-user-check mr-2"></i>Płatnik (potwierdzony)</span>`;
-                 }
-                 return `<span class="font-semibold ${current.color} flex items-center"><i class="fas ${current.icon} mr-2"></i>${current.text}</span>`;
+                }
+                return `<span class="font-semibold text-gray-600 flex items-center"><i class="fas fa-user-tag mr-2"></i>Płatnik</span>`;
             }
 
             if (isMe) {
                 const selectClass = billType === 'simple' ? 'simple-status-select' : 'status-select';
-                
-                let options = '';
-                if (billType === 'simple') {
-                    options = `
-                        <option value="not_applicable" ${status === 'not_applicable' ? 'selected' : ''}>Mnie nie dotyczy</option>
-                        <option value="unpaid" ${status === 'unpaid' ? 'selected' : ''}>Nieopłacone</option>
-                        <option value="paid" ${status === 'paid' ? 'selected' : ''}>Opłacone</option>
-                    `;
-                } else { 
-                     options = `
-                        <option value="incomplete" ${status === 'incomplete' ? 'selected' : ''}>Nieuzupełnione</option>
-                        <option value="not_applicable" ${status === 'not_applicable' ? 'selected' : ''}>Mnie nie dotyczy</option>
-                        <option value="unpaid" ${status === 'unpaid' ? 'selected' : ''}>Nieopłacone</option>
-                        <option value="paid" ${status === 'paid' ? 'selected' : ''}>Opłacone</option>
-                    `;
-                }
-               
+                const options = billType === 'simple'
+                    ? `<option value="unpaid" ${status !== 'not_applicable' ? 'selected' : ''}>W rachunku</option>
+                       <option value="not_applicable" ${status === 'not_applicable' ? 'selected' : ''}>Mnie nie dotyczy</option>`
+                    : `<option value="incomplete" ${status === 'incomplete' ? 'selected' : ''}>Nieuzupełnione</option>
+                       <option value="completed" ${status === 'completed' ? 'selected' : ''}>Uzupełnione</option>
+                       <option value="not_applicable" ${status === 'not_applicable' ? 'selected' : ''}>Mnie nie dotyczy</option>`;
                 return `
                     <div class="status-select-wrapper ${current.bg}">
                         <i class="fas ${current.icon} ${current.color} mr-2"></i>
-                        <select class="${selectClass} font-semibold ${current.color}" data-participant-id="${participantId}">
-                            ${options}
-                        </select>
-                    </div>
-                `;
-            }
-
-            if (isCurrentUserThePayer && isPayerConfirmed && (status === 'unpaid' || status === 'paid')) {
-                return `
-                    <div class="status-select-wrapper ${current.bg}">
-                        <i class="fas ${current.icon} ${current.color} mr-2"></i>
-                        <select class="payer-status-select font-semibold ${current.color}" data-participant-id="${participantId}">
-                            <option value="unpaid" ${status === 'unpaid' ? 'selected' : ''}>Nieopłacone</option>
-                            <option value="paid" ${status === 'paid' ? 'selected' : ''}>Opłacone</option>
-                        </select>
-                    </div>
-                `;
+                        <select class="${selectClass} font-semibold ${current.color}" data-participant-id="${participantId}">${options}</select>
+                    </div>`;
             }
 
             return `<span class="font-semibold ${current.color} flex items-center"><i class="fas ${current.icon} mr-2"></i>${current.text}</span>`;
@@ -987,38 +937,8 @@
             return found ? found.total : 0;
         };
 
-        const buildStatusUpdate = (bill, participantId, newStatus, changedByName) => {
-            const base = `participants.${participantId}`;
-            const updates = { [`${base}.status`]: newStatus };
-            // Zamrożenie kwoty w chwili "opłacone" — późniejsza zmiana rachunku ujawni się jako różnica.
-            updates[`${base}.paidAmount`] = newStatus === 'paid' ? getParticipantTotal(bill, participantId) : null;
-            if (newStatus === 'paid' || newStatus === 'unpaid') {
-                updates[`${base}.statusChangedBy`] = changedByName || null;
-                updates[`${base}.statusChangedAt`] = Date.now();
-            } else {
-                updates[`${base}.statusChangedBy`] = null;
-                updates[`${base}.statusChangedAt`] = null;
-            }
-            return updates;
-        };
-
-        const getPaidDeltaHtml = (p, currentTotal, currency) => {
-            if (p.status !== 'paid' || typeof p.paidAmount !== 'number') return '';
-            const diff = currentTotal - p.paidAmount;
-            if (diff > 0.01) {
-                return `<p class="text-sm text-orange-600 font-semibold"><i class="fas fa-exclamation-triangle mr-1"></i>Kwota wzrosła po zapłacie — dopłać ${diff.toFixed(2)} ${currency}</p>`;
-            }
-            if (diff < -0.01) {
-                return `<p class="text-sm text-blue-600 font-semibold"><i class="fas fa-undo mr-1"></i>Nadpłata — do zwrotu ${(-diff).toFixed(2)} ${currency}</p>`;
-            }
-            return '';
-        };
-
-        const getStatusAuditHtml = (p) => {
-            if (!p.statusChangedBy) return '';
-            const when = typeof p.statusChangedAt === 'number' ? ` (${new Date(p.statusChangedAt).toLocaleString('pl-PL')})` : '';
-            return `<p class="text-xs text-gray-400">Status zmieniony przez ${p.statusChangedBy}${when}</p>`;
-        };
+        // Model wpłat: status rachunku to tylko członkostwo/uzupełnienie (bez opłacone/paidAmount/śladu).
+        const buildStatusUpdate = (bill, participantId, newStatus) => ({ [`participants.${participantId}.status`]: newStatus });
         
         // ===================================================
         // ===== EKRAN RACHUNKU ZAAWANSOWANEGO (bill-screen) =====
@@ -1127,7 +1047,7 @@
             const sortedParticipants = [...calculations.participantTotals].sort((a, b) => {
                 if (a.participant.id === myGroupMember.id) return -1;
                 if (b.participant.id === myGroupMember.id) return 1;
-                return a.participant.name.localeCompare(b.participant.name);
+                return memberName(a.participant.id).localeCompare(memberName(b.participant.id));
             });
 
             sortedParticipants.forEach(pt => {
@@ -1136,23 +1056,12 @@
                 const isPayer = p.id === billData.payerId;
                 const isDisabled = p.status === 'not_applicable';
 
+                // Model wpłat: rachunek nie pokazuje należności/opłat — to jest w „Rozliczeniach".
+                // Zostaje sam udział (linia ŁĄCZNIE niżej). Płatnikowi pokazujemy tylko info że wyłożył całość.
                 let paymentInfo = '';
-                if (payer && isPayerConfirmed) {
-                    if (isPayer) {
-                        if (p.status === 'completed' || p.status === 'incomplete') {
-                            const amountToReceive = calculations.controlSum - pt.total;
-                            if (amountToReceive > 0.01) {
-                                paymentInfo = `<p class="text-sm text-green-600 font-semibold">Otrzymasz: ${amountToReceive.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(amountToReceive, billData.currency, billData.exchangeRatePLN)}</p>`;
-                            }
-                        }
-                    } else if (pt.total > 0) {
-                         if (p.status !== 'paid') {
-                            paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency, billData.exchangeRatePLN)}</p>${getPaymentMethodsHtml(billData.payerId)}`;
-                        }
-                    }
+                if (payer && isPayerConfirmed && isPayer) {
+                    paymentInfo = `<p class="text-sm text-gray-500"><i class="fas fa-wallet mr-2"></i>Wyłożył/a całość: ${calculations.controlSum.toFixed(2)} ${billData.currency}</p>`;
                 }
-                paymentInfo += getPaidDeltaHtml(p, pt.total, billData.currency);
-                paymentInfo += getStatusAuditHtml(p);
 
                 const statusDisplayHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'advanced', isCurrentUserThePayer);
 
@@ -1574,39 +1483,30 @@
             const sortedParticipants = Object.values(billData.participants || {}).sort((a, b) => {
                 if (a.id === myGroupMember.id) return -1;
                 if (b.id === myGroupMember.id) return 1;
-                return a.name.localeCompare(b.name);
+                return memberName(a.id).localeCompare(memberName(b.id));
             });
 
             sortedParticipants.forEach(p => {
                 const isMe = p.id === myGroupMember.id;
                 const isPayer = p.id === billData.payerId;
+                const pName = p.name || memberName(p.id);
 
+                // Model wpłat: rozliczenie (należność) jest w „Rozliczeniach", nie na rachunku.
                 let paymentInfo = '';
-                if (payer && isPayerConfirmed && p.status !== 'not_applicable') {
-                    if (isPayer) {
-                        const amountToReceive = simpleCalc.controlSum - amountPerPerson;
-                        if (amountToReceive > 0.01) {
-                            paymentInfo = `<p class="text-sm text-green-600 font-semibold">Otrzymasz: ${amountToReceive.toFixed(2)} ${billData.currency}</p>`;
-                        }
-                    } else {
-                        if (amountPerPerson > 0 && p.status !== 'paid') {
-                           paymentInfo = `<p class="text-sm text-red-600 font-semibold">Należność dla ${payer.name}: ${amountPerPerson.toFixed(2)} ${billData.currency}</p>${getPaymentMethodsHtml(billData.payerId)}`;
-                        }
-                    }
+                if (payer && isPayerConfirmed && isPayer) {
+                    paymentInfo = `<p class="text-sm text-gray-500"><i class="fas fa-wallet mr-2"></i>Wyłożył/a całość: ${simpleCalc.controlSum.toFixed(2)} ${billData.currency}</p>`;
                 }
-                paymentInfo += getPaidDeltaHtml(p, amountPerPerson, billData.currency);
-                paymentInfo += getStatusAuditHtml(p);
 
-                const statusHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'simple', isCurrentUserThePayer);
+                const statusHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'simple');
 
                 const participantHTML = `
                     <div class="p-4 rounded-lg ${isMe ? 'bg-blue-50 border-2 border-blue-200' : 'bg-gray-50 border border-gray-200'}">
                         <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
                             <div class="flex items-center">
-                                ${avatarHtml(p.name, p.id)}
+                                ${avatarHtml(pName, p.id)}
                                 <div class="flex flex-col">
                                     <div class="flex items-center">
-                                        <span class="text-xl font-semibold">${p.name}</span>
+                                        <span class="text-xl font-semibold">${escapeHtml(pName)}</span>
                                     </div>
                                     ${paymentInfo || ''}
                                 </div>
