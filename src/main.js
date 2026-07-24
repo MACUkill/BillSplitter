@@ -441,9 +441,10 @@
                         });
                     }
                 }
-                // Numery kont / metody / imiona mogły się zmienić — odśwież listę i rozliczenia.
+                // Numery kont / metody / imiona / zdjęcia mogły się zmienić — odśwież widoki.
                 renderBillsList();
                 renderSettlements();
+                if (currentScreenName === 'profile') renderProfile();
             });
 
             const billsQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`), orderBy('createdAt', 'desc'));
@@ -518,6 +519,10 @@
             return PROFILE_COLORS[hashStr(memberId || name || '?') % PROFILE_COLORS.length];
         };
         const avatarHtml = (name, memberId, extraClass = '') => {
+            const member = (groupData && groupData.members && groupData.members[memberId]) || {};
+            if (member.photoURL) {
+                return `<img src="${member.photoURL}" alt="" class="w-9 h-9 rounded-full object-cover mr-3 flex-shrink-0 ${extraClass}">`;
+            }
             const initial = ((name || '?').trim().charAt(0) || '?').toUpperCase();
             return `<div class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-lg mr-3 flex-shrink-0 ${extraClass}" style="background-color:${colorForMember(memberId, name)}">${initial}</div>`;
         };
@@ -817,7 +822,16 @@
             if (!groupData) return;
             const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
             const av = document.getElementById('profile-avatar-preview');
-            if (av && myMember) av.innerHTML = avatarHtml(myMember.name, myMember.id);
+            if (av && myMember) {
+                if (myMember.photoURL) {
+                    av.innerHTML = `<img src="${myMember.photoURL}" class="w-16 h-16 rounded-full object-cover" alt="">`;
+                } else {
+                    const initial = ((myMember.name || '?').trim().charAt(0) || '?').toUpperCase();
+                    av.innerHTML = `<div class="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-3xl" style="background-color:${colorForMember(myMember.id, myMember.name)}">${initial}</div>`;
+                }
+            }
+            const removeBtn = document.getElementById('profile-photo-remove-btn');
+            if (removeBtn) removeBtn.classList.toggle('hidden', !(myMember && myMember.photoURL));
             const bills = latestBills.map(({ id, data }) => ({ ...data, id }));
             const sp = computeSpending(bills);
             const order = groupData.memberOrder || Object.keys(groupData.members || {});
@@ -830,6 +844,37 @@
                     <span class="text-sm text-right"><span class="block text-gray-700">na siebie: <b>${fmtMap(s.onSelf)}</b></span><span class="block text-gray-400 text-xs">wyłożył/a: ${fmtMap(s.fronted)}</span></span>
                 </div>`;
             }).join('');
+        };
+
+        // Zdjęcie profilowe (reużycie maszynerii zdjęć paragonów: heic2any + Storage).
+        const uploadProfilePhoto = async (file) => {
+            const myMember = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === currentUser.uid);
+            if (!myMember || !file) return;
+            let f = file, name = file.name || 'photo.jpg';
+            if (file.type === 'image/heic' || name.toLowerCase().endsWith('.heic')) {
+                try { showToast('Konwertowanie zdjęcia HEIC...'); f = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 }); name = name.replace(/\.[^/.]+$/, '') + '.jpg'; }
+                catch (e) { console.error(e); showToast('Nie udało się przekonwertować HEIC.', true); return; }
+            }
+            if (!f.type || !f.type.startsWith('image/')) { showToast('Wybierz obraz.', true); return; }
+            if (f.size > 20 * 1024 * 1024) { showToast('Zdjęcie za duże (max 20 MB).', true); return; }
+            showToast('Wgrywanie zdjęcia...');
+            try {
+                const oldURL = myMember.photoURL;
+                const storageRef = ref(storage, `groups/${currentGroupId}/profile-photos/${myMember.id}/${Date.now()}-${name}`);
+                const snap = await uploadBytes(storageRef, f);
+                const url = await getDownloadURL(snap.ref);
+                await updateDoc(doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId), { [`members.${myMember.id}.photoURL`]: url });
+                if (oldURL) { try { await deleteObject(ref(storage, oldURL)); } catch (e) {} }
+                showToast('Zapisano zdjęcie profilowe.');
+            } catch (e) { console.error(e); showToast('Nie udało się wgrać zdjęcia.', true); }
+        };
+        const removeProfilePhoto = async () => {
+            const myMember = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === currentUser.uid);
+            if (!myMember || !myMember.photoURL) return;
+            const oldURL = myMember.photoURL;
+            await updateDoc(doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId), { [`members.${myMember.id}.photoURL`]: deleteField() });
+            try { await deleteObject(ref(storage, oldURL)); } catch (e) {}
+            showToast('Usunięto zdjęcie.');
         };
 
         // Model wpłat: rachunki nie mają stanu „opłacone" (settlement w Rozliczeniach).
@@ -1930,6 +1975,13 @@
             if (openProfileBtn) openProfileBtn.onclick = () => { renderProfile(); showScreen('profile'); };
             const backProfileBtn = document.getElementById('back-to-dashboard-from-profile-btn');
             if (backProfileBtn) backProfileBtn.onclick = () => showScreen('group-dashboard');
+            // Zdjęcie profilowe
+            const photoBtn = document.getElementById('profile-photo-btn');
+            const photoInput = document.getElementById('profile-photo-input');
+            const photoRemove = document.getElementById('profile-photo-remove-btn');
+            if (photoBtn && photoInput) photoBtn.onclick = () => photoInput.click();
+            if (photoInput) photoInput.onchange = async (e) => { const file = e.target.files && e.target.files[0]; e.target.value = ''; if (file) await uploadProfilePhoto(file); };
+            if (photoRemove) photoRemove.onclick = removeProfilePhoto;
             // kopiuj-kwotę bierze aktualną wartość z pola
             document.getElementById('settle-amount-input').oninput = (e) => {
                 const v = parseLocalFloat(e.target.value);

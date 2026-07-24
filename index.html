@@ -233,6 +233,11 @@
                     <div>
                         <p class="text-sm text-gray-500">Imię (kliknij, aby zmienić)</p>
                         <p id="dashboard-user-name" class="text-2xl font-semibold text-blue-600 cursor-pointer hover:underline" title="Kliknij, aby zmienić imię"></p>
+                        <div class="mt-1 flex items-center gap-3">
+                            <button id="profile-photo-btn" class="text-sm text-blue-600 hover:underline"><i class="fas fa-camera mr-1"></i>Zmień zdjęcie</button>
+                            <button id="profile-photo-remove-btn" class="hidden text-sm text-gray-400 hover:text-red-500"><i class="fas fa-trash mr-1"></i>Usuń</button>
+                            <input type="file" id="profile-photo-input" class="hidden" accept="image/jpeg,image/png,image/webp,image/heic">
+                        </div>
                     </div>
                 </div>
 
