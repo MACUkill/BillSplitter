@@ -109,3 +109,35 @@ describe('reguły Firestore — rejestr wpłat (model wpłat)', () => {
     await assertSucceeds(deleteDoc(doc(env.authenticatedContext('user-a').firestore(), s('s1'))));
   });
 });
+
+describe('reguły Firestore — przypomnienia (nudge-windykator)', () => {
+  const n = (id) => `${g('g1')}/nudges/${id}`;
+
+  it('zalogowany tworzy przypomnienie jako on sam i je odczytuje', async () => {
+    const db = env.authenticatedContext('user-a').firestore();
+    await assertSucceeds(setDoc(doc(db, n('n1')), { from: 'm1', to: 'm2', amountG: 2000, currency: 'PLN', createdBy: 'user-a', readBy: [] }));
+    await assertSucceeds(getDoc(doc(db, n('n1'))));
+  });
+
+  it('NIE można utworzyć przypomnienia podszywając się pod innego twórcę', async () => {
+    const db = env.authenticatedContext('user-a').firestore();
+    await assertFails(setDoc(doc(db, n('n-spoof')), { from: 'm1', to: 'm2', createdBy: 'ktos-inny', readBy: [] }));
+  });
+
+  it('niezalogowany nie odczyta przypomnień', async () => {
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), n('n1'))));
+  });
+
+  it('można oznaczyć „przeczytane" (tylko readBy), ale nie zmienić treści', async () => {
+    const db = env.authenticatedContext('user-b').firestore();
+    await assertSucceeds(updateDoc(doc(db, n('n1')), { readBy: ['user-b'] }));
+    await assertFails(updateDoc(doc(db, n('n1')), { amountG: 999 }));
+    await assertFails(updateDoc(doc(db, n('n1')), { to: 'hacker' }));
+    await assertFails(updateDoc(doc(db, n('n1')), { readBy: ['user-b'], amountG: 999 }));
+  });
+
+  it('usunąć przypomnienie może TYLKO twórca', async () => {
+    await assertFails(deleteDoc(doc(env.authenticatedContext('user-b').firestore(), n('n1'))));
+    await assertSucceeds(deleteDoc(doc(env.authenticatedContext('user-a').firestore(), n('n1'))));
+  });
+});

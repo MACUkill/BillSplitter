@@ -37,6 +37,20 @@ service cloud.firestore {
                             .hasOnly(['confirmed', 'confirmedBy', 'confirmedAt']);
         allow delete: if request.auth != null && resource.data.createdBy == request.auth.uid;
       }
+
+      // Przypomnienia (nudge-windykator): zalogowany tworzy jako on sam (createdBy=uid), każdy zalogowany czyta.
+      // Aktualizacja TYLKO pola readBy (odbiorca oznacza „przeczytane"); reszta danych niezmienna.
+      // Usunąć może tylko twórca przypomnienia.
+      match /nudges/{nudgeId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+                      && request.resource.data.createdBy == request.auth.uid;
+        allow update: if request.auth != null
+                      && request.resource.data.diff(resource.data)
+                            .affectedKeys()
+                            .hasOnly(['readBy']);
+        allow delete: if request.auth != null && resource.data.createdBy == request.auth.uid;
+      }
     }
 
     // Wszystko inne — zamknięte (domyślny deny, jawnie dla czytelności).
