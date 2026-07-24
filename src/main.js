@@ -72,6 +72,8 @@
         }
 
         const generateId = () => Math.random().toString(36).substring(2, 10);
+        // Parsuje kwotę z przecinkiem/kropką (zasięg modułu — używane m.in. w „Ureguluj").
+        const parseLocalFloat = (val) => parseFloat(String(val).replace(',', '.')) || 0;
 
         const formatSummary = (summaryObject) => {
             if (!summaryObject || Object.keys(summaryObject).length === 0) {
