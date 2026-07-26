@@ -1881,6 +1881,7 @@
                 serviceWorkerRegistration: swRegistration || undefined,
             });
             pushTokenSaved = false;
+            console.info('[BillSplitter] Token FCM tego urządzenia:', pushToken);
             await savePushToken();
             return pushToken;
         };
