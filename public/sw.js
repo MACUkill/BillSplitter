@@ -17,6 +17,41 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
+// --- Faza 6.4: powiadomienia push ---
+// Świadomie BEZ SDK Firebase w service workerze: wysyłamy payload data-only, więc
+// przeglądarka nie pokaże nic sama, a my mamy pełną kontrolę nad treścią i kliknięciem.
+// Dzięki temu zostaje JEDEN service worker (offline + push), bez firebase-messaging-sw.js.
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch (_) { d = {}; }
+  const payload = d.data || d; // FCM data-only pakuje treść w `data`
+  const title = payload.title || 'BillSplitter';
+  const body = payload.body || 'Masz nowe przypomnienie.';
+  event.waitUntil(self.registration.showNotification(title, {
+    body,
+    icon: '/icons/icon-192x192.png',
+    badge: '/icons/icon-192x192.png',
+    tag: payload.tag || 'billsplitter-nudge',
+    data: { url: payload.url || '/' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    // Apka już otwarta? Podnieś istniejące okno zamiast otwierać kolejne.
+    for (const c of all) {
+      if ('focus' in c) {
+        if ('navigate' in c && target !== '/') { try { await c.navigate(target); } catch (_) {} }
+        return c.focus();
+      }
+    }
+    if (self.clients.openWindow) return self.clients.openWindow(target);
+  })());
+});
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;

@@ -5,8 +5,20 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
         import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, connectStorageEmulator } from "firebase/storage";
+        import { getMessaging, getToken, onMessage, isSupported as isMessagingSupported } from "firebase/messaging";
 
-        const firebaseConfig = {
+        // Config z ENV (jeśli podany) — inaczej wpisany na sztywno projekt produkcyjny.
+        // Dzięki temu testy pushu jadą na osobnym projekcie-piaskownicy (.env.local),
+        // a produkcyjny build bez env-ów zachowuje się dokładnie jak dotąd.
+        const env = import.meta.env;
+        const firebaseConfig = env.VITE_FIREBASE_PROJECT_ID ? {
+          apiKey: env.VITE_FIREBASE_API_KEY,
+          authDomain: env.VITE_FIREBASE_AUTH_DOMAIN,
+          projectId: env.VITE_FIREBASE_PROJECT_ID,
+          storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET,
+          messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+          appId: env.VITE_FIREBASE_APP_ID,
+        } : {
           apiKey: "AIzaSyDNyWvjy15al4ZN3QyajUl8lPFU_uAu9QA",
           authDomain: "billsplitter-2fdfa.firebaseapp.com",
           projectId: "billsplitter-2fdfa",
@@ -26,11 +38,15 @@
         const storage = getStorage(app);
 
         // --- DEV: podłączenie do Firebase Emulator Suite (pełna izolacja od produkcji) ---
-        if (import.meta.env.DEV) {
+        // VITE_USE_EMULATOR=true wymusza emulator także w buildzie PROD — potrzebne do testów
+        // pushu, bo service worker (warunek FCM) rejestruje się tylko w buildzie produkcyjnym.
+        const USE_EMULATOR = env.VITE_USE_EMULATOR === 'true' || env.DEV;
+        if (USE_EMULATOR) {
             connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
             connectFirestoreEmulator(db, '127.0.0.1', 8770);
             connectStorageEmulator(storage, '127.0.0.1', 9199);
-            console.info('[BillSplitter] Tryb DEV — podłączono do emulatora Firebase (127.0.0.1). Żywe dane nietknięte.');
+            console.info('[BillSplitter] Emulator Firebase (127.0.0.1) — żywe dane nietknięte.');
+            if (!env.DEV) console.warn('[BillSplitter] UWAGA: build produkcyjny podpięty do EMULATORA (VITE_USE_EMULATOR=true). To build testowy, nie do wdrożenia.');
         }
 
         // Globalne zmienne stanu
@@ -450,6 +466,7 @@
                 renderBillsList();
                 renderSettlements();
                 updateNudgeBadge();
+                savePushToken(); // token mógł powstać zanim wiedzieliśmy, kim jest użytkownik
                 if (currentScreenName === 'profile') renderProfile();
             });
 
@@ -1796,16 +1813,110 @@
         // ===== SETUP LISTENERS =====
         // ===================================================
 
-        // Faza 6.1: rejestracja service workera (offline + kryterium instalowalności).
+        // Faza 6.1: rejestracja service workera (offline + kryterium instalowalności + push).
         // Tylko w PROD — w dev Vite HMR nie współpracuje z SW (cache modułów).
+        let swRegistration = null;
         const registerServiceWorker = () => {
             if (!('serviceWorker' in navigator)) return;
             if (!import.meta.env.PROD) return;
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/sw.js').catch((err) => {
+            window.addEventListener('load', async () => {
+                try {
+                    swRegistration = await navigator.serviceWorker.register('/sw.js');
+                    await navigator.serviceWorker.ready;
+                    setupPush();
+                } catch (err) {
                     console.warn('[BillSplitter] Rejestracja service workera nieudana:', err);
-                });
+                }
             });
+        };
+
+        // --- Faza 6.4: powiadomienia push (FCM) ---
+        // Token trzymamy w members.{id}.fcmTokens (tablica — jedna osoba może mieć telefon + laptop).
+        // Wysyłką zajmie się backend (docelowo trigger na nudges/{id}); klient tylko rejestruje token.
+        const VAPID_KEY = env.VITE_FCM_VAPID_KEY || '';
+        let pushToken = null;
+        let pushTokenSaved = false;
+
+        const pushSupported = () => 'Notification' in window && 'serviceWorker' in navigator && !!VAPID_KEY;
+
+        const savePushToken = async () => {
+            if (!pushToken || pushTokenSaved || !currentGroupId || !groupData) return;
+            const my = myMemberNow();
+            if (!my) return;
+            await updateDoc(doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId), {
+                [`members.${my.id}.fcmTokens`]: arrayUnion(pushToken),
+            });
+            pushTokenSaved = true;
+        };
+
+        const renderPushToggle = () => {
+            const btn = document.getElementById('push-toggle-btn');
+            const label = document.getElementById('push-toggle-label');
+            const note = document.getElementById('push-toggle-note');
+            if (!btn || !label || !note) return;
+            if (!pushSupported()) {
+                label.textContent = 'Powiadomienia niedostępne';
+                note.textContent = 'Ta przeglądarka ich nie obsługuje (na iPhonie dodaj apkę do ekranu początkowego).';
+                btn.disabled = true;
+                btn.classList.add('opacity-60');
+                return;
+            }
+            const perm = Notification.permission;
+            if (perm === 'granted' && pushToken) {
+                label.textContent = 'Powiadomienia włączone';
+                note.textContent = 'Dostaniesz przypomnienie o zaległości nawet przy zamkniętej apce.';
+            } else if (perm === 'denied') {
+                label.textContent = 'Powiadomienia zablokowane';
+                note.textContent = 'Odblokuj je w ustawieniach przeglądarki dla tej strony.';
+            } else {
+                label.textContent = 'Włącz powiadomienia';
+                note.textContent = 'Przypomnienia o zaległościach trafią na to urządzenie.';
+            }
+        };
+
+        const acquirePushToken = async () => {
+            const messaging = getMessaging(app);
+            pushToken = await getToken(messaging, {
+                vapidKey: VAPID_KEY,
+                serviceWorkerRegistration: swRegistration || undefined,
+            });
+            pushTokenSaved = false;
+            await savePushToken();
+            return pushToken;
+        };
+
+        const enablePush = async () => {
+            if (!pushSupported()) { showToast('Ta przeglądarka nie obsługuje powiadomień.', true); return; }
+            try {
+                const perm = await Notification.requestPermission();
+                if (perm !== 'granted') { showToast('Nie przyznano zgody na powiadomienia.', true); renderPushToggle(); return; }
+                await acquirePushToken();
+                showToast('Powiadomienia włączone.');
+            } catch (err) {
+                console.warn('[BillSplitter] Push — nie udało się pobrać tokenu:', err);
+                showToast('Nie udało się włączyć powiadomień.', true);
+            }
+            renderPushToggle();
+        };
+
+        // Wołane po rejestracji service workera. Nie prosi o zgodę — tylko odświeża token,
+        // jeśli użytkownik już wcześniej ją dał (tokeny FCM potrafią się zmienić).
+        const setupPush = async () => {
+            try {
+                if (!pushSupported()) { renderPushToggle(); return; }
+                if (!(await isMessagingSupported())) { renderPushToggle(); return; }
+                const messaging = getMessaging(app);
+                // Wiadomość przy otwartej apce: przeglądarka nie pokaże systemowego dymka — pokazujemy toast.
+                onMessage(messaging, (payload) => {
+                    const d = (payload && payload.data) || {};
+                    showToast(d.body || d.title || 'Nowe przypomnienie.');
+                    if (currentGroupId) updateNudgeBadge();
+                });
+                if (Notification.permission === 'granted') await acquirePushToken();
+                renderPushToggle();
+            } catch (err) {
+                console.warn('[BillSplitter] Push — inicjalizacja nieudana:', err);
+            }
         };
 
         const setupPwaInstallButton = () => {
@@ -2126,7 +2237,9 @@
 
             // Ekran „Profil"
             const openProfileBtn = document.getElementById('open-profile-btn');
-            if (openProfileBtn) openProfileBtn.onclick = () => { renderProfile(); showScreen('profile'); };
+            if (openProfileBtn) openProfileBtn.onclick = () => { renderProfile(); renderPushToggle(); showScreen('profile'); };
+            const pushBtn = document.getElementById('push-toggle-btn');
+            if (pushBtn) pushBtn.onclick = enablePush;
             const backProfileBtn = document.getElementById('back-to-dashboard-from-profile-btn');
             if (backProfileBtn) backProfileBtn.onclick = () => showScreen('group-dashboard');
             // Zdjęcie profilowe
