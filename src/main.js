@@ -1,5 +1,6 @@
         // Importy Firebase (npm) + moduł obliczeń
         import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
+        import { unreadNudgeCount, hasRecentNudge } from './nudges.js';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
@@ -42,6 +43,7 @@
         let unsubscribeGroup = null;
         let unsubscribeBill = null;
         let unsubscribeSettlements = null;
+        let unsubscribeNudges = null;
         let isAuthReady = false;
         let currentScreenName = null;
         let settlementMode = 'net'; // 'net' = kto komu ile | 'min' = najmniej przelewów
@@ -383,11 +385,13 @@
         // --- Faza 3: filtry i ukrywanie rachunków ---
         let latestBills = [];
         let latestSettlements = []; // rejestr wpłat (model wpłat)
+        let latestNudges = []; // przypomnienia (nudge-windykator)
         let currentBillFilter = 'all';
 
         const renderGroupDashboard = () => {
             if (unsubscribeGroup) unsubscribeGroup();
             if (unsubscribeSettlements) unsubscribeSettlements();
+            if (unsubscribeNudges) unsubscribeNudges();
 
             const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
             
@@ -445,6 +449,7 @@
                 // Numery kont / metody / imiona / zdjęcia mogły się zmienić — odśwież widoki.
                 renderBillsList();
                 renderSettlements();
+                updateNudgeBadge();
                 if (currentScreenName === 'profile') renderProfile();
             });
 
@@ -459,6 +464,14 @@
             unsubscribeSettlements = onSnapshot(settlementsQuery, (snapshot) => {
                 latestSettlements = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 renderSettlements();
+            });
+
+            const nudgesQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`), orderBy('createdAt', 'desc'));
+            unsubscribeNudges = onSnapshot(nudgesQuery, (snapshot) => {
+                latestNudges = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                updateNudgeBadge();
+                const modal = document.getElementById('nudges-modal');
+                if (modal && modal.classList.contains('active')) renderNudges();
             });
 
             document.getElementById('copy-group-link-btn').onclick = () => {
@@ -675,6 +688,7 @@
                     mineGet.forEach(t => {
                         html += settleRowHtml(memberName(t.from), t.from,
                             `<span class="font-bold text-green-600">${fmtMoney(t.amountG, cur)}</span>
+                             <button class="nudge-btn bg-amber-500 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-amber-600" data-nudge-to="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}" title="Przypomnij o długu"><i class="fas fa-bell mr-1"></i>Przypomnij</button>
                              <button class="receive-btn bg-blue-600 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-blue-700" data-from="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}">Otrzymałem</button>`,
                             detailOf(t));
                     });
@@ -755,6 +769,91 @@
                         </div>`).join('');
             }
             document.getElementById('settle-modal').classList.add('active');
+        };
+
+        // --- Faza 6.3: przypomnienia (nudge-windykator) ---
+        const myMemberNow = () => Object.values((groupData && groupData.members) || {})
+            .find(m => m.claimedBy === (currentUser && currentUser.uid)) || null;
+
+        const updateNudgeBadge = () => {
+            const badge = document.getElementById('nudges-badge');
+            const bell = document.getElementById('nudges-bell');
+            if (!badge || !bell) return;
+            const my = myMemberNow();
+            bell.classList.toggle('hidden', !my);
+            const count = my ? unreadNudgeCount(latestNudges, my.id, currentUser && currentUser.uid) : 0;
+            if (count > 0) {
+                badge.textContent = count > 9 ? '9+' : String(count);
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        };
+
+        // Wierzyciel przypomina dłużnikowi (toId). Anty-spam: max raz na 6h do tej samej osoby.
+        const sendNudge = async (toId, amountG, currency) => {
+            const my = myMemberNow();
+            if (!my) { showToast('Najpierw dołącz do grupy.', true); return; }
+            if (!toId || toId === my.id) return;
+            const withMs = latestNudges.map(x => ({
+                from: x.from, to: x.to,
+                createdAtMs: (x.createdAt && x.createdAt.toMillis) ? x.createdAt.toMillis() : undefined,
+            }));
+            if (hasRecentNudge(withMs, my.id, toId, Date.now(), 6 * 3600 * 1000)) {
+                showToast('Już przypomniałeś tej osobie w ostatnich godzinach.');
+                return;
+            }
+            await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`), {
+                from: my.id,
+                to: toId,
+                amountG: Number(amountG) || 0,
+                currency: currency || 'PLN',
+                createdAt: serverTimestamp(),
+                createdBy: currentUser.uid,
+                readBy: [],
+            });
+            showToast('Wysłano przypomnienie.');
+        };
+
+        const nudgeRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`, id);
+
+        // Inbox dłużnika: przypomnienia skierowane do mnie, z deep-linkiem „Ureguluj".
+        const renderNudges = () => {
+            const container = document.getElementById('nudges-list');
+            if (!container) return;
+            const my = myMemberNow();
+            const uid = currentUser && currentUser.uid;
+            const mine = my ? latestNudges.filter(x => x.to === my.id) : [];
+            const unread = my ? unreadNudgeCount(latestNudges, my.id, uid) : 0;
+            const readAllBtn = document.getElementById('nudges-readall-btn');
+            if (readAllBtn) readAllBtn.classList.toggle('hidden', unread === 0);
+            if (mine.length === 0) {
+                container.innerHTML = `<p class="text-gray-500 text-sm py-6 text-center"><i class="fas fa-check-circle mr-2 text-green-600"></i>Brak przypomnień.</p>`;
+                return;
+            }
+            container.innerHTML = mine.map(x => {
+                const isRead = Array.isArray(x.readBy) && x.readBy.includes(uid);
+                const when = (x.createdAt && x.createdAt.toDate) ? x.createdAt.toDate().toLocaleDateString('pl-PL') : '';
+                const amt = x.amountG ? fmtMoney(Number(x.amountG), x.currency || 'PLN') : '';
+                return `<div class="p-3 rounded-lg border ${isRead ? 'border-gray-200 bg-white' : 'border-amber-200 bg-amber-50'}">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <p class="text-sm"><b>${escapeHtml(memberName(x.from))}</b> przypomina o zaległości${amt ? ` <b>${amt}</b>` : ''}.</p>
+                            <p class="text-xs text-gray-500 mt-0.5">Już zapłaciłeś? Zapisz wpłatę, żeby dług zniknął.${when ? ` · ${when}` : ''}</p>
+                        </div>
+                        ${isRead ? '' : '<span class="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0 mt-1.5"></span>'}
+                    </div>
+                    <div class="flex items-center gap-2 mt-2">
+                        <button class="nudge-settle-btn bg-green-600 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-green-700" data-to="${x.from}" data-amount-g="${x.amountG || 0}" data-currency="${x.currency || 'PLN'}">Ureguluj</button>
+                        ${isRead ? '' : `<button class="nudge-read-btn text-blue-600 hover:underline text-sm" data-id="${x.id}">Oznacz przeczytane</button>`}
+                    </div>
+                </div>`;
+            }).join('');
+        };
+
+        const openNudgesModal = () => {
+            renderNudges();
+            document.getElementById('nudges-modal').classList.add('active');
         };
 
         // --- Krok 4: edycja członków rachunku (dodaj/usuń uczestnika) ---
@@ -1942,6 +2041,10 @@
             });
             document.getElementById('settlements-list').addEventListener('click', async (e) => {
                 const settleRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
+
+                const nb = e.target.closest('.nudge-btn');
+                if (nb) { await sendNudge(nb.dataset.nudgeTo, Number(nb.dataset.amountG), nb.dataset.currency); return; }
+
                 const b = e.target.closest('.settle-btn');
                 if (b) { openSettleModal(b.dataset.to, Number(b.dataset.amountG), b.dataset.currency, 'send'); return; }
 
@@ -1977,6 +2080,35 @@
             const settleModal = document.getElementById('settle-modal');
             document.getElementById('close-settle-modal').onclick = () => settleModal.classList.remove('active');
             settleModal.onclick = (e) => { if (e.target === settleModal) settleModal.classList.remove('active'); };
+
+            // Przypomnienia (nudge-windykator): dzwonek + inbox
+            const nudgesBell = document.getElementById('nudges-bell');
+            if (nudgesBell) nudgesBell.onclick = openNudgesModal;
+            const nudgesModal = document.getElementById('nudges-modal');
+            document.getElementById('close-nudges-modal').onclick = () => nudgesModal.classList.remove('active');
+            nudgesModal.onclick = (e) => { if (e.target === nudgesModal) nudgesModal.classList.remove('active'); };
+            document.getElementById('nudges-readall-btn').onclick = async () => {
+                const my = myMemberNow();
+                const uid = currentUser && currentUser.uid;
+                if (!my) return;
+                const toMark = latestNudges.filter(x => x.to === my.id && !(Array.isArray(x.readBy) && x.readBy.includes(uid)));
+                if (!toMark.length) return;
+                await Promise.all(toMark.map(x => updateDoc(nudgeRef(x.id), { readBy: arrayUnion(uid) })));
+                showToast('Oznaczono jako przeczytane.');
+            };
+            document.getElementById('nudges-list').addEventListener('click', async (e) => {
+                const s = e.target.closest('.nudge-settle-btn');
+                if (s) {
+                    nudgesModal.classList.remove('active');
+                    openSettleModal(s.dataset.to, Number(s.dataset.amountG), s.dataset.currency, 'send');
+                    return;
+                }
+                const r = e.target.closest('.nudge-read-btn');
+                if (r) {
+                    await updateDoc(nudgeRef(r.dataset.id), { readBy: arrayUnion(currentUser.uid) });
+                    return;
+                }
+            });
 
             // Edycja członków rachunku
             const bmBtnA = document.getElementById('edit-members-btn-advanced');
