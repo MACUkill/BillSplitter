@@ -575,15 +575,6 @@
             if (member.accountNumber) return [{ type: 'account', value: member.accountNumber }];
             return [];
         };
-        // Zwięzła lista metod odbiorcy z przyciskami kopiuj (przy „Należność dla X"). Pełne „Ureguluj" → Faza 5.
-        const getPaymentMethodsHtml = (payerId) => {
-            const methods = getPaymentMethods((groupData && groupData.members && groupData.members[payerId]) || null);
-            if (methods.length === 0) return '';
-            return `<div class="mt-1 space-y-0.5">` + methods.map(m =>
-                `<span class="flex items-center text-xs text-gray-500"><i class="${paymentIconClass(m.type)} mr-1 w-3.5 text-center"></i><span class="font-medium mr-1">${escapeHtml(paymentLabel(m))}:</span>${escapeHtml(m.value)} <button class="copy-account-btn text-blue-600 hover:underline ml-1" data-account="${escapeHtml(m.value)}">kopiuj</button></span>`
-            ).join('') + `</div>`;
-        };
-
         // Edytor metod płatności (modal). Pracuje na kopii roboczej, zapisuje całą tablicę do Firestore.
         const savePaymentMethods = async () => {
             if (!paymentEditMemberId || !currentGroupId) return;
@@ -1176,12 +1167,6 @@
             return `<span class="font-semibold ${current.color} flex items-center"><i class="fas ${current.icon} mr-2"></i>${current.text}</span>`;
         };
 
-        // --- Faza 2: zamrożenie kwoty po zapłacie + ślad kto/kiedy zmienił status ---
-        const getParticipantTotal = (bill, pid) => {
-            const found = calculateAllForBill(bill).participantTotals.find(x => x.participant.id === pid);
-            return found ? found.total : 0;
-        };
-
         // Model wpłat: status rachunku to tylko członkostwo/uzupełnienie (bez opłacone/paidAmount/śladu).
         const buildStatusUpdate = (bill, participantId, newStatus) => ({ [`participants.${participantId}.status`]: newStatus });
         
@@ -1549,7 +1534,7 @@
                     
                     if (target.classList.contains('status-select')) {
                         const newStatus = e.target.value;
-                        Object.assign(updates, buildStatusUpdate(billData, participantId, newStatus, participant.name));
+                        Object.assign(updates, buildStatusUpdate(billData, participantId, newStatus));
                         if (newStatus === 'not_applicable') {
                             updates[`participants.${participantId}.individualAmount`] = 0;
                             updates[`participants.${participantId}.individualAmounts`] = [];
@@ -1587,16 +1572,6 @@
                     await updateDoc(billDocRef, updates);
                 };
             }
-
-            // Płatnik może zmieniać status opłacenia innych (ze śladem kto/kiedy).
-            document.querySelectorAll('.payer-status-select').forEach(select => {
-                select.onchange = async (e) => {
-                    const pid = e.target.dataset.participantId;
-                    const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
-                    const changedBy = myMember ? myMember.name : 'Płatnik';
-                    await updateDoc(billDocRef, buildStatusUpdate(billData, pid, e.target.value, changedBy));
-                };
-            });
 
             document.querySelectorAll('.remove-shared-cost-btn').forEach(button => {
                 button.onclick = async (e) => {
@@ -1792,17 +1767,7 @@
             document.querySelectorAll('.simple-status-select').forEach(select => {
                 select.onchange = async (e) => {
                     const participantId = e.target.dataset.participantId;
-                    const changedBy = billData.participants[participantId]?.name;
-                    await updateDoc(billDocRef, buildStatusUpdate(billData, participantId, e.target.value, changedBy));
-                };
-            });
-            // Płatnik może zmieniać status opłacenia innych (ze śladem kto/kiedy).
-            document.querySelectorAll('.payer-status-select').forEach(select => {
-                select.onchange = async (e) => {
-                    const pid = e.target.dataset.participantId;
-                    const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
-                    const changedBy = myMember ? myMember.name : 'Płatnik';
-                    await updateDoc(billDocRef, buildStatusUpdate(billData, pid, e.target.value, changedBy));
+                    await updateDoc(billDocRef, buildStatusUpdate(billData, participantId, e.target.value));
                 };
             });
             document.getElementById('delete-bill-btn-simple').onclick = () => deleteBillWithUndo();
