@@ -1,6 +1,7 @@
         // Importy Firebase (npm) + moduł obliczeń
         import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
         import { unreadNudgeCount, hasRecentNudge } from './nudges.js';
+        import { itemQuantity, itemPickers, itemPickerCount, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
@@ -291,7 +292,8 @@
                 title: 'Rachunek zaawansowany',
                 html: `<p>Dla rachunków z różnymi pozycjami (np. restauracja):</p>
                     <ul class="list-disc pl-5 space-y-1">
-                        <li><b>Koszty dzielone</b> — wspólne pozycje, dzielone po równo między uczestników.</li>
+                        <li><b>Pozycje</b> — przepisz paragon na kafelki, a potem <b>stuknij te, które jadłeś</b>. Cena pozycji dzieli się po równo między wszystkich, którzy ją stuknęli. Kafelek na czerwono = nikt jej jeszcze nie wziął.</li>
+                        <li>Pozycję o ilości większej niż 1 możesz <b>podzielić na sztuki</b> (ołówek → „Podziel na sztuki"), gdy każdą sztukę wziął kto inny.</li>
                         <li><b>Koszty ogólne</b> — np. napiwek/serwis, doliczane do całości i dzielone.</li>
                         <li><b>Koszty indywidualne</b> — każdy wpisuje to, co zamówił dla siebie.</li>
                         <li><b>Suma kontrolna</b> sprawdza, czy pozycje zgadzają się z kwotą rachunku (✓ / za dużo / za mało).</li>
@@ -549,13 +551,15 @@
             if (explicit) return explicit;
             return PROFILE_COLORS[hashStr(memberId || name || '?') % PROFILE_COLORS.length];
         };
-        const avatarHtml = (name, memberId, extraClass = '') => {
+        // sizeClass podmienia rozmiar/odstęp (nie dokłada się do domyślnych) — inaczej przy Tailwindzie
+        // konkurencyjne klasy w rodzaju w-9 i w-6 rozstrzyga kolejność w arkuszu, nie w atrybucie.
+        const avatarHtml = (name, memberId, sizeClass = 'w-9 h-9 text-lg mr-3') => {
             const member = (groupData && groupData.members && groupData.members[memberId]) || {};
             if (member.photoURL) {
-                return `<img src="${member.photoURL}" alt="" class="w-9 h-9 rounded-full object-cover mr-3 flex-shrink-0 ${extraClass}">`;
+                return `<img src="${member.photoURL}" alt="" class="rounded-full object-cover flex-shrink-0 ${sizeClass}">`;
             }
             const initial = ((name || '?').trim().charAt(0) || '?').toUpperCase();
-            return `<div class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-lg mr-3 flex-shrink-0 ${extraClass}" style="background-color:${colorForMember(memberId, name)}">${initial}</div>`;
+            return `<div class="rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${sizeClass}" style="background-color:${colorForMember(memberId, name)}">${initial}</div>`;
         };
 
         // --- Faza 4/5-bridge: metody płatności per osoba (wiele: konto, telefon, Revolut, PayPal, własne) ---
@@ -1169,7 +1173,143 @@
 
         // Model wpłat: status rachunku to tylko członkostwo/uzupełnienie (bez opłacone/paidAmount/śladu).
         const buildStatusUpdate = (bill, participantId, newStatus) => ({ [`participants.${participantId}.status`]: newStatus });
-        
+
+        // --- Faza 7A: pozycje paragonu jako kafelki ---
+        // Kafelek = element sharedCosts. Stuknięcie dopisuje/wypisuje MNIE z pozycji,
+        // a matma (advancedExactSharesGrosze) dzieli kwotę równo między wybierających.
+        const itemsDocRef = () => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId);
+
+        const saveItems = async (items) => {
+            await updateDoc(itemsDocRef(), { sharedCosts: items });
+        };
+
+        const renderItemTiles = () => {
+            const list = document.getElementById('shared-costs-list');
+            if (!list || !billData) return;
+            const items = billData.sharedCosts || [];
+            const cur = billData.currency || 'PLN';
+            const me = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === (currentUser && currentUser.uid));
+            const myId = me ? me.id : null;
+
+            const header = document.getElementById('items-section-header');
+            if (header) {
+                const missing = unassignedItems(billData).length;
+                header.innerHTML = items.length === 0 ? '' :
+                    `<div class="flex items-center justify-between mb-2">
+                        <p class="font-semibold text-gray-700">Pozycje (${items.length})</p>
+                        ${missing > 0 ? `<p class="text-xs text-red-600 font-semibold"><i class="fas fa-triangle-exclamation mr-1"></i>${missing} bez wyboru</p>` : ''}
+                    </div>`;
+            }
+
+            if (items.length === 0) {
+                list.className = '';
+                list.innerHTML = `<p class="text-sm text-gray-400 italic">Brak pozycji. Dodaj je z paragonu, a każdy stuknie to, co jadł.</p>`;
+                return;
+            }
+
+            list.className = 'grid grid-cols-2 sm:grid-cols-3 gap-2';
+            list.innerHTML = items.map(it => {
+                const pickers = itemPickers(it).filter(pid => billData.participants[pid]);
+                const count = pickers.length;
+                const mine = isPicked(it, myId);
+                const qty = itemQuantity(it);
+                const amountG = toGrosze(it.amount || 0);
+                const perPersonG = count > 0 ? Math.ceil(amountG / count) : 0;
+
+                const tileClass = mine
+                    ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                    : (count === 0 ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white');
+
+                const avatars = pickers.slice(0, 4).map(pid => {
+                    const m = billData.participants[pid];
+                    return `<span class="inline-flex -ml-1 first:ml-0 ring-2 ring-white rounded-full">${avatarHtml(m.name, pid, 'w-6 h-6 text-xs')}</span>`;
+                }).join('');
+
+                return `<div class="item-tile relative text-left border-2 ${tileClass} rounded-xl p-3 cursor-pointer transition select-none hover:shadow-md" data-item-id="${it.id}">
+                    <div class="flex items-start justify-between gap-1">
+                        <p class="font-semibold text-sm leading-tight break-words pr-1">${escapeHtml(it.description || 'Pozycja')}${qty > 1 ? ` <span class="text-gray-400 font-normal">×${qty}</span>` : ''}</p>
+                        <span class="flex-shrink-0 flex gap-1.5">
+                            <button class="item-edit-btn text-gray-300 hover:text-blue-600" data-item-id="${it.id}" title="Edytuj pozycję"><i class="fas fa-pen text-xs"></i></button>
+                            <button class="remove-shared-cost-btn text-gray-300 hover:text-red-600" data-cost-id="${it.id}" title="Usuń pozycję"><i class="fas fa-trash text-xs"></i></button>
+                        </span>
+                    </div>
+                    <p class="text-lg font-bold mt-1">${fmtMoney(amountG, cur)}</p>
+                    <div class="flex items-center justify-between mt-2 min-h-[1.5rem]">
+                        <span class="flex items-center">${avatars}${count > 4 ? `<span class="text-xs text-gray-500 ml-1">+${count - 4}</span>` : ''}</span>
+                        ${count > 0
+                            ? `<span class="text-xs ${mine ? 'text-blue-700 font-semibold' : 'text-gray-500'}">${fmtMoney(perPersonG, cur)}/os.</span>`
+                            : `<span class="text-xs text-red-600 font-semibold">nikt nie wybrał</span>`}
+                    </div>
+                </div>`;
+            }).join('');
+        };
+
+        // Edytor pozycji — ten sam modal dodaje i edytuje (editingItemId = null → dodawanie).
+        let editingItemId = null;
+
+        const openItemModal = (itemId) => {
+            if (!billData) return;
+            editingItemId = itemId || null;
+            const item = itemId ? (billData.sharedCosts || []).find(i => i.id === itemId) : null;
+
+            document.getElementById('item-modal-title').textContent = item ? 'Edytuj pozycję' : 'Dodaj pozycję';
+            document.getElementById('shared-cost-desc').value = item ? (item.description || '') : '';
+            document.getElementById('item-quantity').value = item ? itemQuantity(item) : 1;
+            document.getElementById('shared-cost-amount').value = item ? String(item.amount ?? '').replace('.', ',') : '';
+            document.getElementById('item-amount-currency').textContent = billData.currency || 'PLN';
+
+            const picked = item ? itemPickers(item) : [];
+            const wrap = document.getElementById('shared-cost-participants');
+            wrap.innerHTML = Object.values(billData.participants || {})
+                .filter(p => p.status !== 'not_applicable')
+                .map(p => `<label class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 cursor-pointer">
+                    <input type="checkbox" class="shared-participant-checkbox w-4 h-4" value="${p.id}" ${picked.includes(p.id) ? 'checked' : ''}>
+                    ${avatarHtml(p.name, p.id, 'w-7 h-7 text-sm')}<span>${escapeHtml(p.name)}</span>
+                </label>`).join('');
+
+            // Rozbicie na sztuki ma sens tylko dla istniejącej pozycji o ilości > 1.
+            const splitBtn = document.getElementById('item-split-btn');
+            splitBtn.classList.toggle('hidden', !(item && itemQuantity(item) > 1));
+
+            document.getElementById('shared-cost-modal').classList.add('active');
+        };
+
+        const saveItemFromModal = async () => {
+            const description = document.getElementById('shared-cost-desc').value.trim();
+            const amount = parseLocalFloat(document.getElementById('shared-cost-amount').value);
+            const quantity = Math.max(1, Math.trunc(parseLocalFloat(document.getElementById('item-quantity').value)) || 1);
+            const sharedBy = Array.from(document.querySelectorAll('.shared-participant-checkbox:checked')).map(cb => cb.value);
+            if (!description) { showToast('Podaj nazwę pozycji.', true); return; }
+            if (!(amount > 0)) { showToast('Podaj cenę pozycji.', true); return; }
+
+            const items = [...(billData.sharedCosts || [])];
+            if (editingItemId) {
+                const i = items.findIndex(x => x.id === editingItemId);
+                if (i === -1) return;
+                items[i] = { ...items[i], description, amount, quantity, sharedBy };
+            } else {
+                // Nowa pozycja bez wskazanych osób jest dozwolona — kafelek pokaże „nikt nie wybrał",
+                // a każdy dopisze się sam jednym stuknięciem. To główny przepływ przy paragonie.
+                items.push({ id: generateId(), description, amount, quantity, sharedBy });
+            }
+            await saveItems(items);
+            document.getElementById('shared-cost-modal').classList.remove('active');
+            showToast(editingItemId ? 'Zapisano pozycję.' : 'Dodano pozycję.');
+            editingItemId = null;
+        };
+
+        const splitEditedItem = async () => {
+            const items = billData.sharedCosts || [];
+            const item = items.find(x => x.id === editingItemId);
+            if (!item) return;
+            const parts = splitItemByUnits(item, generateId);
+            const out = items.flatMap(x => (x.id === item.id ? parts : [x]));
+            await saveItems(out);
+            document.getElementById('shared-cost-modal').classList.remove('active');
+            showToast(`Rozbito na ${parts.length} sztuk.`);
+            editingItemId = null;
+        };
+
         // ===================================================
         // ===== EKRAN RACHUNKU ZAAWANSOWANEGO (bill-screen) =====
         // ===================================================
@@ -1404,17 +1544,7 @@
                 }
             });
             
-            document.getElementById('shared-costs-list').innerHTML = (billData.sharedCosts || []).map(sc => {
-                const sharedByNames = sc.sharedBy.map(pid => billData.participants[pid]?.name || '...').join(', ');
-                return `
-                    <div class="bg-yellow-100 p-3 rounded-lg flex justify-between items-center">
-                        <div>
-                            <p class="font-semibold">${sc.description}: ${sc.amount.toFixed(2)} ${billData.currency}</p>
-                            <p class="text-xs text-gray-500">Dzielone przez: ${sharedByNames}</p>
-                        </div>
-                        <button class="remove-shared-cost-btn text-red-500 hover:text-red-700" data-cost-id="${sc.id}"><i class="fas fa-trash"></i></button>
-                    </div>`;
-            }).join('');
+            renderItemTiles();
 
             document.getElementById('global-costs-list').innerHTML = (billData.globalCosts || []).map(gc => {
                 const valueText = gc.type === 'percent' ? `${gc.value}%` : `${gc.value.toFixed(2)} ${billData.currency}`;
@@ -1573,6 +1703,22 @@
                 };
             }
 
+            // Kafelek: stuknięcie dopisuje/wypisuje MNIE z pozycji (klik w ołówek/kosz nie liczy się jako wybór).
+            document.querySelectorAll('.item-tile').forEach(tile => {
+                tile.onclick = async (e) => {
+                    if (e.target.closest('.item-edit-btn') || e.target.closest('.remove-shared-cost-btn')) return;
+                    const my = myMemberNow();
+                    if (!my) { showToast('Najpierw dołącz do grupy.', true); return; }
+                    if (!billData.participants[my.id] || billData.participants[my.id].status === 'not_applicable') {
+                        showToast('Nie jesteś uczestnikiem tego rachunku.', true); return;
+                    }
+                    await saveItems(toggleItemPicker(billData.sharedCosts || [], tile.dataset.itemId, my.id));
+                };
+            });
+            document.querySelectorAll('.item-edit-btn').forEach(btn => {
+                btn.onclick = (e) => { e.stopPropagation(); openItemModal(e.currentTarget.dataset.itemId); };
+            });
+
             document.querySelectorAll('.remove-shared-cost-btn').forEach(button => {
                 button.onclick = async (e) => {
                     const costId = e.currentTarget.dataset.costId;
@@ -1587,22 +1733,15 @@
                     if (costToRemove) await updateDoc(billDocRef, { globalCosts: arrayRemove(costToRemove) });
                 };
             });
-            setupModal('shared-cost-modal', 'add-shared-cost-btn', 'cancel-shared-cost', 'save-shared-cost', async () => {
-                const description = document.getElementById('shared-cost-desc').value.trim();
-                const amount = parseLocalFloat(document.getElementById('shared-cost-amount').value);
-                const selectedParticipants = Array.from(document.querySelectorAll('.shared-participant-checkbox:checked')).map(cb => cb.value);
-                if (!description || !amount || selectedParticipants.length === 0) { showToast("Wypełnij wszystkie pola i wybierz uczestników.", true); return; }
-                await updateDoc(billDocRef, { sharedCosts: arrayUnion({ id: generateId(), description, amount, sharedBy: selectedParticipants }) });
-                document.getElementById('shared-cost-desc').value = '';
-                document.getElementById('shared-cost-amount').value = '';
-            });
-            document.getElementById('add-shared-cost-btn').addEventListener('click', () => {
-                const participantsDiv = document.getElementById('shared-cost-participants');
-                participantsDiv.innerHTML = '';
-                Object.values(billData.participants || {}).filter(p => p.status !== 'not_applicable').forEach(p => {
-                    participantsDiv.innerHTML += `<label class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 cursor-pointer"><input type="checkbox" class="shared-participant-checkbox" value="${p.id}"><span>${p.name}</span></label>`;
-                });
-            });
+            // Modal pozycji obsługujemy ręcznie (nie przez setupModal): zamknięcie musi zależeć od
+            // walidacji, a przycisk otwarcia potrzebuje trybu „dodaj" vs „edytuj".
+            document.getElementById('add-shared-cost-btn').onclick = () => openItemModal(null);
+            document.getElementById('cancel-shared-cost').onclick = () => {
+                document.getElementById('shared-cost-modal').classList.remove('active');
+                editingItemId = null;
+            };
+            document.getElementById('save-shared-cost').onclick = saveItemFromModal;
+            document.getElementById('item-split-btn').onclick = splitEditedItem;
             document.getElementById('global-cost-type-select').addEventListener('change', (e) => {
                 document.getElementById('global-cost-desc-other').classList.toggle('hidden', e.target.value !== 'Inne');
             });

@@ -343,12 +343,13 @@
                 <div id="my-participant-card" class="mb-6"></div>
 
                 <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mb-6">
-                    <button id="add-shared-cost-btn" class="flex-1 bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-yellow-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed"><i class="fas fa-users mr-2"></i>Dodaj koszt dzielony</button>
+                    <button id="add-shared-cost-btn" class="flex-1 bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-yellow-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed"><i class="fas fa-receipt mr-2"></i>Dodaj pozycję</button>
                     <button id="add-global-cost-btn" class="flex-1 bg-orange-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-orange-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed"><i class="fas fa-globe-americas mr-2"></i>Dodaj koszt ogólny</button>
                 </div>
 
                 <div id="global-costs-list" class="space-y-2 mb-6"></div>
-                <div id="shared-costs-list" class="space-y-2 mb-6"></div>
+                <div id="items-section-header"></div>
+                <div id="shared-costs-list" class="mb-6"></div>
                 <div class="flex justify-end border-t pt-4">
                     <button id="edit-members-btn-advanced" class="text-sm text-blue-600 hover:underline"><i class="fas fa-user-plus mr-1"></i>Edytuj uczestników</button>
                 </div>
@@ -575,14 +576,26 @@
 
     <div id="shared-cost-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-20">
         <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-lg">
-            <h3 class="text-2xl font-bold mb-6">Dodaj koszt dzielony</h3>
-            <label for="shared-cost-desc" class="font-medium">Opis (np. "Wino", "Przystawki")</label>
+            <h3 id="item-modal-title" class="text-2xl font-bold mb-6">Dodaj pozycję</h3>
+            <label for="shared-cost-desc" class="font-medium">Nazwa (np. „Pizza", „Wino")</label>
             <input type="text" id="shared-cost-desc" class="w-full mt-1 mb-4 p-2 border rounded-lg">
-            <label for="shared-cost-amount" class="font-medium">Kwota</label>
-            <input type="number" id="shared-cost-amount" class="w-full mt-1 mb-4 p-2 border rounded-lg">
-            <p class="font-medium mb-2">Kto się składa?</p>
+            <div class="flex gap-3 mb-4">
+                <div class="w-24">
+                    <label for="item-quantity" class="font-medium">Ilość</label>
+                    <input type="number" id="item-quantity" min="1" step="1" value="1" class="w-full mt-1 p-2 border rounded-lg">
+                </div>
+                <div class="flex-grow">
+                    <label for="shared-cost-amount" class="font-medium">Cena łączna <span class="text-xs text-gray-400">(jak na paragonie)</span></label>
+                    <div class="flex items-center gap-2">
+                        <input type="text" inputmode="decimal" id="shared-cost-amount" class="w-full mt-1 p-2 border rounded-lg">
+                        <span id="item-amount-currency" class="mt-1 text-gray-500 font-semibold">PLN</span>
+                    </div>
+                </div>
+            </div>
+            <p class="font-medium mb-2">Kto to wziął? <span class="text-xs text-gray-400 font-normal">(można zostawić puste — każdy dopisze się sam)</span></p>
             <div id="shared-cost-participants" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto"></div>
-            <div class="flex justify-end space-x-4 mt-8">
+            <div class="flex flex-wrap justify-end gap-3 mt-8">
+                <button id="item-split-btn" class="hidden mr-auto px-4 py-2 text-sm bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200" title="Rozbij na osobne sztuki, żeby każdą wziął kto inny"><i class="fas fa-scissors mr-1"></i>Podziel na sztuki</button>
                 <button id="cancel-shared-cost" class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">Anuluj</button>
                 <button id="save-shared-cost" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Zapisz</button>
             </div>
