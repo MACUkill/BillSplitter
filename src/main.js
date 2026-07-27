@@ -7,6 +7,8 @@
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
         import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, connectStorageEmulator } from "firebase/storage";
         import { getMessaging, getToken, onMessage, isSupported as isMessagingSupported } from "firebase/messaging";
+        import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
+        import { normalizeReceipt, receiptItemsToSharedCosts, receiptModifiersToGlobalCosts } from './receipt.js';
 
         // Config z ENV (jeśli podany) — inaczej wpisany na sztywno projekt produkcyjny.
         // Dzięki temu testy pushu jadą na osobnym projekcie-piaskownicy (.env.local),
@@ -37,6 +39,8 @@
             localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
         });
         const storage = getStorage(app);
+        // Region musi zgadzać się z deklaracją w functions/index.js, inaczej wywołanie trafia w pustkę.
+        const functions = getFunctions(app, 'europe-central2');
 
         // --- DEV: podłączenie do Firebase Emulator Suite (pełna izolacja od produkcji) ---
         // VITE_USE_EMULATOR=true wymusza emulator także w buildzie PROD — potrzebne do testów
@@ -46,6 +50,7 @@
             connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
             connectFirestoreEmulator(db, '127.0.0.1', 8770);
             connectStorageEmulator(storage, '127.0.0.1', 9199);
+            connectFunctionsEmulator(functions, '127.0.0.1', 5001);
             console.info('[BillSplitter] Emulator Firebase (127.0.0.1) — żywe dane nietknięte.');
             if (!env.DEV) console.warn('[BillSplitter] UWAGA: build produkcyjny podpięty do EMULATORA (VITE_USE_EMULATOR=true). To build testowy, nie do wdrożenia.');
         }
@@ -1244,6 +1249,165 @@
             }).join('');
         };
 
+        // --- Faza 7B: odczyt paragonu przez AI ---
+        // Zdjęcia z rachunku lecą do Cloud Function (klucz API nigdy nie dotyka przeglądarki),
+        // a odpowiedź modelu przechodzi przez sito w receipt.js, zanim pokażemy ją do akceptacji.
+        let receiptDraft = null; // { items:[{...,__use}], modifiers:[{...,__use}], receiptTotal }
+
+        const RECEIPT_MODELS = [
+            { id: 'google/gemini-3.1-flash-lite', label: 'Szybki (domyślny)' },
+            { id: 'google/gemini-3.5-flash', label: 'Dokładniejszy' },
+            { id: 'anthropic/claude-sonnet-5', label: 'Najdokładniejszy' },
+        ];
+        let receiptModel = RECEIPT_MODELS[0].id;
+
+        // Zmniejszenie przed wysyłką: mniej tokenów obrazu = taniej i szybciej, a paragon
+        // pozostaje czytelny. Model i tak nie skorzysta z pełnej rozdzielczości aparatu.
+        // Zdjęcie pobieramy przez fetch i wczytujemy jako blob: — inaczej obrazek ze Storage
+        // nie przechodzi przez `crossOrigin` (brak nagłówka CORS na emulatorze), a bez niego
+        // canvas zostaje „skażony" i toDataURL rzuca wyjątkiem. Blob jest same-origin, więc działa.
+        const downscaleImage = async (url, maxSide = 1600) => {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Nie udało się pobrać zdjęcia.');
+            const blob = await res.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            try {
+                const img = await new Promise((resolve, reject) => {
+                    const el = new Image();
+                    el.onload = () => resolve(el);
+                    el.onerror = () => reject(new Error('Nie udało się wczytać zdjęcia.'));
+                    el.src = objectUrl;
+                });
+                const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                return canvas.toDataURL('image/jpeg', 0.85);
+            } finally {
+                URL.revokeObjectURL(objectUrl);
+            }
+        };
+
+        const renderParseReceiptButton = () => {
+            const btn = document.getElementById('parse-receipt-btn');
+            const note = document.getElementById('parse-receipt-note');
+            if (!btn || !note) return;
+            const count = (billData && billData.photos || []).length;
+            btn.classList.toggle('hidden', count === 0);
+            note.textContent = count === 0 ? '' : (count === 1
+                ? 'AI przepisze paragon na pozycje — zawsze możesz je poprawić.'
+                : `${count} zdjęcia zostaną potraktowane jako jeden paragon.`);
+        };
+
+        const runParseReceipt = async () => {
+            const photos = (billData && billData.photos) || [];
+            if (photos.length === 0) { showToast('Najpierw dodaj zdjęcie paragonu.', true); return; }
+
+            const btn = document.getElementById('parse-receipt-btn');
+            const label = document.getElementById('parse-receipt-label');
+            btn.disabled = true;
+            label.textContent = 'Czytam paragon…';
+            try {
+                const images = [];
+                for (const p of photos.slice(0, 5)) {
+                    images.push(await downscaleImage(p.url));
+                }
+                const call = httpsCallable(functions, 'parseReceipt', { timeout: 180000 });
+                const res = await call({ images, model: receiptModel });
+                const normalized = normalizeReceipt(res.data && res.data.raw);
+                if (normalized.items.length === 0 && normalized.modifiers.length === 0) {
+                    showToast('Nie udało się odczytać żadnej pozycji. Spróbuj wyraźniejszego zdjęcia.', true);
+                    return;
+                }
+                receiptDraft = {
+                    ...normalized,
+                    items: normalized.items.map(i => ({ ...i, __use: true })),
+                    modifiers: normalized.modifiers.map(m => ({ ...m, __use: true })),
+                };
+                renderReceiptPreview();
+                document.getElementById('receipt-preview-modal').classList.add('active');
+            } catch (err) {
+                console.error('[BillSplitter] Odczyt paragonu nieudany:', err);
+                showToast(err && err.message ? err.message : 'Nie udało się odczytać paragonu.', true);
+            } finally {
+                btn.disabled = false;
+                label.textContent = 'Odczytaj paragon';
+            }
+        };
+
+        const renderReceiptPreview = () => {
+            if (!receiptDraft) return;
+            const cur = (billData && billData.currency) || 'PLN';
+            const wrap = document.getElementById('receipt-preview-items');
+
+            wrap.innerHTML = receiptDraft.items.map((it, i) => `
+                <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg ${it.__use ? '' : 'opacity-50'}">
+                    <input type="checkbox" class="rp-use w-4 h-4 flex-shrink-0" data-i="${i}" ${it.__use ? 'checked' : ''}>
+                    <input type="text" class="rp-name flex-grow min-w-0 p-1 border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none" data-i="${i}" value="${escapeHtml(it.description)}">
+                    <input type="number" min="1" step="1" class="rp-qty w-14 p-1 text-center border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none" data-i="${i}" value="${it.quantity}">
+                    <input type="text" inputmode="decimal" class="rp-amount w-24 p-1 text-right font-semibold border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none" data-i="${i}" value="${String(it.amount.toFixed(2)).replace('.', ',')}">
+                    <span class="text-xs text-gray-400 flex-shrink-0">${cur}</span>
+                </div>`).join('');
+
+            const modWrap = document.getElementById('receipt-preview-modifiers-wrap');
+            modWrap.classList.toggle('hidden', receiptDraft.modifiers.length === 0);
+            document.getElementById('receipt-preview-modifiers').innerHTML = receiptDraft.modifiers.map((m, i) => `
+                <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg ${m.__use ? '' : 'opacity-50'}">
+                    <input type="checkbox" class="rp-mod-use w-4 h-4 flex-shrink-0" data-i="${i}" ${m.__use ? 'checked' : ''}>
+                    <span class="flex-grow min-w-0 truncate">${escapeHtml(m.description)}</span>
+                    <span class="font-semibold ${m.value < 0 ? 'text-green-600' : 'text-gray-700'}">${m.type === 'percent' ? `${m.value}%` : fmtMoney(toGrosze(m.value), cur)}</span>
+                </div>`).join('');
+
+            renderReceiptPreviewSummaryOnly();
+        };
+
+        // Odświeża TYLKO podsumowanie i ostrzeżenie — bez ruszania pól, żeby nie wyrzucić
+        // kursora z edytowanego pola przy każdym wpisanym znaku (ten sam problem, co withFocusPreserved).
+        const renderReceiptPreviewSummaryOnly = () => {
+            if (!receiptDraft) return;
+            const cur = (billData && billData.currency) || 'PLN';
+            const usedItems = receiptDraft.items.filter(i => i.__use);
+            const sumG = usedItems.reduce((s, i) => s + toGrosze(i.amount), 0);
+            document.getElementById('receipt-preview-summary').innerHTML =
+                `Wybrano <b>${usedItems.length}</b> z ${receiptDraft.items.length} pozycji na <b>${fmtMoney(sumG, cur)}</b>`;
+
+            // Rozjazd z sumą paragonu to najczęstszy objaw przeoczonej linii — mówimy o tym wprost.
+            const warn = document.getElementById('receipt-preview-warning');
+            const totalG = receiptDraft.receiptTotal ? toGrosze(receiptDraft.receiptTotal) : 0;
+            // Modyfikatory procentowe liczą się od sumy pozycji — bez tego serwis „10%" wyglądałby
+            // jak brakująca linia i wywoływał fałszywy alarm (a fałszywe alarmy uczą ignorować ostrzeżenia).
+            const modsG = receiptDraft.modifiers
+                .filter(m => m.__use)
+                .reduce((s, m) => s + (m.type === 'percent' ? Math.round(sumG * m.value / 100) : toGrosze(m.value)), 0);
+            const diffG = totalG > 0 ? (sumG + modsG) - totalG : 0;
+            if (totalG > 0 && Math.abs(diffG) > 1) {
+                warn.classList.remove('hidden');
+                warn.innerHTML = `<i class="fas fa-triangle-exclamation mr-1"></i>Suma wybranych pozycji (${fmtMoney(sumG + modsG, cur)}) różni się od sumy z paragonu (${fmtMoney(totalG, cur)}) o <b>${fmtMoney(Math.abs(diffG), cur)}</b>. Sprawdź, czy któraś linia nie umknęła.`;
+            } else {
+                warn.classList.add('hidden');
+            }
+        };
+
+        const applyReceiptDraft = async () => {
+            if (!receiptDraft || !billData) return;
+            const items = receiptDraft.items.filter(i => i.__use);
+            const mods = receiptDraft.modifiers.filter(m => m.__use);
+            if (items.length === 0 && mods.length === 0) { showToast('Nie wybrano żadnej pozycji.', true); return; }
+
+            const updates = {};
+            if (items.length) {
+                updates.sharedCosts = [...(billData.sharedCosts || []), ...receiptItemsToSharedCosts(items, generateId)];
+            }
+            if (mods.length) {
+                updates.globalCosts = [...(billData.globalCosts || []), ...receiptModifiersToGlobalCosts(mods, generateId)];
+            }
+            await updateDoc(itemsDocRef(), updates);
+            document.getElementById('receipt-preview-modal').classList.remove('active');
+            receiptDraft = null;
+            showToast(`Dodano ${items.length} pozycji z paragonu.`);
+        };
+
         // Edytor pozycji — ten sam modal dodaje i edytuje (editingItemId = null → dodawanie).
         let editingItemId = null;
 
@@ -1408,6 +1572,7 @@
             }
             
             renderReceiptPhotos(billData.photos);
+            renderParseReceiptButton();
 
             document.getElementById('my-participant-card').innerHTML = '';
             document.getElementById('participants-list').innerHTML = '';
@@ -1742,6 +1907,39 @@
             };
             document.getElementById('save-shared-cost').onclick = saveItemFromModal;
             document.getElementById('item-split-btn').onclick = splitEditedItem;
+
+            // Odczyt paragonu przez AI
+            document.getElementById('parse-receipt-btn').onclick = runParseReceipt;
+            document.getElementById('close-receipt-preview').onclick = () => {
+                document.getElementById('receipt-preview-modal').classList.remove('active');
+                receiptDraft = null;
+            };
+            document.getElementById('apply-receipt-btn').onclick = applyReceiptDraft;
+            // Edycja w podglądzie: każde pole od razu wraca do szkicu, żeby podsumowanie
+            // i ostrzeżenie o różnicy liczyły się na tym, co użytkownik faktycznie widzi.
+            const preview = document.getElementById('receipt-preview-items');
+            preview.oninput = (e) => {
+                const t = e.target;
+                const i = Number(t.dataset.i);
+                if (!receiptDraft || !receiptDraft.items[i]) return;
+                if (t.classList.contains('rp-name')) receiptDraft.items[i].description = t.value;
+                else if (t.classList.contains('rp-qty')) receiptDraft.items[i].quantity = Math.max(1, Math.trunc(Number(t.value)) || 1);
+                else if (t.classList.contains('rp-amount')) receiptDraft.items[i].amount = parseLocalFloat(t.value);
+                else return;
+                if (!t.classList.contains('rp-name')) renderReceiptPreviewSummaryOnly();
+            };
+            preview.onchange = (e) => {
+                const t = e.target;
+                if (!t.classList.contains('rp-use') || !receiptDraft) return;
+                receiptDraft.items[Number(t.dataset.i)].__use = t.checked;
+                renderReceiptPreview();
+            };
+            document.getElementById('receipt-preview-modifiers').onchange = (e) => {
+                const t = e.target;
+                if (!t.classList.contains('rp-mod-use') || !receiptDraft) return;
+                receiptDraft.modifiers[Number(t.dataset.i)].__use = t.checked;
+                renderReceiptPreview();
+            };
             document.getElementById('global-cost-type-select').addEventListener('change', (e) => {
                 document.getElementById('global-cost-desc-other').classList.toggle('hidden', e.target.value !== 'Inne');
             });

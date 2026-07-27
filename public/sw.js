@@ -2,7 +2,7 @@
 // Offline app-shell przez runtime caching (bez precache-manifestu — Vite hashuje nazwy).
 // Strategia: network-first dla nawigacji (zawsze świeża wersja gdy online, fallback offline),
 //            cache-first + odświeżenie w tle (stale-while-revalidate) dla statycznych zasobów.
-const CACHE = 'billsplitter-v1';
+const CACHE = 'billsplitter-v2';
 
 self.addEventListener('install', () => {
   // Nowy SW przejmuje od razu — bez czekania na zamknięcie kart.
@@ -72,6 +72,18 @@ self.addEventListener('fetch', (event) => {
     })());
     return;
   }
+
+  // Ruch do Firebase (Firestore, Storage, Auth, Functions) NIE MOŻE iść przez nasz cache:
+  // to dane na żywo, a przechwycona odpowiedź potrafi wrócić do strony w postaci,
+  // której `fetch` nie umie odczytać (TypeError: Failed to fetch przy pobieraniu zdjęcia).
+  // Cache'ujemy wyłącznie własne zasoby i znane CDN-y z bibliotekami.
+  const url = new URL(req.url);
+  const CACHEABLE_HOSTS = [
+    'cdn.tailwindcss.com', 'cdnjs.cloudflare.com', 'cdn.jsdelivr.net',
+    'fonts.googleapis.com', 'fonts.gstatic.com',
+  ];
+  const sameOrigin = url.origin === self.location.origin;
+  if (!sameOrigin && !CACHEABLE_HOSTS.includes(url.hostname)) return;
 
   // Statyczne zasoby (JS/CSS/ikony/fonty, też CDN): cache-first + odświeżenie w tle.
   event.respondWith((async () => {
