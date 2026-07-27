@@ -135,6 +135,22 @@ describe('gotowość na kompilowany Tailwind (dziś CDN)', () => {
     ).toEqual([]);
   });
 
+  it('konfiguracja Tailwinda skanuje oba źródła klas', () => {
+    // Klasy żyją w DWÓCH miejscach: w znacznikach (index.html) i w szablonach składanych
+    // w JavaScripcie (src/main.js). Wypadnięcie któregokolwiek z `content` nie wywoła
+    // żadnego błędu — po prostu część styli przestanie powstawać.
+    const config = readFileSync(join(root, 'tailwind.config.js'), 'utf8');
+    const content = config.match(/content:\s*\[([^\]]*)\]/);
+    expect(content, 'Nie znaleziono listy `content` w tailwind.config.js').toBeTruthy();
+    expect(content[1]).toContain('./index.html');
+    expect(content[1]).toMatch(/\.\/src\/\*\*\/\*\.js/);
+  });
+
+  it('nic już nie ładuje Tailwinda z sieci', () => {
+    // Powrót skryptu z CDN cofnąłby cały ten krok i przywrócił zależność od cudzego serwera.
+    expect(indexHtml).not.toMatch(/<script[^>]+cdn\.tailwindcss\.com/);
+  });
+
   it('zmienne trzymające klasy zawierają pełne nazwy (skaner znajdzie je jako tekst)', () => {
     // Przykłady z kodu: sizeClass 'w-9 h-9 text-lg mr-3', tileClass 'border-blue-500 bg-blue-50'.
     // Sprawdzamy, że nie ma przypisań w rodzaju `const c = 'bg-' + kolor`.

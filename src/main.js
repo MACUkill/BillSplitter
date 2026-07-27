@@ -1,3 +1,5 @@
+        // Style: Tailwind kompilowany w buildzie (dawniej skrypt z cdn.tailwindcss.com).
+        import './tailwind.css';
         // Importy Firebase (npm) + moduł obliczeń
         import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
         import { unreadNudgeCount, hasRecentNudge } from './nudges.js';

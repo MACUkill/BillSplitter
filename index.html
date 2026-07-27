@@ -11,7 +11,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="BillSplitter">
     <link rel="apple-touch-icon" href="/icons/icon-180x180.png">
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind nie przychodzi już z sieci — jest kompilowany do arkusza w buildzie
+         (src/tailwind.css → import w main.js). Dzięki temu produkcja nie zależy od cudzego
+         serwera, a przeglądarka nie generuje styli w locie przy każdym wejściu. -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
