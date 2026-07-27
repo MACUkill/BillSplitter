@@ -3,9 +3,12 @@
 // NIE jest już przyrostowa — czytamy wszystkie rachunki i liczymy świeżo. To eliminuje
 // dryf delt i problemy z at-least-once/retry, oraz używa TEJ SAMEJ matmy co front (calc.js).
 import { onDocumentWritten, onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { defineSecret, defineString } from "firebase-functions/params";
 import { logger } from "firebase-functions";
 import admin from "firebase-admin";
 import { aggregateGroupSummary } from "./calc.js";
+import { RECEIPT_SYSTEM_PROMPT, receiptUserPrompt } from "./receipt-prompt.js";
 
 admin.initializeApp();
 
@@ -106,5 +109,120 @@ export const sendNudgePush = onDocumentCreated(
     }
 
     logger.info(`Push do ${nudge.to}: ${res.successCount}/${tokens.length} dostarczone, usunięto ${dead.length} martwych tokenów.`);
+  },
+);
+
+// ===================================================================
+// Faza 7B: odczyt paragonu przez model AI (OpenRouter)
+// ===================================================================
+// Klucz NIGDY nie trafia do klienta — przeglądarka wysyła tu zdjęcia, a odpowiedź modelu
+// wraca jako surowy JSON. Sito na śmieci (src/receipt.js) działa po stronie klienta, żeby
+// tę samą logikę dało się testować bez sieci.
+const OPENROUTER_API_KEY = defineSecret("OPENROUTER_API_KEY");
+// Domyślnie najtańszy sensowny model. Na paragonie testowym flash-lite dał identyczny odczyt
+// co flash, ale 3x szybciej i ~24x taniej (0,0008 $ vs 0,0197 $ — flash marnował tokeny na
+// „rozmyślanie"). Mocniejsze modele zostają do eskalacji przy pomiętych/nieczytelnych paragonach.
+const OPENROUTER_MODEL = defineString("OPENROUTER_MODEL", { default: "google/gemini-3.1-flash-lite" });
+
+// Biała lista — bez niej klient mógłby wskazać dowolnie drogi model na nasz rachunek.
+const ALLOWED_MODELS = new Set([
+  "google/gemini-3.5-flash",
+  "google/gemini-3.1-flash-lite",
+  "anthropic/claude-sonnet-5",
+]);
+
+const MAX_IMAGES = 5;
+const MAX_IMAGE_CHARS = 8_000_000; // ~6 MB na obraz po base64; zapora przed zapchaniem funkcji
+
+export const parseReceipt = onCall(
+  {
+    region: "europe-central2",
+    secrets: [OPENROUTER_API_KEY],
+    maxInstances: 3,      // zapora kosztowa: brak nagłego roju wywołań
+    timeoutSeconds: 120,  // modele vision potrafią myśleć kilkadziesiąt sekund
+  },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Zaloguj się, aby odczytać paragon.");
+    }
+
+    const images = Array.isArray(request.data?.images) ? request.data.images : [];
+    if (images.length === 0) {
+      throw new HttpsError("invalid-argument", "Brak zdjęć do odczytania.");
+    }
+    if (images.length > MAX_IMAGES) {
+      throw new HttpsError("invalid-argument", `Maksymalnie ${MAX_IMAGES} zdjęć naraz.`);
+    }
+    for (const img of images) {
+      if (typeof img !== "string" || !img.startsWith("data:image/")) {
+        throw new HttpsError("invalid-argument", "Nieprawidłowy format zdjęcia.");
+      }
+      if (img.length > MAX_IMAGE_CHARS) {
+        throw new HttpsError("invalid-argument", "Zdjęcie jest za duże — zmniejsz je przed wysłaniem.");
+      }
+    }
+
+    const requested = request.data?.model;
+    const model = (typeof requested === "string" && ALLOWED_MODELS.has(requested))
+      ? requested
+      : OPENROUTER_MODEL.value();
+
+    const content = [
+      { type: "text", text: receiptUserPrompt(request.data?.hint) },
+      ...images.map((url) => ({ type: "image_url", image_url: { url } })),
+    ];
+
+    let response;
+    try {
+      response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY.value()}`,
+          "Content-Type": "application/json",
+          "X-Title": "BillSplitter",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: RECEIPT_SYSTEM_PROMPT },
+            { role: "user", content },
+          ],
+          response_format: { type: "json_object" }, // wymuszamy JSON zamiast prozy
+          temperature: 0,                           // odczyt paragonu ma być powtarzalny
+          max_tokens: 4000,
+        }),
+      });
+    } catch (err) {
+      logger.error("OpenRouter — brak połączenia:", err);
+      throw new HttpsError("unavailable", "Nie udało się połączyć z usługą odczytu.");
+    }
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      logger.error(`OpenRouter HTTP ${response.status}: ${body.slice(0, 500)}`);
+      throw new HttpsError("internal", `Usługa odczytu zwróciła błąd (${response.status}).`);
+    }
+
+    const payload = await response.json().catch(() => null);
+    const text = payload?.choices?.[0]?.message?.content;
+    if (typeof text !== "string" || !text.trim()) {
+      logger.error("OpenRouter — pusta odpowiedź modelu.");
+      throw new HttpsError("internal", "Model nie zwrócił odczytu.");
+    }
+
+    // Mimo response_format modele bywają uparte i opakowują JSON w blok ```json.
+    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch (_) {
+      logger.error(`OpenRouter — odpowiedź nie jest JSON-em: ${cleaned.slice(0, 300)}`);
+      throw new HttpsError("internal", "Model zwrócił odpowiedź w złym formacie.");
+    }
+
+    const usage = payload?.usage || {};
+    logger.info(`Odczyt paragonu modelem ${model}: ${images.length} zdjęć, tokeny ${usage.prompt_tokens || "?"}/${usage.completion_tokens || "?"}.`);
+
+    return { raw: parsed, model, usage };
   },
 );
