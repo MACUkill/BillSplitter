@@ -278,7 +278,8 @@
                 html: `<ul class="list-disc pl-5 space-y-1">
                         <li><b>Udostępnij link</b>, aby zaprosić znajomych.</li>
                         <li><b>Nowy rachunek</b> — prosty (kwota po równo) lub zaawansowany (różne pozycje).</li>
-                        <li><b>Filtry</b>: Wszystkie / Nieopłacone / Opłacone / Ukryte.</li>
+                        <li><b>Rozliczenia</b> pokazują, kto komu ile jest winien. „Ureguluj" zapisuje wpłatę, a odbiorca ją potwierdza — rachunki zostają zapisem tego, kto co skonsumował.</li>
+                        <li><b>Filtry</b>: Wszystkie / Ukryte.</li>
                         <li><b>Kolor profilu</b> i <b>sposoby płatności</b> (konto, telefon, Revolut, PayPal, własne) — znajomi zobaczą je przy Twoich należnościach.</li>
                         <li><b>Podsumowanie</b> pokazuje Twoje udziały i sumę całej grupy.</li>
                     </ul>`
@@ -372,7 +373,7 @@
                 if (!m) return; // Skip if member data is missing for some reason
 
                 const button = document.createElement('button');
-                button.innerHTML = `<span class="flex items-center justify-center">${avatarHtml(m.name, m.id)}<span>${m.name}</span></span>`;
+                button.innerHTML = `<span class="flex items-center justify-center">${avatarHtml(m.name, m.id)}<span>${escapeHtml(m.name)}</span></span>`;
                 button.className = "w-full p-3 rounded-lg transition";
                 if (m.claimedBy) {
                     button.className += " bg-gray-300 text-gray-500 cursor-pointer hover:bg-gray-400";
@@ -437,8 +438,12 @@
 
                 document.getElementById('group-share-link').value = window.location.origin + window.location.pathname + `?group=${currentGroupId}`;
                 
+                // Limit bierzemy ze stałej, a nie z wpisanego na sztywno „5.00 GB" — pokazywana
+                // wartość rozjeżdżała się z faktycznym progiem (4,5 GB), po którym apka zaczyna
+                // kasować najstarsze zdjęcia.
                 const usageInGB = ((groupData.totalStorageUsed || 0) / (1024 * 1024 * 1024)).toFixed(2);
-                document.getElementById('storage-usage').textContent = `${usageInGB} GB / 5.00 GB`;
+                const limitInGB = (STORAGE_LIMIT_BYTES / (1024 * 1024 * 1024)).toFixed(2);
+                document.getElementById('storage-usage').textContent = `${usageInGB} GB / ${limitInGB} GB`;
 
                 if (myMember) {
                     const myGrossSpend = (groupData.userGrossSpend && groupData.userGrossSpend[myMember.id]) || {};
@@ -525,7 +530,7 @@
             }
             if (bill.payerId && !bill.payerConfirmed) {
                 const payerName = bill.participants[bill.payerId]?.name || 'Płatnik';
-                const text = myMember.id === bill.payerId ? "Potwierdź, że zapłaciłeś/aś" : `Oczekiwanie na potwierdzenie od ${payerName}`;
+                const text = myMember.id === bill.payerId ? "Potwierdź, że zapłaciłeś/aś" : `Oczekiwanie na potwierdzenie od ${escapeHtml(payerName)}`;
                 return `<p class="text-sm text-yellow-600 font-semibold"><i class="fas fa-hourglass-half mr-2"></i>${text}</p>`;
             }
             if (!bill.totalAmount || bill.totalAmount <= 0) {
@@ -545,7 +550,7 @@
             if (payer && payer.id === myParticipant.id) {
                 return `<p class="text-sm text-gray-600"><i class="fas fa-wallet mr-2"></i>Wyłożyłeś/aś ${calculations.controlSum.toFixed(2)} ${bill.currency} · Twój udział: ${myTotal.toFixed(2)}</p>`;
             }
-            return `<p class="text-sm text-gray-600"><i class="fas fa-user mr-2"></i>Twój udział: ${myTotal.toFixed(2)} ${bill.currency}${payer ? ` · płaci ${memberName(bill.payerId)}` : ''}</p>`;
+            return `<p class="text-sm text-gray-600"><i class="fas fa-user mr-2"></i>Twój udział: ${myTotal.toFixed(2)} ${bill.currency}${payer ? ` · płaci ${escapeHtml(memberName(bill.payerId))}` : ''}</p>`;
         };
 
         // --- Faza 4: personalizacja profilu (kolor + awatar z inicjałem) ---
@@ -558,13 +563,16 @@
         };
         // sizeClass podmienia rozmiar/odstęp (nie dokłada się do domyślnych) — inaczej przy Tailwindzie
         // konkurencyjne klasy w rodzaju w-9 i w-6 rozstrzyga kolejność w arkuszu, nie w atrybucie.
+        // Adres zdjęcia i kolor pochodzą z bazy, a do dokumentu grupy pisze każdy, kto ma link.
+        // Bez escapowania wystarczyłoby ustawić sobie „zdjęcie" z cudzysłowem w środku, żeby
+        // wyjść z atrybutu i wstrzyknąć kod, który wykona się u WSZYSTKICH członków grupy.
         const avatarHtml = (name, memberId, sizeClass = 'w-9 h-9 text-lg mr-3') => {
             const member = (groupData && groupData.members && groupData.members[memberId]) || {};
             if (member.photoURL) {
-                return `<img src="${member.photoURL}" alt="" class="rounded-full object-cover flex-shrink-0 ${sizeClass}">`;
+                return `<img src="${escapeHtml(member.photoURL)}" alt="" class="rounded-full object-cover flex-shrink-0 ${sizeClass}">`;
             }
-            const initial = ((name || '?').trim().charAt(0) || '?').toUpperCase();
-            return `<div class="rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${sizeClass}" style="background-color:${colorForMember(memberId, name)}">${initial}</div>`;
+            const initial = escapeHtml(((name || '?').trim().charAt(0) || '?').toUpperCase());
+            return `<div class="rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${sizeClass}" style="background-color:${escapeHtml(colorForMember(memberId, name))}">${initial}</div>`;
         };
 
         // --- Faza 4/5-bridge: metody płatności per osoba (wiele: konto, telefon, Revolut, PayPal, własne) ---
@@ -941,10 +949,10 @@
             const av = document.getElementById('profile-avatar-preview');
             if (av && myMember) {
                 if (myMember.photoURL) {
-                    av.innerHTML = `<img src="${myMember.photoURL}" class="w-16 h-16 rounded-full object-cover" alt="">`;
+                    av.innerHTML = `<img src="${escapeHtml(myMember.photoURL)}" class="w-16 h-16 rounded-full object-cover" alt="">`;
                 } else {
                     const initial = ((myMember.name || '?').trim().charAt(0) || '?').toUpperCase();
-                    av.innerHTML = `<div class="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-3xl" style="background-color:${colorForMember(myMember.id, myMember.name)}">${initial}</div>`;
+                    av.innerHTML = `<div class="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-3xl" style="background-color:${escapeHtml(colorForMember(myMember.id, myMember.name))}">${escapeHtml(initial)}</div>`;
                 }
             }
             const removeBtn = document.getElementById('profile-photo-remove-btn');
@@ -1039,7 +1047,7 @@
                 billEl.className = "bg-gray-100 p-4 rounded-lg flex flex-col sm:flex-row justify-between sm:items-center cursor-pointer hover:bg-gray-200";
                 billEl.innerHTML = `
                     <div class="w-full">
-                        <p class="font-semibold text-lg flex items-center">${bill.billName}</p>
+                        <p class="font-semibold text-lg flex items-center">${escapeHtml(bill.billName)}</p>
                         <p class="text-xs text-gray-500">Utworzono: ${new Date(bill.createdAt?.toDate()).toLocaleString('pl-PL')}</p>
                         <div class="mt-2">${summaryHtml}</div>
                     </div>
@@ -1184,8 +1192,29 @@
         // a matma (advancedExactSharesGrosze) dzieli kwotę równo między wybierających.
         const itemsDocRef = () => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId);
 
-        const saveItems = async (items) => {
-            await updateDoc(itemsDocRef(), { sharedCosts: items });
+        // WSPÓŁBIEŻNOŚĆ POZYCJI — dlaczego to nie jest zwykłe updateDoc.
+        // Kafelki powstały po to, żeby po kolacji CAŁA EKIPA odklikiwała swoje pozycje naraz.
+        // Zapis całej tablicy `sharedCosts` z lokalnej kopii oznaczał, że dwa stuknięcia w tej
+        // samej sekundzie czytają ten sam stan i nadpisują się nawzajem — czyjś wybór znikał
+        // BEZ ŚLADU, a jego udział po cichu spadał na płatnika. Transakcja czyta pozycje
+        // świeżo w momencie zapisu i ponawia próbę przy kolizji, więc oba stuknięcia wchodzą.
+        //
+        // Zapasowe wyjście: transakcje wymagają sieci (nie kolejkują się w pamięci podręcznej
+        // jak zwykły zapis). Gdy jesteśmy offline, wracamy do zapisu całej tablicy — lepiej
+        // przyjąć stuknięcie z ryzykiem kolizji niż odmówić działania przy słabym zasięgu.
+        const mutateItems = async (mutate) => {
+            const billRef = itemsDocRef();
+            try {
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(billRef);
+                    if (!snap.exists()) return;
+                    const fresh = snap.data().sharedCosts || [];
+                    tx.update(billRef, { sharedCosts: mutate(fresh) });
+                });
+            } catch (err) {
+                console.warn('[BillSplitter] Transakcja pozycji nieudana — zapis awaryjny:', err);
+                await updateDoc(billRef, { sharedCosts: mutate(billData.sharedCosts || []) });
+            }
         };
 
         const renderItemTiles = () => {
@@ -1356,7 +1385,7 @@
                 <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg ${m.__use ? '' : 'opacity-50'}">
                     <input type="checkbox" class="rp-mod-use w-4 h-4 flex-shrink-0" data-i="${i}" ${m.__use ? 'checked' : ''}>
                     <span class="flex-grow min-w-0 truncate">${escapeHtml(m.description)}</span>
-                    <span class="font-semibold ${m.value < 0 ? 'text-green-600' : 'text-gray-700'}">${m.type === 'percent' ? `${m.value}%` : fmtMoney(toGrosze(m.value), cur)}</span>
+                    <span class="font-semibold ${Number(m.value) < 0 ? 'text-green-600' : 'text-gray-700'}">${m.type === 'percent' ? `${Number(m.value)}%` : fmtMoney(toGrosze(m.value), cur)}</span>
                 </div>`).join('');
 
             renderReceiptPreviewSummaryOnly();
@@ -1395,14 +1424,27 @@
             const mods = receiptDraft.modifiers.filter(m => m.__use);
             if (items.length === 0 && mods.length === 0) { showToast('Nie wybrano żadnej pozycji.', true); return; }
 
-            const updates = {};
-            if (items.length) {
-                updates.sharedCosts = [...(billData.sharedCosts || []), ...receiptItemsToSharedCosts(items, generateId)];
+            // Dopisanie odczytu z paragonu też idzie transakcją: ktoś mógł w tym czasie
+            // dodać pozycję ręcznie albo stuknąć kafelek, a zapis z lokalnej kopii by to skasował.
+            const newItems = receiptItemsToSharedCosts(items, generateId);
+            const newMods = receiptModifiersToGlobalCosts(mods, generateId);
+            const billRef = itemsDocRef();
+            const buildUpdates = (data) => {
+                const updates = {};
+                if (newItems.length) updates.sharedCosts = [...(data.sharedCosts || []), ...newItems];
+                if (newMods.length) updates.globalCosts = [...(data.globalCosts || []), ...newMods];
+                return updates;
+            };
+            try {
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(billRef);
+                    if (!snap.exists()) return;
+                    tx.update(billRef, buildUpdates(snap.data()));
+                });
+            } catch (err) {
+                console.warn('[BillSplitter] Transakcja paragonu nieudana — zapis awaryjny:', err);
+                await updateDoc(billRef, buildUpdates(billData));
             }
-            if (mods.length) {
-                updates.globalCosts = [...(billData.globalCosts || []), ...receiptModifiersToGlobalCosts(mods, generateId)];
-            }
-            await updateDoc(itemsDocRef(), updates);
             document.getElementById('receipt-preview-modal').classList.remove('active');
             receiptDraft = null;
             showToast(`Dodano ${items.length} pozycji z paragonu.`);
@@ -1446,31 +1488,38 @@
             if (!description) { showToast('Podaj nazwę pozycji.', true); return; }
             if (!(amount > 0)) { showToast('Podaj cenę pozycji.', true); return; }
 
-            const items = [...(billData.sharedCosts || [])];
-            if (editingItemId) {
-                const i = items.findIndex(x => x.id === editingItemId);
-                if (i === -1) return;
-                items[i] = { ...items[i], description, amount, quantity, sharedBy };
-            } else {
-                // Nowa pozycja bez wskazanych osób jest dozwolona — kafelek pokaże „nikt nie wybrał",
-                // a każdy dopisze się sam jednym stuknięciem. To główny przepływ przy paragonie.
-                items.push({ id: generateId(), description, amount, quantity, sharedBy });
-            }
-            await saveItems(items);
+            const newId = generateId();
+            await mutateItems((fresh) => {
+                const items = [...fresh];
+                if (editingItemId) {
+                    const i = items.findIndex(x => x.id === editingItemId);
+                    // Pozycja mogła w międzyczasie zniknąć (ktoś ją skasował) — nie wskrzeszamy jej.
+                    if (i === -1) return items;
+                    items[i] = { ...items[i], description, amount, quantity, sharedBy };
+                } else {
+                    // Nowa pozycja bez wskazanych osób jest dozwolona — kafelek pokaże „nikt nie wybrał",
+                    // a każdy dopisze się sam jednym stuknięciem. To główny przepływ przy paragonie.
+                    items.push({ id: newId, description, amount, quantity, sharedBy });
+                }
+                return items;
+            });
             document.getElementById('shared-cost-modal').classList.remove('active');
             showToast(editingItemId ? 'Zapisano pozycję.' : 'Dodano pozycję.');
             editingItemId = null;
         };
 
         const splitEditedItem = async () => {
-            const items = billData.sharedCosts || [];
-            const item = items.find(x => x.id === editingItemId);
-            if (!item) return;
-            const parts = splitItemByUnits(item, generateId);
-            const out = items.flatMap(x => (x.id === item.id ? parts : [x]));
-            await saveItems(out);
+            const local = (billData.sharedCosts || []).find(x => x.id === editingItemId);
+            if (!local) return;
+            const partCount = itemQuantity(local);
+            await mutateItems((fresh) => {
+                const item = fresh.find(x => x.id === editingItemId);
+                if (!item) return fresh;
+                const parts = splitItemByUnits(item, generateId);
+                return fresh.flatMap(x => (x.id === item.id ? parts : [x]));
+            });
             document.getElementById('shared-cost-modal').classList.remove('active');
-            showToast(`Rozbito na ${parts.length} sztuk.`);
+            showToast(`Rozbito na ${partCount} sztuk.`);
             editingItemId = null;
         };
 
@@ -1530,7 +1579,7 @@
                 const payerName = billData.participants[billData.payerId]?.name || '...';
                 const bannerText = isCurrentUserThePayer 
                     ? `Jako płatnik, wciąż możesz edytować kwotę rachunku.`
-                    : `Główne pola rachunku zostały zablokowane przez <strong>${payerName}</strong>.`;
+                    : `Główne pola rachunku zostały zablokowane przez <strong>${escapeHtml(payerName)}</strong>.`;
                 confirmationBanner.innerHTML = `
                     <div class="p-4 mb-4 text-sm text-green-800 rounded-lg bg-green-50">
                         <span><i class="fas fa-lock mr-2"></i>${bannerText}</span>
@@ -1640,7 +1689,7 @@
                                 ${avatarHtml(p.name, p.id)}
                                 <div class="flex flex-col">
                                     <div class="flex items-center">
-                                        <span class="text-xl font-semibold">${p.name}</span>
+                                        <span class="text-xl font-semibold">${escapeHtml(p.name)}</span>
                                     </div>
                                     ${statusDisplayHtml}
                                 </div>
@@ -1684,7 +1733,7 @@
                                 ${avatarHtml(p.name, p.id)}
                                 <div class="flex flex-col">
                                     <div class="flex items-center">
-                                        <span class="text-xl font-semibold">${p.name}</span>
+                                        <span class="text-xl font-semibold">${escapeHtml(p.name)}</span>
                                     </div>
                                     ${statusDisplayHtml}
                                 </div>
@@ -1712,10 +1761,13 @@
             renderItemTiles();
 
             document.getElementById('global-costs-list').innerHTML = (billData.globalCosts || []).map(gc => {
-                const valueText = gc.type === 'percent' ? `${gc.value}%` : `${gc.value.toFixed(2)} ${billData.currency}`;
+                // Number() zamiast .toFixed() wprost: koszt ogólny wpisany z konsoli jako tekst
+                // wywalał cały render listy (a z nim ekran rachunku).
+                const gcValue = Number(gc.value) || 0;
+                const valueText = gc.type === 'percent' ? `${gcValue}%` : `${gcValue.toFixed(2)} ${escapeHtml(billData.currency)}`;
                 return `
                     <div class="bg-orange-100 p-3 rounded-lg flex justify-between items-center">
-                        <div><p class="font-semibold">${gc.description}: ${valueText}</p></div>
+                        <div><p class="font-semibold">${escapeHtml(gc.description)}: ${valueText}</p></div>
                         <button class="remove-global-cost-btn text-red-500 hover:text-red-700" data-cost-id="${gc.id}"><i class="fas fa-trash"></i></button>
                     </div>`;
             }).join('');
@@ -1730,7 +1782,8 @@
 
         const addAdvancedBillEventListeners = () => {
             const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId);
-            const parseLocalFloat = (val) => parseFloat(String(val).replace(',', '.')) || 0;
+            // (Usunięta lokalna kopia `parseLocalFloat` — istnieje wersja modułowa. Dublet już raz
+            // wywołał cichy ReferenceError, gdy jedna z kopii zniknęła przy refaktorze.)
 
             document.getElementById('back-to-dashboard-btn').onclick = () => {
                 if (unsubscribeBill) unsubscribeBill();
@@ -1877,7 +1930,7 @@
                     if (!billData.participants[my.id] || billData.participants[my.id].status === 'not_applicable') {
                         showToast('Nie jesteś uczestnikiem tego rachunku.', true); return;
                     }
-                    await saveItems(toggleItemPicker(billData.sharedCosts || [], tile.dataset.itemId, my.id));
+                    await mutateItems((items) => toggleItemPicker(items, tile.dataset.itemId, my.id));
                 };
             });
             document.querySelectorAll('.item-edit-btn').forEach(btn => {
@@ -1886,9 +1939,11 @@
 
             document.querySelectorAll('.remove-shared-cost-btn').forEach(button => {
                 button.onclick = async (e) => {
+                    // Usuwamy PO IDENTYFIKATORZE, nie przez arrayRemove(obiekt): arrayRemove
+                    // wymaga dokładnej zgodności całego obiektu, więc czyjeś stuknięcie w kafelek
+                    // (zmiana `sharedBy`) sprawiało, że kasowanie po cichu nic nie robiło.
                     const costId = e.currentTarget.dataset.costId;
-                    const costToRemove = (billData.sharedCosts || []).find(sc => sc.id === costId);
-                    if (costToRemove) await updateDoc(billDocRef, { sharedCosts: arrayRemove(costToRemove) });
+                    await mutateItems((items) => items.filter(sc => sc.id !== costId));
                 };
             });
             document.querySelectorAll('.remove-global-cost-btn').forEach(button => {
@@ -2015,7 +2070,7 @@
                 const payerName = billData.participants[billData.payerId]?.name || '...';
                 const bannerText = isCurrentUserThePayer 
                     ? `Jako płatnik, wciąż możesz edytować kwotę rachunku.`
-                    : `Główne pola rachunku zostały zablokowane przez <strong>${payerName}</strong>.`;
+                    : `Główne pola rachunku zostały zablokowane przez <strong>${escapeHtml(payerName)}</strong>.`;
                 confirmationBanner.innerHTML = `
                     <div class="p-4 mb-4 text-sm text-green-800 rounded-lg bg-green-50">
                         <span><i class="fas fa-lock mr-2"></i>${bannerText}</span>
@@ -2629,7 +2684,7 @@
                 Object.values(groupData.members || {}).forEach(member => {
                     const label = document.createElement('label');
                     label.className = "flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 cursor-pointer";
-                    label.innerHTML = `<input type="checkbox" class="modal-participant-checkbox" value="${member.id}" checked><span>${member.name}</span>`;
+                    label.innerHTML = `<input type="checkbox" class="modal-participant-checkbox" value="${escapeHtml(member.id)}" checked><span>${escapeHtml(member.name)}</span>`;
                     participantsChecklist.appendChild(label);
                 });
                 
@@ -2925,6 +2980,12 @@
             }
         }
 
+        // DECYZJA USERA 2026-07-28 (audyt): automatyczne kasowanie NAJSTARSZYCH zdjęć po
+        // przekroczeniu limitu ZOSTAJE. Uzasadnienie: apka jest dla znajomych, a stare rachunki
+        // są już rozliczone — utrata starego paragonu nikogo nie kosztuje, za to blokada wgrywania
+        // popsułaby wieczór przy stole.
+        // ⚠️ PRZED MONETYZACJĄ TO MUSI ZNIKNĄĆ: płacący klient traci wtedy cudzy dowód zakupu bez
+        // pytania i bez możliwości cofnięcia. Wtedy: odmówić wgrania i poprosić o zwolnienie miejsca.
         async function checkStorageAndCleanup(newFileSize) {
             const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
             const groupSnap = await getDoc(groupDocRef);

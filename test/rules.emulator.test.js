@@ -29,7 +29,12 @@ beforeAll(async () => {
     await setDoc(doc(ctx.firestore(), g('g1')), {
       adminId: 'user-a',
       groupName: 'X',
-      members: { m1: { id: 'm1', name: 'M', claimedBy: null } },
+      // m2 ma przypisaną sesję user-b, bo reguły potwierdzania wpłat i oznaczania
+      // przypomnień sprawdzają teraz, czy to REALNIE odbiorca (members.{id}.claimedBy).
+      members: {
+        m1: { id: 'm1', name: 'M', claimedBy: null },
+        m2: { id: 'm2', name: 'B', claimedBy: 'user-b' },
+      },
       expenseSummary: {},
       userGrossSpend: {},
       groupGrossSpend: {},

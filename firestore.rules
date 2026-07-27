@@ -2,6 +2,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Kto REALNIE stoi za danym członkiem grupy. Sesja (uid) przypisuje się do członka
+    // przez `claimedBy` przy dołączaniu — to jedyny most między tożsamością a imieniem
+    // z listy. Reguły muszą go czytać, inaczej „odbiorca potwierdza wpłatę" jest tylko
+    // uprzejmą sugestią interfejsu, a nie zasadą.
+    // Koszt: jeden odczyt dokumentu grupy na sprawdzenie (Firestore je nalicza).
+    function memberOwner(appId, groupId, memberId) {
+      return get(/databases/$(database)/documents/artifacts/$(appId)/public/data/groups/$(groupId))
+               .data.members[memberId].claimedBy;
+    }
+
     match /artifacts/{appId}/public/data/groups/{groupId} {
       // Odczyt: każdy zalogowany, kto ma link (ID grupy = klucz dostępu).
       allow read: if request.auth != null;
@@ -13,17 +23,27 @@ service cloud.firestore {
       // Aktualizacja: zalogowany, ale NIE wolno ruszać pól podsumowań —
       // te zapisuje WYŁĄCZNIE Cloud Function (admin SDK omija reguły).
       // To broni bilansów przed sfałszowaniem z klienta.
+      // `adminId` też jest zamrożony: to on decyduje, kto utworzył grupę, więc przejęcie
+      // go byłoby przejęciem grupy.
       allow update: if request.auth != null
                     && !request.resource.data.diff(resource.data)
                           .affectedKeys()
-                          .hasAny(['expenseSummary', 'userGrossSpend', 'groupGrossSpend']);
+                          .hasAny(['expenseSummary', 'userGrossSpend', 'groupGrossSpend'])
+                    && request.resource.data.adminId == resource.data.adminId;
 
       // Grupy nie kasujemy z klienta.
       allow delete: if false;
 
-      // Rachunki w grupie: pełny CRUD dla zalogowanych (członków z linkiem).
+      // Rachunki w grupie: odczyt/tworzenie/edycja dla zalogowanych (członków z linkiem).
+      // USUNIĘCIE jest inne: rachunek z potwierdzonym płatnikiem może skasować tylko ten
+      // płatnik. Interfejs tego pilnował od dawna („Tylko potwierdzony płatnik może usunąć"),
+      // reguły — nie, więc dowolny uczestnik mógł skasować cudzy rachunek z konsoli
+      // i wyzerować komuś należność. Rachunek bez płatnika jest niczyj → kasuje każdy.
       match /bills/{billId} {
-        allow read, create, update, delete: if request.auth != null;
+        allow read, create, update: if request.auth != null;
+        allow delete: if request.auth != null
+                      && (resource.data.payerId == null
+                          || memberOwner(appId, groupId, resource.data.payerId) == request.auth.uid);
       }
 
       // Wpłaty (rejestr spłat): każdy zalogowany może dodać/odczytać.
@@ -31,10 +51,15 @@ service cloud.firestore {
       // Usunąć może tylko twórca wpłaty (undo własnej pomyłki).
       match /settlements/{settlementId} {
         allow read, create: if request.auth != null;
+        // Potwierdzić wpłatę może TYLKO jej odbiorca. Wcześniej mógł to zrobić każdy
+        // zalogowany — także dłużnik na własnej wpłacie — czyli znaczek „potwierdzona"
+        // nie znaczył nic. W aplikacji o cudzych pieniądzach to podważa jedyny mechanizm
+        // zaufania, jaki tu jest.
         allow update: if request.auth != null
                       && request.resource.data.diff(resource.data)
                             .affectedKeys()
-                            .hasOnly(['confirmed', 'confirmedBy', 'confirmedAt']);
+                            .hasOnly(['confirmed', 'confirmedBy', 'confirmedAt'])
+                      && memberOwner(appId, groupId, resource.data.to) == request.auth.uid;
         allow delete: if request.auth != null && resource.data.createdBy == request.auth.uid;
       }
 
@@ -45,10 +70,13 @@ service cloud.firestore {
         allow read: if request.auth != null;
         allow create: if request.auth != null
                       && request.resource.data.createdBy == request.auth.uid;
+        // „Przeczytane" oznacza tylko adresat — inaczej ktokolwiek mógł zdjąć cudzą
+        // plakietkę nieprzeczytanego przypomnienia i uciszyć windykatora.
         allow update: if request.auth != null
                       && request.resource.data.diff(resource.data)
                             .affectedKeys()
-                            .hasOnly(['readBy']);
+                            .hasOnly(['readBy'])
+                      && memberOwner(appId, groupId, resource.data.to) == request.auth.uid;
         allow delete: if request.auth != null && resource.data.createdBy == request.auth.uid;
       }
     }

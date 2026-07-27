@@ -69,6 +69,31 @@ export const sendNudgePush = onDocumentCreated(
     const groupDoc = await db.doc(`artifacts/${APP_ID}/public/data/groups/${groupId}`).get();
     if (!groupDoc.exists) return;
 
+    // ANTY-SPAM PO STRONIE SERWERA (audyt 2026-07-27).
+    // Zasada „jedno przypomnienie na 6 h" żyła wyłącznie w przeglądarce, a reguły pozwalają
+    // każdemu zalogowanemu utworzyć dowolnie wiele dokumentów `nudges`. Bez tej bramki
+    // ktoś mógł w pętli zasypać czyjś telefon powiadomieniami. Wpis w skrzynce powstaje
+    // normalnie — blokujemy tylko DYMEK, bo to on budzi telefon w środku nocy.
+    const SIX_HOURS_MS = 6 * 3600 * 1000;
+    const createdAtMs = nudge.createdAt && nudge.createdAt.toMillis
+      ? nudge.createdAt.toMillis()
+      : Date.now();
+    const recentSnap = await db
+      .collection(`artifacts/${APP_ID}/public/data/groups/${groupId}/nudges`)
+      .where("from", "==", nudge.from)
+      .where("to", "==", nudge.to)
+      .get();
+    const hasRecent = recentSnap.docs.some((d) => {
+      if (d.id === event.params.nudgeId) return false;
+      const ts = d.data().createdAt;
+      const ms = ts && ts.toMillis ? ts.toMillis() : 0;
+      return ms > 0 && createdAtMs - ms < SIX_HOURS_MS;
+    });
+    if (hasRecent) {
+      logger.info(`Pominięto push do ${nudge.to}: przypomnienie od ${nudge.from} było w ciągu ostatnich 6 h.`);
+      return;
+    }
+
     const members = groupDoc.data().members || {};
     const tokens = (members[nudge.to] && members[nudge.to].fcmTokens) || [];
     if (tokens.length === 0) {
@@ -134,6 +159,37 @@ const ALLOWED_MODELS = new Set([
 const MAX_IMAGES = 5;
 const MAX_IMAGE_CHARS = 8_000_000; // ~6 MB na obraz po base64; zapora przed zapchaniem funkcji
 
+// ZAPORA KOSZTOWA NA UŻYTKOWNIKA (audyt 2026-07-27).
+// `maxInstances` ogranicza RÓWNOCZESNOŚĆ, ale nie sumę wywołań — ktoś, kto zna adres
+// aplikacji, mógł zalogować się anonimowo (logowanie anonimowe jest tu automatyczne)
+// i w pętli odpytywać model na nasz rachunek w OpenRouterze. Przy odczycie za ~0,0008 $
+// nie jest to katastrofa, ale nie ma też żadnego sufitu — a rachunek płaci właściciel.
+// Dzienny limit na uid stawia sufit, którego zwykły użytkownik nie zauważy: 30 paragonów
+// dziennie to o rząd wielkości więcej, niż potrzebuje realna ekipa po kolacji.
+const RECEIPTS_PER_USER_PER_DAY = 30;
+
+async function assertWithinDailyQuota(uid) {
+  const db = admin.firestore();
+  const ref = db.doc(`artifacts/${APP_ID}/private/usage/receiptQuota/${uid}`);
+  const today = new Date().toISOString().slice(0, 10); // UTC — wystarczy, doba to doba
+
+  const exhausted = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? snap.data() : null;
+    const count = data && data.day === today ? Number(data.count || 0) : 0;
+    if (count >= RECEIPTS_PER_USER_PER_DAY) return true;
+    tx.set(ref, { day: today, count: count + 1, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+    return false;
+  });
+
+  if (exhausted) {
+    throw new HttpsError(
+      "resource-exhausted",
+      `Dzienny limit odczytów paragonu (${RECEIPTS_PER_USER_PER_DAY}) wyczerpany. Spróbuj jutro.`,
+    );
+  }
+}
+
 export const parseReceipt = onCall(
   {
     region: "europe-central2",
@@ -161,6 +217,10 @@ export const parseReceipt = onCall(
         throw new HttpsError("invalid-argument", "Zdjęcie jest za duże — zmniejsz je przed wysłaniem.");
       }
     }
+
+    // Limit sprawdzamy PO walidacji wejścia (żeby śmieciowe wywołanie nie zjadało puli),
+    // ale PRZED zapytaniem do modelu — czyli przed poniesieniem kosztu.
+    await assertWithinDailyQuota(request.auth.uid);
 
     const requested = request.data?.model;
     const model = (typeof requested === "string" && ALLOWED_MODELS.has(requested))
