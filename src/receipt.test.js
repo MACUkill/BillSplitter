@@ -150,6 +150,104 @@ describe('normalizeReceipt — modyfikatory', () => {
   });
 });
 
+// Najgroźniejszy zaobserwowany błąd modelu: PTU A i PTU B (rozbicie VAT już wliczonego
+// w ceny) doliczone jako NAPIWEK, żeby suma się spięła. Rachunek wychodził zawyżony,
+// a użytkownik realnie dopłacał podatek drugi raz.
+describe('normalizeReceipt — podatek wliczony vs doliczany', () => {
+  const plParagon = (modifiers) => normalizeReceipt({
+    items: [
+      { name: 'Pizza', totalPrice: 42.00 },
+      { name: 'Cola', totalPrice: 12.00 },
+    ],
+    modifiers,
+    receiptTotal: 54.00,
+  });
+
+  it('KLUCZOWE: PTU zgłoszone jako napiwek nie dolicza się do rachunku', () => {
+    const out = plParagon([
+      { kind: 'tip', name: 'PTU A 8%', value: 4.00 },
+      { kind: 'tip', name: 'PTU B 23%', value: 2.24 },
+    ]);
+    expect(out.modifiers).toEqual([]);
+    expect(out.itemsTotal).toBe(54);
+  });
+
+  it('PTU zgłoszone poprawnie jako podatek też odpada, bo suma już się zgadza', () => {
+    expect(plParagon([{ kind: 'tax', name: 'SP.OP.PTU A', value: 4.00 }]).modifiers).toEqual([]);
+  });
+
+  it('prawdziwy napiwek zostaje — odrzucamy podatek, nie wszystko', () => {
+    const out = normalizeReceipt({
+      items: [{ name: 'Pizza', totalPrice: 42.00 }, { name: 'Cola', totalPrice: 12.00 }],
+      modifiers: [
+        { kind: 'tax', name: 'PTU A', value: 4.00 },
+        { kind: 'tip', name: 'Napiwek', value: 6.00 },
+      ],
+      receiptTotal: 60.00,
+    });
+    expect(out.modifiers).toEqual([{ description: 'Napiwek', type: 'amount', value: 6 }]);
+  });
+
+  it('amerykański sales tax DOLICZAMY — tam suma bez niego się nie spina', () => {
+    const out = normalizeReceipt({
+      items: [{ name: 'Burger', totalPrice: 12.00 }, { name: 'Frytki', totalPrice: 4.00 }],
+      modifiers: [
+        { kind: 'tax', name: 'Sales Tax', value: 1.32 },
+        { kind: 'tip', name: 'Napiwek', value: 3.00 },
+      ],
+      receiptTotal: 20.32,
+      currency: 'USD',
+    });
+    expect(out.modifiers).toEqual([
+      { description: 'Sales Tax', type: 'amount', value: 1.32 },
+      { description: 'Napiwek', type: 'amount', value: 3 },
+    ]);
+  });
+
+  it('podatek procentowy doliczany liczy się od sumy pozycji', () => {
+    const out = normalizeReceipt({
+      items: [{ name: 'Burger', totalPrice: 100.00 }],
+      modifiers: [{ kind: 'tax', name: 'Sales Tax', value: 8, isPercent: true }],
+      receiptTotal: 108.00,
+    });
+    expect(out.modifiers).toEqual([{ description: 'Sales Tax', type: 'percent', value: 8 }]);
+  });
+
+  it('bez sumy paragonu: PTU/VAT odpada, ogólny „Podatek" zostaje (brak dowodu)', () => {
+    const out = normalizeReceipt({
+      items: [{ name: 'Pizza', totalPrice: 42.00 }],
+      modifiers: [
+        { kind: 'tax', name: 'PTU A', value: 3.11 },
+        { kind: 'tax', name: 'Podatek', value: 2.00 },
+      ],
+    });
+    expect(out.modifiers).toEqual([{ description: 'Podatek', type: 'amount', value: 2 }]);
+  });
+
+  it('linia PTU wzięta za danie nie staje się pozycją', () => {
+    const out = normalizeReceipt({
+      items: [
+        { name: 'Pizza', totalPrice: 42.00 },
+        { name: 'SP.OP.PTU A 8%', totalPrice: 4.00 },
+        { name: 'PTU B', totalPrice: 2.24 },
+      ],
+      receiptTotal: 42.00,
+    });
+    expect(out.items.map(i => i.description)).toEqual(['Pizza']);
+  });
+
+  it('rozjazd sumy NIE jest łatany podatkiem — przy remisie wygrywa pominięcie', () => {
+    // Suma paragonu nie zgadza się ani z podatkiem, ani bez niego (przeoczona pozycja).
+    // Doliczenie podatku nie poprawia sprawy wyraźnie, więc go nie doliczamy.
+    const out = normalizeReceipt({
+      items: [{ name: 'Pizza', totalPrice: 42.00 }],
+      modifiers: [{ kind: 'tax', name: 'PTU A', value: 4.00 }],
+      receiptTotal: 100.00,
+    });
+    expect(out.modifiers).toEqual([]);
+  });
+});
+
 describe('mapowanie na rachunek', () => {
   it('pozycje stają się kafelkami, których NIKT jeszcze nie wybrał', () => {
     let n = 0;
