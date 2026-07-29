@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "billsplitter-2fdfa"
+    "default": "billsplitter-2fdfa",
+    "test": "billsplitter-push-test"
   }
 }
