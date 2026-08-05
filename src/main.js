@@ -1074,7 +1074,7 @@
                 if (currencies.length > 1) html += `<p class="chip mb-2">${cur}</p>`;
 
                 if (mineOwe.length) {
-                    html += `<p class="text-sm font-bold text-owe mb-2">Płacisz</p><div class="space-y-2 mb-5">`;
+                    html += `<p class="text-sm font-bold text-owe mb-2">Płacisz</p><div class="settle-rows space-y-2 mb-5">`;
                     mineOwe.forEach(t => {
                         html += settleRowHtml(memberName(t.to), t.to,
                             `<span class="amount text-2xl text-owe">${fmtMoney(t.amountG, cur)}</span>`,
@@ -1084,7 +1084,7 @@
                     html += `</div>`;
                 }
                 if (mineGet.length) {
-                    html += `<p class="text-sm font-bold text-due mb-2">Dostajesz</p><div class="space-y-2 mb-5">`;
+                    html += `<p class="text-sm font-bold text-due mb-2">Dostajesz</p><div class="settle-rows space-y-2 mb-5">`;
                     mineGet.forEach(t => {
                         html += settleRowHtml(memberName(t.from), t.from,
                             `<span class="amount text-2xl text-due">${fmtMoney(t.amountG, cur)}</span>`,
@@ -1101,8 +1101,11 @@
                     // dotyczą mnie: ile płacę i ile dostaję. Dlatego jest ZWINIĘTA.
                     const othersLabel = others.length === 1
                         ? 'Jeszcze jeden przelew w grupie'
-                        : `Jeszcze ${others.length} przelewy w grupie`;
-                    html += `<details class="mt-2"><summary class="settle-others-summary">${othersLabel}</summary><div class="space-y-2 mt-2">`;
+                        : `Jeszcze ${others.length} ${plural(others.length, 'przelew', 'przelewy', 'przelewów')} w grupie`;
+                    html += `<details class="mt-2"><summary class="settle-others-summary">
+                        <i class="fas fa-chevron-down settle-others-chevron" aria-hidden="true"></i>
+                        <span>${othersLabel}</span>
+                    </summary><div class="settle-rows space-y-2 mt-2">`;
                     others.forEach(t => {
                         html += `<div class="block-quiet p-3.5">
                             <div class="flex items-center justify-between gap-3">
@@ -1470,10 +1473,23 @@
 
         // Model wpłat: rachunki nie mają stanu „opłacone" (settlement w Rozliczeniach).
         // Zostają filtry Wszystkie / Ukryte (not_applicable lub ręcznie ukryte).
+        // Trzy rozłączne stany rachunku wobec MNIE. Wcześniej „nie dotyczy" i „ukryte
+        // przeze mnie" wpadały do jednego worka, więc nie dało się zapytać o rachunki
+        // grupy, które mnie nie dotyczą, ani odróżnić ich od tych, które sam schowałem.
         const getBillUserState = (bill, myMember) => {
             const myP = bill.participants ? bill.participants[myMember.id] : null;
-            if (!myP || myP.status === 'not_applicable' || (bill.hiddenBy || []).includes(myMember.id)) return 'hidden';
+            if (!myP || myP.status === 'not_applicable') return 'others';
+            if ((bill.hiddenBy || []).includes(myMember.id)) return 'hidden';
             return 'visible';
+        };
+
+        // Polska odmiana po liczbie: 1 przelew, 2 przelewy, 5 przelewów. Bez tego
+        // interfejs pisał „8 przelewy", co przy pieniądzach czyta się jak niedbałość.
+        const plural = (n, one, few, many) => {
+            const mod10 = n % 10, mod100 = n % 100;
+            if (n === 1) return one;
+            if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+            return many;
         };
 
         // Data rachunku w postaci klucza dnia i podpisu nad grupą. „Dzisiaj" i „Wczoraj"
@@ -1506,7 +1522,7 @@
             const el = document.getElementById('bills-count');
             if (!el) return;
             if (visible.length === 0) { el.textContent = ''; return; }
-            const bills = (n) => (n === 1 ? '1 rachunek' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? `${n} rachunki` : `${n} rachunków`));
+            const bills = (n) => `${n} ${plural(n, 'rachunek', 'rachunki', 'rachunków')}`;
             const sums = {};
             visible.forEach(({ data }) => {
                 const cur = data.currency || 'PLN';
@@ -1527,8 +1543,9 @@
             const messages = {
                 waiting: 'Nic nie czeka na Twój ruch. Wszystko, co Twoje, jest uzupełnione.',
                 mine: 'Nie wyłożyłeś/aś jeszcze pieniędzy za żaden rachunek.',
+                others: 'Każdy rachunek w tym pokoju dotyczy także Ciebie.',
                 hidden: 'Nie masz ukrytych rachunków.',
-                all: 'Nic w tym widoku.',
+                all: 'Żaden rachunek Cię nie dotyczy. Zajrzyj do „Reszta grupy".',
             };
             const message = messages[currentBillFilter] || messages.all;
             const reset = currentBillFilter === 'all'
@@ -1553,7 +1570,10 @@
             const visible = latestBills.filter(({ data }) => {
                 const state = getBillUserState(data, myMember);
                 if (currentBillFilter === 'hidden') return state === 'hidden';
-                if (state === 'hidden') return false;
+                if (currentBillFilter === 'others') return state === 'others';
+                // Reszta filtrów pracuje wyłącznie na rachunkach, które MNIE dotyczą
+                // i których sam nie schowałem — to jest domyślny świat tej listy.
+                if (state !== 'visible') return false;
                 if (currentBillFilter === 'waiting') {
                     const p = data.participants ? data.participants[myMember.id] : null;
                     return billStatus(data, myMember, p).tone === 'action';
@@ -1820,7 +1840,9 @@
             }
 
             if (items.length === 0) {
-                list.className = '';
+                // Odstęp pod listą MUSI zostać także w stanie pustym: przyciski akcji
+                // stoją zaraz pod nią i bez tego dotykają kafelka.
+                list.className = 'mb-3';
                 list.innerHTML = `<p class="block-quiet p-5 text-sm text-ink-2">Brak pozycji. Dodaj zdjęcie paragonu niżej i odczytaj je — albo dopisz pozycję ręcznie. Potem każdy stuknie to, co jadł.</p>`;
                 return;
             }
@@ -1833,7 +1855,9 @@
             // rzecz, której nie ma konkurencja: gdy piętnaście osób odklikuje równocześnie,
             // widzisz cudze zdjęcia lądujące na liniach na własnym ekranie, w czasie
             // rzeczywistym. Współbieżność przestaje być obietnicą w opisie i staje się obrazem.
-            list.className = 'receipt card overflow-hidden';
+            // Odstęp `mb-3` musi być TUTAJ, bo ta linia nadpisuje klasy z index.html:
+            // bez niego przyciski „Dodaj pozycję" dotykały ostatniego kafelka paragonu.
+            list.className = 'receipt card overflow-hidden mb-3';
             list.innerHTML = items.map(it => {
                 const pickers = itemPickers(it).filter(pid => billData.participants[pid]);
                 const count = pickers.length;

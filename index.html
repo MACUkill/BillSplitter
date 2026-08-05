@@ -328,10 +328,11 @@ the verdict, and DESIGN.md
                      („Wszystkie / Ukryte") nie mieści czterech wymiarów, a chowanie
                      filtrów w arkuszu kosztuje jedno stuknięcie za dużo przy stole. -->
                 <div id="bill-filters" class="filter-pills mb-3">
-                    <button data-filter="all" class="bill-filter-btn filter-pill" aria-pressed="true">Wszystkie</button>
-                    <button data-filter="waiting" class="bill-filter-btn filter-pill" aria-pressed="false">Czekają na Ciebie</button>
+                    <button data-filter="all" class="bill-filter-btn filter-pill" aria-pressed="true" title="Rachunki, które Cię dotyczą">Wszystkie</button>
+                    <button data-filter="waiting" class="bill-filter-btn filter-pill" aria-pressed="false" title="Czekają na Twój ruch">Czekają na Ciebie</button>
                     <button data-filter="mine" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które wyłożyłeś pieniądze">Moje</button>
-                    <button data-filter="hidden" class="bill-filter-btn filter-pill" aria-pressed="false">Ukryte</button>
+                    <button data-filter="others" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki grupy, które Cię nie dotyczą">Reszta grupy</button>
+                    <button data-filter="hidden" class="bill-filter-btn filter-pill" aria-pressed="false" title="Ukryte przez Ciebie">Ukryte</button>
                 </div>
                 <div id="bills-history-list"></div>
             </section>
