@@ -24,6 +24,7 @@ const RUNTIME_CREATED_IDS = new Set([
   'confirm-payer-btn',         // wstrzykiwany w baner potwierdzenia płatnika (rachunek zaawansowany)
   'confirm-payer-btn-simple',  // j.w. dla rachunku prostego
   'toast-notification',        // toast budowany przez showToast()
+  'bills-filter-reset',        // „Pokaż wszystkie" w stanie pustym listy rachunków
 ]);
 
 // Klasy-uchwyty renderowane przez JS do innerHTML — w index.html ich nie ma i być nie musi,

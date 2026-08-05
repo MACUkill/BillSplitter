@@ -37,9 +37,22 @@ const AUDIT = `(() => {
     return r.width > 0 && r.height > 0;
   };
 
+  // Element w rzędzie przewijanym w poziomie MA prawo wystawać poza ekran —
+  // na tym polega rząd pigułek filtrów. Usterką jest wyjazd treści, której nie da
+  // się dosunąć palcem, więc pytamy o przodka z własnym przewijaniem w poziomie.
+  const inHorizontalScroller = (el) => {
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      const s = getComputedStyle(p);
+      const scrolls = s.overflowX === 'auto' || s.overflowX === 'scroll';
+      if (scrolls && p.scrollWidth > p.clientWidth + 1) return true;
+    }
+    return false;
+  };
+
   // 1. Cokolwiek wystaje poza prawą krawędź ekranu.
   for (const el of document.querySelectorAll('#app-container *, .deck, .modal.active *')) {
     if (!visible(el)) continue;
+    if (inHorizontalScroller(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.right > vw + 1 || r.left < -1) {
       out.overflow.push({

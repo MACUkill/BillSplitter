@@ -758,3 +758,41 @@ projekt z `.env.local` (`billsplitter-push-test`), a emulatory startowały na pr
 domyślnym z `.firebaserc` (`billsplitter-2fdfa`). Emulator funkcji routuje po
 identyfikatorze projektu w adresie, więc wywołanie nie trafiało w nic. `npm run emulators`
 startuje teraz z `--project test`. Po zmianie trzeba **zrestartować emulatory**.
+
+---
+
+## 12. PARTIA 2 — RACHUNKI I GĘSTOŚĆ EKRANÓW (2026-08-06)
+
+### Rachunki (§10.4 zrealizowane)
+
+- **Filtry pigułkami, zawsze widoczne**: `Wszystkie` · `Czekają na Ciebie` · `Moje` ·
+  `Ukryte`. Rząd przewija się w poziomie, aktywny filtr niesie wypełnienie, nie ramkę.
+  - `Czekają na Ciebie` = dokładnie te rachunki, którym `billStatus` daje ton `action`.
+    Jedno źródło prawdy dla filtra i dla błękitu na kafelku.
+  - **`Moje` = rachunki, za które wyłożyłem pieniądze** (jestem płatnikiem).
+    Decyzja robocza — `docs/UI-UX.md` §10.4 nie definiowała tego wymiaru.
+    **Do potwierdzenia przez właściciela.**
+- **Nagłówki dni**: „Dzisiaj / Wczoraj / 3 sierpnia". Data zeszła z kafelka, na kafelku
+  została godzina (rozróżnia dwie kolacje tego samego dnia).
+- **Licznik nad listą**: „7 rachunków · 1 240,00 PLN", sumowany po walutach osobno,
+  liczony po filtrze.
+- **Stany puste z powodem**: każdy filtr ma własne zdanie i przycisk „Pokaż wszystkie".
+
+### Gęstość ekranów (uwagi właściciela 2026-08-06)
+
+| Uwaga | Co zrobione |
+|---|---|
+| „Najmniej przelewów" ma być domyślne i pierwsze | tryb domyślny to `min`, segment stoi pierwszy; „Kto komu" jako druga opcja |
+| „Pozostali w grupie" to za dużo treści | lista cudzych przelewów **zwinięta** pod wiersz „Jeszcze N przelewy w grupie" — informacja dla ciekawskich, nie zadanie |
+| Na ekranie rachunku widać wszystkich uczestników | sekcja **zwinięta**, podpis niesie „Ekipa: N osoby · M do uzupełnienia", więc zwinięcie nic nie ukrywa |
+| Przy „Ureguluj" brak znaku osoby | arkusz wpłaty pokazuje zdjęcie/kolor odbiorcy przy kwocie |
+
+### Zostało z architektury (§10)
+
+1. **Powiadomienia i skrzynka** (§10.2) — trzy poziomy, kropki na zakładkach, odznaka
+   liczbowa tylko dla poziomu 1, skrzynka spod dzwonka. **Następna partia.**
+2. **Ustawienia pokoju** (§10.3) — skład grupy z odniesieniem do ryzyka podmiany cudzego
+   numeru konta, kod QR, waluta domyślna, opuszczenie pokoju.
+3. **Bilans** (§10.1) — twarze ekipy, lista „co czeka na Ciebie".
+4. **Historia zmian** i **szablony przypomnień**.
+5. Odcień „coś czeka na ciebie" do zejścia z 9 % na 6 % (§5).

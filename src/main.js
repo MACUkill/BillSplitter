@@ -71,7 +71,11 @@
         let unsubscribeNudges = null;
         let isAuthReady = false;
         let currentScreenName = null;
-        let settlementMode = 'net'; // 'net' = kto komu ile | 'min' = najmniej przelewów
+        // 'min' = najmniej przelewów (domyślny) | 'net' = kto komu ile.
+        // Domyślnie pokazujemy plan z najmniejszą liczbą przelewów, bo to odpowiedź na
+        // pytanie, po które ludzie tu wchodzą: „ile razy mam wejść w bank". Rozkład
+        // „kto komu" zostaje o jedno stuknięcie dalej, dla sprawdzania szczegółów.
+        let settlementMode = 'min';
         let settleContext = null; // { to, currency } — kontekst modala „Ureguluj"
         let paymentEditMethods = [];
         let paymentEditMemberId = null;
@@ -1091,9 +1095,14 @@
                     html += `</div>`;
                 }
                 if (others.length) {
-                    // Cudze długi to informacja, nie zadanie: bez akcji, bez koloru roli,
-                    // mniejszy stopień. Ekran nie może sugerować, że masz tu coś do zrobienia.
-                    html += `<p class="text-sm font-bold text-ink-3 mb-2">Pozostali w grupie</p><div class="space-y-2">`;
+                    // Cudze długi to informacja, nie zadanie — i to informacja dla
+                    // ciekawskich. Przy grupie 12–25 osób ta lista rosła szybciej niż
+                    // wszystko inne na ekranie i topiła dwie rzeczy, które naprawdę
+                    // dotyczą mnie: ile płacę i ile dostaję. Dlatego jest ZWINIĘTA.
+                    const othersLabel = others.length === 1
+                        ? 'Jeszcze jeden przelew w grupie'
+                        : `Jeszcze ${others.length} przelewy w grupie`;
+                    html += `<details class="mt-2"><summary class="settle-others-summary">${othersLabel}</summary><div class="space-y-2 mt-2">`;
                     others.forEach(t => {
                         html += `<div class="block-quiet p-3.5">
                             <div class="flex items-center justify-between gap-3">
@@ -1107,7 +1116,7 @@
                             ${detailOf(t)}
                         </div>`;
                     });
-                    html += `</div>`;
+                    html += `</div></details>`;
                 }
                 html += `</div>`;
             });
@@ -1147,6 +1156,8 @@
             document.getElementById('settle-currency').textContent = currency;
             document.getElementById('settle-copy-amount').dataset.account = amountStr;
             document.getElementById('settle-name').textContent = memberName(otherId);
+            const settleAvatar = document.getElementById('settle-avatar');
+            if (settleAvatar) settleAvatar.innerHTML = avatarHtml(memberName(otherId), otherId, 'w-12 h-12 text-lg');
             document.getElementById('settle-name-label').textContent = mode === 'receive' ? 'Otrzymano od' : 'Wpłata do';
             document.getElementById('settle-record-btn').innerHTML = mode === 'receive'
                 ? '<i class="fas fa-check mr-2"></i>Zapisz otrzymaną wpłatę'
@@ -1465,6 +1476,67 @@
             return 'visible';
         };
 
+        // Data rachunku w postaci klucza dnia i podpisu nad grupą. „Dzisiaj" i „Wczoraj"
+        // niosą więcej niż liczba: przy stole pytanie brzmi „to ta wczorajsza kolacja?".
+        const billCreatedDate = (bill) =>
+            (bill.createdAt && bill.createdAt.toDate) ? bill.createdAt.toDate() : null;
+
+        const billDayKey = (bill) => {
+            const d = billCreatedDate(bill);
+            if (!d) return 'brak-daty';
+            return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+        };
+
+        const billDayLabel = (bill) => {
+            const d = billCreatedDate(bill);
+            if (!d) return 'Bez daty';
+            const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+            const days = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000);
+            if (days === 0) return 'Dzisiaj';
+            if (days === 1) return 'Wczoraj';
+            const sameYear = d.getFullYear() === new Date().getFullYear();
+            return d.toLocaleDateString('pl-PL', sameYear
+                ? { day: 'numeric', month: 'long' }
+                : { day: 'numeric', month: 'long', year: 'numeric' });
+        };
+
+        // Licznik nad listą: ile tego jest i na ile opiewa to, co widać po filtrze.
+        // Waluty NIGDY się nie mieszają, więc każda dostaje własną sumę.
+        const renderBillsCount = (visible) => {
+            const el = document.getElementById('bills-count');
+            if (!el) return;
+            if (visible.length === 0) { el.textContent = ''; return; }
+            const bills = (n) => (n === 1 ? '1 rachunek' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? `${n} rachunki` : `${n} rachunków`));
+            const sums = {};
+            visible.forEach(({ data }) => {
+                const cur = data.currency || 'PLN';
+                sums[cur] = (sums[cur] || 0) + toGrosze(data.totalAmount || 0);
+            });
+            const money = Object.entries(sums)
+                .filter(([, g]) => g > 0)
+                .map(([cur, g]) => fmtMoney(g, cur));
+            el.textContent = [bills(visible.length), ...money].join(' · ');
+        };
+
+        // Stan pusty mówi, CO odfiltrowano i jak to skasować — inaczej pusta lista
+        // wygląda jak awaria, a nie jak wynik własnego wyboru sprzed sekundy.
+        const billsEmptyStateHtml = () => {
+            if (latestBills.length === 0) {
+                return '<p class="block-quiet p-5 text-sm text-ink-2">Pusty pokój. Pierwszy rachunek dodasz limonkowym przyciskiem na dole ekranu.</p>';
+            }
+            const messages = {
+                waiting: 'Nic nie czeka na Twój ruch. Wszystko, co Twoje, jest uzupełnione.',
+                mine: 'Nie wyłożyłeś/aś jeszcze pieniędzy za żaden rachunek.',
+                hidden: 'Nie masz ukrytych rachunków.',
+                all: 'Nic w tym widoku.',
+            };
+            const message = messages[currentBillFilter] || messages.all;
+            const reset = currentBillFilter === 'all'
+                ? ''
+                : '<button id="bills-filter-reset" class="btn btn-quiet mt-3">Pokaż wszystkie</button>';
+            return `<div class="block-quiet p-5"><p class="text-sm text-ink-2">${message}</p>${reset}</div>`;
+        };
+
         const renderBillsList = () => {
             const billsList = document.getElementById('bills-history-list');
             if (!billsList || !groupData) return;
@@ -1475,20 +1547,51 @@
                 btn.setAttribute('aria-pressed', String(btn.dataset.filter === currentBillFilter));
             });
 
+            // Cztery wymiary, jeden na raz. „Czekają na Ciebie" to dokładnie te rachunki,
+            // które `billStatus` oznacza tonem `action` — czyli jedno źródło prawdy dla
+            // filtra i dla błękitu na kafelku. „Moje" to te, za które wyłożyłem pieniądze.
             const visible = latestBills.filter(({ data }) => {
                 const state = getBillUserState(data, myMember);
-                return currentBillFilter === 'all' ? state !== 'hidden' : state === currentBillFilter;
+                if (currentBillFilter === 'hidden') return state === 'hidden';
+                if (state === 'hidden') return false;
+                if (currentBillFilter === 'waiting') {
+                    const p = data.participants ? data.participants[myMember.id] : null;
+                    return billStatus(data, myMember, p).tone === 'action';
+                }
+                if (currentBillFilter === 'mine') return data.payerId === myMember.id;
+                return true;
             });
+
+            renderBillsCount(visible);
 
             billsList.innerHTML = '';
             if (visible.length === 0) {
-                billsList.innerHTML = latestBills.length === 0
-                    ? '<p class="block-quiet p-5 text-sm text-ink-2">Pusty pokój. Pierwszy rachunek dodasz przyciskiem na dole ekranu.</p>'
-                    : '<p class="block-quiet p-5 text-sm text-ink-2">Nic w tym widoku.</p>';
+                billsList.innerHTML = billsEmptyStateHtml();
+                const reset = document.getElementById('bills-filter-reset');
+                if (reset) reset.onclick = () => { currentBillFilter = 'all'; renderBillsList(); };
                 return;
             }
 
+            // Nagłówki dni zamiast płaskiej listy: przy dwudziestu rachunkach data
+            // czyta się raz na grupę, nie raz na wiersz.
+            let currentDayKey = null;
+            let dayGrid = null;
+            const startDay = (bill) => {
+                const heading = document.createElement('p');
+                heading.className = 'bills-day-title mt-4 mb-2 first:mt-0';
+                heading.textContent = billDayLabel(bill);
+                billsList.appendChild(heading);
+                dayGrid = document.createElement('div');
+                dayGrid.className = 'bills-day-grid space-y-2';
+                billsList.appendChild(dayGrid);
+            };
+
             visible.forEach(({ id, data: bill }) => {
+                const dayKey = billDayKey(bill);
+                if (dayKey !== currentDayKey) {
+                    currentDayKey = dayKey;
+                    startDay(bill);
+                }
                 const myParticipant = bill.participants ? bill.participants[myMember.id] : null;
                 const isHidden = (bill.hiddenBy || []).includes(myMember.id);
                 const canToggleHide = myParticipant && myParticipant.status !== 'not_applicable';
@@ -1499,8 +1602,11 @@
 
                 // Data rachunku idzie mikrodrukiem: jest potrzebna do odróżnienia dwóch kolacji
                 // w tym samym miejscu, ale nie konkuruje z nazwą ani z kwotą.
-                const created = bill.createdAt && bill.createdAt.toDate
-                    ? bill.createdAt.toDate().toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })
+                // Godzina zamiast daty: dzień niesie nagłówek grupy, a przy dwóch
+                // kolacjach tego samego dnia rozróżnia je właśnie godzina.
+                const createdDate = billCreatedDate(bill);
+                const created = createdDate
+                    ? createdDate.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })
                     : '';
 
                 // KOLOR NIESIE STATUS, nie tożsamość. Kolorowanie kafelka kolorem płatnika
@@ -1539,7 +1645,7 @@
                         await updateDoc(billRef, { hiddenBy: isHidden ? arrayRemove(myMember.id) : arrayUnion(myMember.id) });
                     };
                 }
-                billsList.appendChild(billEl);
+                (dayGrid || billsList).appendChild(billEl);
             });
         };
 
@@ -2301,7 +2407,22 @@
                     document.getElementById('participants-list').innerHTML += participantHTML;
                 }
             });
-            
+
+            // Podpis zwiniętej sekcji niesie to, co bez niej trzeba by rozwijać:
+            // ilu jest uczestników i ilu ma jeszcze coś do uzupełnienia.
+            const participantsLabel = document.getElementById('participants-summary-label');
+            if (participantsLabel) {
+                const others = calculations.participantTotals.filter(pt => pt.participant.id !== myGroupMember.id);
+                const pending = others.filter(pt => {
+                    const p = billData.participants[pt.participant.id];
+                    return p && p.status === 'incomplete';
+                }).length;
+                const people = others.length === 1 ? '1 osoba' : `${others.length} osoby`;
+                participantsLabel.textContent = pending > 0
+                    ? `Ekipa: ${people} · ${pending} do uzupełnienia`
+                    : `Ekipa: ${people} · wszystko uzupełnione`;
+            }
+
             renderItemTiles();
 
             document.getElementById('global-costs-list').innerHTML = (billData.globalCosts || []).map(gc => {

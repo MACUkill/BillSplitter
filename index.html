@@ -299,9 +299,12 @@ the verdict, and DESIGN.md
                      poniżej 400 px i zaczynają się zawijać jedno na drugie. -->
                 <div class="mb-3">
                     <h3 class="view-title">Kto komu ile</h3>
+                    <!-- Najmniej przelewów stoi PIERWSZE i jest domyślne: to odpowiedź
+                         na pytanie „ile razy mam wejść w bank". Rozkład „kto komu"
+                         zostaje jako druga opcja, do sprawdzenia szczegółów. -->
                     <div class="seg mt-2">
-                        <button data-mode="net" class="settle-mode-btn seg-btn" aria-pressed="true">Kto komu</button>
-                        <button data-mode="min" class="settle-mode-btn seg-btn" aria-pressed="false">Najmniej przelewów</button>
+                        <button data-mode="min" class="settle-mode-btn seg-btn" aria-pressed="true">Najmniej przelewów</button>
+                        <button data-mode="net" class="settle-mode-btn seg-btn" aria-pressed="false">Kto komu</button>
                     </div>
                 </div>
                 <div id="settlements-content">
@@ -313,14 +316,24 @@ the verdict, and DESIGN.md
             <!-- RACHUNKI -->
             <div id="view-bills" class="deck-view hidden">
             <section id="bills-section" class="mb-3">
-                <div class="flex items-center justify-between gap-3 mb-3">
+                <div class="mb-3">
                     <h3 class="view-title">Rachunki</h3>
-                    <div id="bill-filters" class="seg">
-                        <button data-filter="all" class="bill-filter-btn seg-btn" aria-pressed="true">Wszystkie</button>
-                        <button data-filter="hidden" class="bill-filter-btn seg-btn" aria-pressed="false">Ukryte</button>
-                    </div>
+                    <!-- Licznik mówi, ILE tego jest i NA ILE opiewa to, co widać po
+                         filtrze. Nie statystyka i nie kategoria — odpowiedź na pytanie
+                         „czy to już wszystko?", które przy dwudziestu rachunkach pada
+                         przy każdym przewinięciu. -->
+                    <p id="bills-count" class="text-sm text-ink-3 mt-1"></p>
                 </div>
-                <div id="bills-history-list" class="space-y-2"></div>
+                <!-- Filtry pigułkami, zawsze widoczne. Przełącznik dwustanowy
+                     („Wszystkie / Ukryte") nie mieści czterech wymiarów, a chowanie
+                     filtrów w arkuszu kosztuje jedno stuknięcie za dużo przy stole. -->
+                <div id="bill-filters" class="filter-pills mb-3">
+                    <button data-filter="all" class="bill-filter-btn filter-pill" aria-pressed="true">Wszystkie</button>
+                    <button data-filter="waiting" class="bill-filter-btn filter-pill" aria-pressed="false">Czekają na Ciebie</button>
+                    <button data-filter="mine" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które wyłożyłeś pieniądze">Moje</button>
+                    <button data-filter="hidden" class="bill-filter-btn filter-pill" aria-pressed="false">Ukryte</button>
+                </div>
+                <div id="bills-history-list"></div>
             </section>
             </div><!-- /view-bills -->
 
@@ -508,13 +521,22 @@ the verdict, and DESIGN.md
             <!-- TWÓJ UDZIAŁ — własna kwota stoi osobno od reszty ekipy, bo tylko ją edytujesz. -->
             <div id="my-participant-card" class="mb-3 mt-6"></div>
 
-            <section class="mb-3 mt-6">
-                <div class="flex items-center justify-between gap-3 mb-3">
-                    <h3 class="font-display text-xl font-extrabold tracking-tight">Uczestnicy</h3>
-                    <button id="edit-members-btn-advanced" class="btn btn-quiet flex-shrink-0">Edytuj skład</button>
+            <!-- UCZESTNICY — ZWINIĘCI. Na ekranie rachunku pracujesz nad swoją częścią;
+                 rozpiska całej ekipy przy dwunastu osobach zajmowała więcej miejsca niż
+                 pozycje paragonu i spychała je poza ekran. Nagłówek mówi, ilu ich jest
+                 i ilu ma jeszcze coś do zrobienia, więc zwinięcie nic nie ukrywa. -->
+            <details id="participants-details" class="mb-3 mt-6">
+                <summary id="participants-summary" class="settle-others-summary">
+                    <span id="participants-summary-label">Uczestnicy</span>
+                    <i class="fas fa-chevron-down text-xs ml-auto" aria-hidden="true"></i>
+                </summary>
+                <div class="mt-3">
+                    <div class="flex justify-end mb-3">
+                        <button id="edit-members-btn-advanced" class="btn btn-quiet flex-shrink-0">Edytuj skład</button>
+                    </div>
+                    <div id="participants-list" class="space-y-2"></div>
                 </div>
-                <div id="participants-list" class="space-y-2"></div>
-            </section>
+            </details>
 
             <div class="text-center mb-4 mt-8">
                 <button id="delete-bill-btn-advanced" class="tap min-h-tap px-4 rounded-full text-sm font-bold text-ink-3">
@@ -802,7 +824,13 @@ the verdict, and DESIGN.md
                 <button id="close-settle-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
             </div>
             <div class="p-5 overflow-y-auto">
-                <p class="text-sm font-bold text-ink-3 mb-1.5"><span id="settle-name-label">Wpłata do</span> <b id="settle-name" class="text-ink">…</b></p>
+                <!-- Znak osoby przy kwocie, nie samo imię: w oknie o cudzych pieniądzach
+                     ten sam kolor i to samo zdjęcie, po których rozpoznaje się kogoś
+                     na liście rozliczeń, muszą potwierdzić, do kogo idzie przelew. -->
+                <div class="flex items-center gap-3 mb-3">
+                    <span id="settle-avatar" class="flex-shrink-0"></span>
+                    <p class="text-sm font-bold text-ink-3 min-w-0"><span id="settle-name-label">Wpłata do</span> <b id="settle-name" class="text-ink block truncate text-lg">…</b></p>
+                </div>
                 <div class="flex items-center gap-2">
                     <input id="settle-amount-input" type="text" inputmode="decimal" class="field min-h-tap w-36 p-2 text-2xl font-semibold">
                     <span id="settle-currency" class="text-lg font-semibold text-ink-3">PLN</span>

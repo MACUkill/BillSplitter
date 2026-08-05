@@ -413,17 +413,76 @@
      co w siatce daje schodki — dlatego w tym trybie margines znika, a odstęp
      robi `gap`. */
   @media (min-width: 768px) {
-    #bills-history-list,
+    .bills-day-grid,
     #settlements-list {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 0.5rem;
       align-items: start;
     }
-    #bills-history-list > * + *,
+    .bills-day-grid > * + *,
     #settlements-list > * + * {
       margin-top: 0;
     }
+  }
+
+  /* FILTRY PIGUŁKAMI — zawsze widoczne, przewijalne w poziomie, gdy nie mieszczą
+     się w rzędzie. Aktywny filtr niesie wypełnienie, nie samą ramkę: na telefonie
+     trzymanym pod kątem cienka ramka znika. */
+  .filter-pills {
+    display: flex;
+    gap: 0.375rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .filter-pills::-webkit-scrollbar { display: none; }
+
+  .filter-pill {
+    flex-shrink: 0;
+    min-height: 2.75rem;
+    padding: 0 0.875rem;
+    border: none;
+    border-radius: 999px;
+    background-color: rgb(var(--surface-2));
+    color: rgb(var(--ink-2));
+    font-size: 0.8125rem;
+    font-weight: 700;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 160ms ease-out, color 160ms ease-out, transform 160ms cubic-bezier(0.2, 0, 0, 1);
+  }
+  .filter-pill:active { transform: scale(0.97); }
+  .filter-pill[aria-pressed='true'] {
+    background-color: rgb(var(--ink));
+    color: rgb(var(--surface));
+  }
+
+  /* Zwinięte „przelewy w grupie" na Rozliczeniach: wygląda jak wiersz do otwarcia,
+     nie jak nagłówek sekcji — bo to jest ciekawostka, nie zadanie. */
+  .settle-others-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0 0.75rem;
+    border-radius: theme('borderRadius.block');
+    background-color: rgb(var(--surface-2));
+    color: rgb(var(--ink-2));
+    font-size: 0.8125rem;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  /* Nagłówek dnia nad grupą rachunków. Data przestaje być mikrodrukiem na każdym
+     kafelku, bo przy dwudziestu rachunkach czyta się ją raz na grupę, nie raz
+     na wiersz. */
+  .bills-day-title {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: rgb(var(--ink-3));
+    letter-spacing: 0.01em;
   }
 
   /* --- DOLNA NAWIGACJA ----------------------------------------------------
@@ -561,7 +620,7 @@
      ekranie rachunku. Wcześniej „Aplikacja" była o dwa stopnie większa niż
      nagłówki sekcji w pozostałych zakładkach. */
   .settings-group-title {
-    font-family: theme('fontFamily.display');
+    font-family: 'Bricolage Grotesque Variable', 'Archivo Variable', system-ui, sans-serif;
     font-size: 1.25rem;
     font-weight: 800;
     letter-spacing: -0.01em;
@@ -571,7 +630,7 @@
      „Title" ze skali; ten sam rozmiar i odstęp na każdej zakładce, żeby przełączanie
      nie przesuwało pierwszego wiersza treści. */
   .view-title {
-    font-family: theme('fontFamily.display');
+    font-family: 'Bricolage Grotesque Variable', 'Archivo Variable', system-ui, sans-serif;
     font-size: 1.25rem;
     font-weight: 800;
     letter-spacing: -0.01em;
