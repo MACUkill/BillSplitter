@@ -76,7 +76,9 @@ Funkcje, które redesign musi zachować w całości:
 - Rozliczenia w dwóch trybach: „kto komu ile" (z rozbiciem na rachunki) i „najmniej
   przelewów"; rejestr wpłat z potwierdzaniem i historią; waluty nie mieszają się.
 - Waluty PLN/EUR/USD z kursem zapisanym w dniu dodania rachunku.
-- Przypomnienia (dzwonek, skrzynka, push) z bramką jedno na sześć godzin.
+- Przypomnienia (dzwonek, skrzynka, push). Bramka anty-spamowa: dziesięć sekund między
+  przypomnieniami do tej samej osoby (zmienione 2026-08-05 z sześciu godzin — produkt ma
+  domykać dług, a nie chronić dłużnika; blokujemy tylko walenie w przycisk co sekundę).
 - Profil: kolor, zdjęcie, metody płatności (konto/IBAN, telefon, Revolut, PayPal, własne)
   z kopiowaniem; ekran „kto ile wydał i ile wyłożył".
 - Zdjęcia paragonów z podglądem i licznikiem miejsca; ukrywanie rachunków; „nie dotyczy";

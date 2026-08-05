@@ -85,6 +85,9 @@
         let lastPickersByItem = new Map();
         
         const STORAGE_LIMIT_BYTES = 4.5 * 1024 * 1024 * 1024; // 4.5 GB
+        // Odstęp między przypomnieniami do tej samej osoby. Dziesięć sekund, nie sześć
+        // godzin: produkt ma domykać dług, a nie chronić dłużnika przed wierzycielem.
+        const NUDGE_GATE_MS = 10 * 1000;
 
         // --- MOTYW: banknot w dzień, ten sam banknot pod lampą UV w nocy ---
         // Scena użycia to lokal wieczorem, więc ciemny nie jest fanaberią: jasny ekran
@@ -1157,8 +1160,12 @@
                 from: x.from, to: x.to,
                 createdAtMs: (x.createdAt && x.createdAt.toMillis) ? x.createdAt.toMillis() : undefined,
             }));
-            if (hasRecentNudge(withMs, my.id, toId, Date.now(), 6 * 3600 * 1000)) {
-                showToast('Już przypomniałeś tej osobie w ostatnich godzinach.');
+            // Bramka anty-spamowa, nie kaganiec. Decyzja właściciela 2026-08-05: sześć
+            // godzin było za ostre — dobijanie się o zwrot pieniędzy bywa zabawne i jest
+            // sprawą dwóch osób. Blokujemy wyłącznie wciśnięcie przycisku w kółko,
+            // czyli przypadkowe albo złośliwe walenie co sekundę.
+            if (hasRecentNudge(withMs, my.id, toId, Date.now(), NUDGE_GATE_MS)) {
+                showToast('Chwila — przypomnienie właśnie poszło.');
                 return;
             }
             await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`), {

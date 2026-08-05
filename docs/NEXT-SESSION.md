@@ -37,8 +37,20 @@ Właściciel wypisał to wprost 2026-08-05. Żadnego z tych punktów nie ma w do
 8. **Morfowanie [+] w arkusz** — rozpisane w `docs/UI-UX.md` §4, niezbudowane.
 9. **Nawigacja widoczna na każdym ekranie** i zakładki jako prawdziwe miejsca —
    decyzja w `docs/UI-UX.md` §3, niezbudowana. To jest korzeń większości bezsensów.
-10. **Research** — konkurencja (Splitwise, Tricount, Settle Up), wzorce PWA na iOS
-    i Androidzie, powiadomienia, fundamenty pod przyszłe wydanie natywne.
+10. **Research — traktuj jako obowiązkowy, nie opcjonalny.** Właściciel powiedział
+    wprost 2026-08-05: *„nie jestem bogiem co wie wszystko; stworzyłem aplikację, która
+    ma solidne podstawy, ale trzeba ją obrać w świetne szaty"*. Czyli: fundament
+    produktowy jest jego i jest dobry, a **warstwa doświadczenia należy do ciebie
+    i masz jej szukać na zewnątrz**.
+
+    Gdzie patrzeć: aplikacje do dzielenia rachunków (Splitwise, Tricount, Settle Up),
+    **aplikacje bankowe** (bo to od nich ludzie mają nawyki wokół kwot, przelewów
+    i potwierdzeń) oraz dowolne inne produkty, które robią daną rzecz najlepiej —
+    onboarding, puste stany, powiadomienia, arkusze, listy transakcji.
+
+    Nie kopiuj układów. Wyciągaj **rozwiązania problemów**, sprawdzaj je przeciwko
+    `PRODUCT.md` i przynoś właścicielowi propozycje z uzasadnieniem. Sugerowanie się
+    konkurencją jest tu jawnie dozwolone.
 
 ---
 
@@ -72,16 +84,19 @@ zapisana w Safari jest tam niewidoczna. Naprawa warstwowa: **kod pokoju i QR jak
 dynamiczny manifest jako eksperyment do potwierdzenia na telefonie. Ma znaczenie tym
 większe, że planowane jest wydanie natywne.
 
-**Świadomie otwarte ryzyka** (nie do naprawy przypadkiem, ale nie do zapomnienia):
-członek grupy może podmienić cudzy numer konta; po przekroczeniu 4,5 GB aplikacja kasuje
-najstarsze zdjęcia **bez pytania**. Oba dotyczą zaufania, więc każdy nowy ekran ustawień
-powinien się do nich odnieść.
+**Świadomie otwarte ryzyko:** członek grupy może podmienić cudzy numer konta. Dotyczy
+zaufania, więc warto się do niego odnieść przy projektowaniu ustawień grupy.
+*(Automatyczne kasowanie najstarszych zdjęć po przekroczeniu 4,5 GB — właściciel uznał
+2026-08-05 za nieistotne na tym etapie, do ogarnięcia dopiero przy wersji do monetyzacji.)*
 
 **Waluty.** PLN / EUR / USD, kurs zapisywany w dniu dodania rachunku, waluty **nigdy się
 nie mieszają** w jednym saldzie. Zbiorcze saldo mieszające waluty jest jawnie poza zakresem.
 
-**Przypomnienia mają bramkę: jedno na sześć godzin.** Projektując własne szablony
-wiadomości, trzeba pokazać tę granicę, a nie pozwolić w nią wejść i dostać odmowę.
+**Przypomnienia: bramka to dziesięć sekund, nie sześć godzin** (decyzja właściciela
+2026-08-05, zmienione w kodzie). Blokujemy wyłącznie walenie w przycisk co sekundę.
+Dobijanie się o zwrot pieniędzy bywa zabawne i jest sprawą dwóch osób — produkt ma
+domykać dług, a nie chronić dłużnika przed wierzycielem. Projektując własne szablony
+wiadomości, **nie dokładaj limitów, których nie ma**.
 
 **Zdjęcia paragonu:** najwyżej pięć na rachunek, także HEIC z iPhone'a, licznik miejsca.
 
