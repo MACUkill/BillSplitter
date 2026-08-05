@@ -22,3 +22,6 @@ emulator-data
 
 # harness-local (launch config itd.)
 .claude/
+
+# zrzuty i pomiary z przebiegow audytowych (odtwarzalne: node tools/audit-layout.mjs)
+shots

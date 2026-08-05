@@ -7,7 +7,14 @@
 import puppeteer from 'puppeteer';
 
 const URL = 'http://localhost:5173/';
-const VIEWPORT = { width: 390, height: 844, deviceScaleFactor: 1, isMobile: true, hasTouch: true };
+
+// Szerokość jako pierwszy argument: node tools/audit-buttons.mjs 834
+// Martwy przycisk bywa martwy tylko na jednej szerokości — element przykryty innym
+// albo wypchnięty poza obszar trafienia klika się na telefonie, a na tablecie już nie.
+const WIDTH = Number(process.argv[2]) || 390;
+const TOUCH = WIDTH < 1024;
+const HEIGHT = Number(process.argv[3]) || (WIDTH >= 1024 ? 800 : WIDTH >= 768 ? 1112 : 844);
+const VIEWPORT = { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, isMobile: TOUCH, hasTouch: TOUCH };
 
 // Odcisk stanu: wszystko, co przycisk w tej aplikacji może realnie zmienić —
 // ekran, okno, motyw, przewinięcie, stany przełączników, zwinięte sekcje, treść.
@@ -150,7 +157,7 @@ const run = async () => {
   await auditScreen('rachunek', billUrl);
 
   await browser.close();
-  console.log(JSON.stringify({ podejrzane: report, bledyKonsoli: [...new Set(consoleErrors)] }, null, 2));
+  console.log(JSON.stringify({ viewport: `${WIDTH}x${HEIGHT}`, podejrzane: report, bledyKonsoli: [...new Set(consoleErrors)] }, null, 2));
 };
 
 run().catch((e) => { console.error('AUDIT FAILED:', e.message); process.exit(1); });

@@ -52,39 +52,50 @@
         .status-select-wrapper {
             position: relative;
             display: inline-flex;
-            align-items: stretch;
+            /* Ikona stanu ma stać W OSI tekstu. Przy `align-items: stretch` była
+               rozciągana na całą wysokość otoczki i jej glif lądował przy górnej
+               krawędzi, nachodząc na pole wyboru zamiast stać obok niego. */
+            align-items: center;
+            gap: 0.5rem;
             min-height: 2.75rem;
             border-radius: 999px;
-            padding: 0.25rem 0.75rem;
+            /* Bez odstępu pionowego: każdy piksel otoczki ma być klikalny. Przy
+               `padding: 0.25rem` samo pole wyboru miało 36 px, a 8 px otoczki tylko
+               wyglądało na cel — audyt układu łapał to na każdej szerokości.
+               Z prawej strony miejsce na chevron, żeby nie wchodził na tekst. */
+            padding: 0 1.75rem 0 0.875rem;
         }
+        .status-select-wrapper > i {
+            flex-shrink: 0;
+            line-height: 1;
+        }
+        /* Sam wybór statusu jest teraz PRZYCISKIEM (otwiera arkusz), więc nosi obie
+           klasy naraz: otoczkę i uchwyt kliknięcia. Zostają tylko te własności, które
+           zdejmują wygląd systemowego przycisku — resztę niesie otoczka wyżej. */
         .status-select {
             -webkit-appearance: none;
-            -moz-appearance: none;
             appearance: none;
-            background-color: transparent;
             border: none;
-            padding-right: 1.5rem;
-            margin: 0;
-            width: auto;
-            /* Pole rozciąga się na całą wysokość otoczki, żeby cel dotykowy miał
-               realne 44 px, a nie 24 px wysokości samego tekstu. `align-self` nie
-               wystarcza: pole wyboru ma własną wysokość wewnętrzną i ignoruje
-               rozciąganie, dopóki nie dostanie jej wprost. */
-            align-self: stretch;
-            height: 100%;
-            min-height: 2.25rem;
             font-family: inherit;
             font-size: inherit;
-            cursor: pointer;
             line-height: inherit;
+            cursor: pointer;
             outline: none;
+            transition: filter 160ms ease-out, transform 160ms cubic-bezier(0.2, 0, 0, 1);
         }
+        .status-select:active { transform: scale(0.97); }
         .status-select-wrapper::after {
             content: '\f078';
             font-family: 'Font Awesome 6 Free';
             font-weight: 900;
+            font-size: 0.6875rem;
             position: absolute;
-            right: 0.5rem;
+            right: 0.75rem;
+            /* Bez wyśrodkowania w pionie chevron siadał przy górnej krawędzi otoczki
+               i czytał się jak druga, przekrzywiona ikona stanu. */
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0.55;
             pointer-events: none;
         }
         input[type=number]::-webkit-inner-spin-button,
@@ -216,7 +227,15 @@ the verdict, and DESIGN.md
                  gubi adres grupy. -->
             <header class="flex items-center justify-between gap-3 mb-6">
                 <div class="min-w-0">
-                    <h2 id="dashboard-group-name" class="font-display text-3xl md:text-4xl font-extrabold tracking-tight leading-none truncate"></h2>
+                    <!-- Nazwa pokoju JEST wejściem do ustawień pokoju: ustawienia stoją przy
+                         rzeczy, której dotyczą. Chevron mówi, że to się otwiera. -->
+                    <button id="room-settings-btn" class="tap flex items-center gap-2 min-w-0 max-w-full min-h-tap" title="Ustawienia pokoju">
+                        <!-- Na wąskim telefonie nazwa pokoju schodzi o stopień skali:
+                             przy 3 rem „Wyjazd w Bieszczady" kończył się na „Wyjazd w …",
+                             czyli nagłówek nie mówił, w którym pokoju stoisz. -->
+                        <h2 id="dashboard-group-name" class="font-display text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight leading-none truncate"></h2>
+                        <i class="fas fa-chevron-down text-ink-3 text-sm flex-shrink-0"></i>
+                    </button>
                     <button id="room-serial-btn" class="tap mt-1 flex items-center gap-1.5 text-ink-3 text-sm min-h-tap" title="Kod pokoju: stuknij, aby skopiować">
                         <i class="fas fa-hashtag text-xs"></i>
                         <span id="room-serial" class="serial text-ink-2"></span>
@@ -229,41 +248,58 @@ the verdict, and DESIGN.md
                     <button id="help-fab" class="help-btn tap hidden w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Pomoc: jak to działa?" aria-label="Pomoc">
                         <i class="fas fa-question"></i>
                     </button>
-                    <button id="theme-toggle-btn" class="tap w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Motyw jasny albo ciemny">
-                        <i id="theme-toggle-icon" class="fas fa-moon"></i>
-                    </button>
                     <button id="nudges-bell" class="tap hidden relative w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Przypomnienia">
                         <i class="fas fa-bell"></i>
                         <span id="nudges-badge" class="hidden absolute top-0 right-0 min-w-[1.25rem] h-5 px-1 bg-owe text-white text-[0.6875rem] font-bold rounded-full flex items-center justify-center">0</span>
                     </button>
-                    <button id="open-profile-btn" class="tap w-12 h-12 rounded-full flex items-center justify-center" title="Twój profil">
-                        <span id="dashboard-user-mark" class="w-11 h-11 block"></span>
-                    </button>
+                    <!-- Bez znaku tożsamości w nagłówku. Nie był przyciskiem, więc niczego
+                         nie robił, a jako jedyny element rzędu miał inną wielkość niż
+                         okrągłe przyciski obok. Swoje zdjęcie i kolor widać w zakładce „Ty". -->
                 </div>
             </header>
+
+            <!-- TRZY MIEJSCA, nie trzy sekcje jednej strony. Pasek przełącza widoki:
+                 zakładka jest miejscem, do którego się wraca, a nie skokiem przewijania
+                 po tej samej stronie. Przy pustym pokoju stara wersja nie miała dokąd
+                 przewinąć i zakładki wyglądały na martwe. -->
+            <div id="view-balance" class="deck-view">
+
+            <!-- Tytuł zakładki. Pasek pokazuje same ikony, więc to TUTAJ pada nazwa
+                 miejsca, w którym stoisz — raz, w jednym miejscu, pełnym słowem. -->
+            <h3 class="view-title mb-3">Bilans</h3>
 
             <!-- BILANS — limonkowy blok. Jedna liczba, po którą ludzie tu przychodzą,
                  w skali, której nie da się przeoczyć w hałasie i przy złym świetle. -->
             <section id="balance-panel" class="block-brand relative overflow-hidden p-6 mb-3">
-                <p class="text-sm font-bold opacity-60">Twój bilans</p>
-                <div id="balance-amounts" class="mt-2 space-y-1"></div>
+                <!-- Bez podpisu „Twój bilans" w środku: tytuł zakładki nad blokiem mówi
+                     to samo, a kwota nie potrzebuje dwóch etykiet nad sobą. -->
+                <div id="balance-amounts" class="space-y-1"></div>
                 <p id="balance-caption" class="mt-2 text-sm font-semibold opacity-70"></p>
                 <div id="balance-actions" class="mt-5 flex flex-wrap gap-2"></div>
                 <span id="dashboard-user-name-display" class="sr-only"></span>
             </section>
 
-            <!-- KTO KOMU ILE — wiersze ludzi ze zdjęciami. Domyślnie otwarte:
-                 to jest powód, dla którego ktoś otwiera aplikację. -->
+            <!-- Pusty pokój na Bilansie: zero to tu stan sukcesu, ale w świeżym pokoju
+                 znaczy „jeszcze nic nie ma". Bez tego zakładka była samym limonkowym
+                 blokiem i pustką pod nim. -->
+            <div id="balance-empty" class="hidden block-quiet p-5 mt-3">
+                <p class="font-bold">Pokój jest pusty.</p>
+                <p class="text-sm text-ink-2 mt-1">Pierwszy rachunek dodasz limonkowym przyciskiem na dole ekranu. Ekipa dołączy kodem pokoju:</p>
+                <p id="balance-empty-serial" class="serial text-ink text-lg font-bold mt-2"></p>
+            </div>
+
+            </div><!-- /view-balance -->
+
+            <!-- ROZLICZENIA — wiersze ludzi ze zdjęciami. To jest powód, dla którego
+                 ktoś otwiera aplikację, więc dostaje własne miejsce w pasku. -->
+            <div id="view-settle" class="deck-view hidden">
             <section id="settlements-section" class="mb-3">
                 <!-- Nagłówek i przełącznik trybu STOJĄ W DWÓCH RZĘDACH na telefonie.
                      Obok siebie „Kto komu ile" i „Najmniej przelewów" nie mieszczą się
                      poniżej 400 px i zaczynają się zawijać jedno na drugie. -->
-                <div class="mb-3 mt-6">
-                    <button id="toggle-settlements-btn" class="tap flex items-center gap-2 min-h-tap">
-                        <h3 class="font-display text-xl font-extrabold tracking-tight">Kto komu ile</h3>
-                        <i id="settlements-arrow-icon" class="fas fa-chevron-down text-ink-3 text-xs transition-transform rotated"></i>
-                    </button>
-                    <div class="seg mt-1">
+                <div class="mb-3">
+                    <h3 class="view-title">Kto komu ile</h3>
+                    <div class="seg mt-2">
                         <button data-mode="net" class="settle-mode-btn seg-btn" aria-pressed="true">Kto komu</button>
                         <button data-mode="min" class="settle-mode-btn seg-btn" aria-pressed="false">Najmniej przelewów</button>
                     </div>
@@ -272,11 +308,13 @@ the verdict, and DESIGN.md
                     <div id="settlements-list" class="space-y-2"></div>
                 </div>
             </section>
+            </div><!-- /view-settle -->
 
             <!-- RACHUNKI -->
+            <div id="view-bills" class="deck-view hidden">
             <section id="bills-section" class="mb-3">
-                <div class="flex items-center justify-between gap-3 mb-3 mt-6">
-                    <h3 class="font-display text-xl font-extrabold tracking-tight">Rachunki</h3>
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    <h3 class="view-title">Rachunki</h3>
                     <div id="bill-filters" class="seg">
                         <button data-filter="all" class="bill-filter-btn seg-btn" aria-pressed="true">Wszystkie</button>
                         <button data-filter="hidden" class="bill-filter-btn seg-btn" aria-pressed="false">Ukryte</button>
@@ -284,93 +322,80 @@ the verdict, and DESIGN.md
                 </div>
                 <div id="bills-history-list" class="space-y-2"></div>
             </section>
-
-            <!-- POKÓJ — rzeczy potrzebne rzadko, ale nie do ukrycia. -->
-            <section class="mb-4">
-                <button id="toggle-summary-btn" class="tap flex items-center gap-2 min-h-tap mt-6">
-                    <h3 class="font-display text-xl font-extrabold tracking-tight">Pokój</h3>
-                    <i id="summary-arrow-icon" class="fas fa-chevron-down text-ink-3 text-xs transition-transform"></i>
-                </button>
-                <div id="summary-content" class="hidden mt-3 space-y-3">
-                    <div class="card p-5">
-                        <p class="text-sm font-bold text-ink-3">Link do pokoju</p>
-                        <div class="mt-2 flex items-center gap-2">
-                            <input type="text" id="group-share-link" class="field flex-grow min-w-0" readonly>
-                            <button id="copy-group-link-btn" class="btn btn-dark flex-shrink-0">Kopiuj</button>
-                        </div>
-                    </div>
-                    <div class="card p-5 grid grid-cols-2 gap-5">
-                        <div>
-                            <p class="text-sm font-bold text-ink-3">Twoje udziały</p>
-                            <p id="summary-my-gross-spend" class="mt-1 font-bold text-lg">--</p>
-                        </div>
-                        <div>
-                            <p class="text-sm font-bold text-ink-3">Cała grupa</p>
-                            <p id="summary-group-gross-spend" class="mt-1 font-bold text-lg">--</p>
-                        </div>
-                        <div class="col-span-2">
-                            <p class="text-sm font-bold text-ink-3">Miejsce na zdjęcia</p>
-                            <p id="storage-usage" class="mt-1 text-sm text-ink-2">--</p>
-                        </div>
-                    </div>
-                    <button id="install-pwa-btn" class="btn btn-dark hidden w-full">
-                        Zainstaluj aplikację na telefonie
-                    </button>
-                    <div id="ios-install-hint" class="hidden card p-5 text-sm text-ink-2">
-                        Na iPhonie: dotknij <b class="text-ink">Udostępnij</b>, a potem <b class="text-ink">„Do ekranu początkowego"</b>. Po instalacji wejdź do pokoju kodem <span class="serial text-ink">z góry ekranu</span>, bo skrót otwiera aplikację bez adresu grupy.
-                    </div>
-                </div>
-            </section>
+            </div><!-- /view-bills -->
 
         </div>
 
         <!-- PROFIL — tożsamość w tym świecie to znak, kolor i zdjęcie. Numer konta stoi tu,
              bo to on kończy rozliczenie, gdy ktoś chce oddać pieniądze. -->
         <div id="profile-screen" class="hidden">
-            <header class="flex items-center gap-2 mb-4">
-                <button id="back-to-dashboard-from-profile-btn" class="tap w-11 h-11 -ml-2 rounded-lg flex items-center justify-center text-ink-2 flex-shrink-0" title="Wróć do pokoju">
-                    <i class="fas fa-arrow-left text-lg"></i>
-                </button>
-                <h2 class="font-display text-3xl md:text-4xl font-bold">Twój profil</h2>
+            <!-- Bez strzałki „wróć": profil jest zakładką paska, a nie ekranem w głąb.
+                 Strzałka uczyła drugiej drogi powrotnej niż pasek i dwie się gryzły. -->
+            <!-- Tytuł tej zakładki niesie ten sam stopień i odstęp, co pozostałe trzy:
+                 przełączanie paskiem nie ma przesuwać pierwszego wiersza treści. -->
+            <header class="mb-3">
+                <h3 class="view-title">Twój profil</h3>
             </header>
 
-            <section class="card p-5 mb-6">
-                <div class="flex items-center gap-4">
-                    <div id="profile-avatar-preview" class="flex-shrink-0"></div>
-                    <div class="min-w-0">
-                        <p class="text-sm font-bold text-ink-3">Imię — stuknij, aby zmienić</p>
-                        <p id="dashboard-user-name" class="font-display text-2xl font-bold cursor-pointer truncate" title="Stuknij, aby zmienić imię"></p>
-                        <div class="mt-1 flex items-center gap-3">
-                            <button id="profile-photo-btn" class="tap min-h-tap text-sm font-semibold text-ink-2">Zmień zdjęcie</button>
-                            <button id="profile-photo-remove-btn" class="tap hidden min-h-tap text-sm font-semibold text-ink-3">Usuń</button>
-                            <input type="file" id="profile-photo-input" class="hidden" accept="image/jpeg,image/png,image/webp,image/heic">
-                        </div>
-                    </div>
+            <!-- TOŻSAMOŚĆ — stuknięcie w znak otwiera arkusz „Twój znak" (zdjęcie albo
+                 kolor), stuknięcie w imię zmienia imię. Dwie osobne pozycje na liście
+                 („Zmień zdjęcie", „Kolor znaku") pytały o to samo: jak mam wyglądać
+                 przy pozycjach rachunku. Teraz pyta o to sam znak. -->
+            <section class="card p-5 mb-6 flex items-center gap-4">
+                <button id="profile-mark-btn" class="tap flex-shrink-0 rounded-full relative" title="Zmień swój znak: zdjęcie albo kolor">
+                    <span id="profile-avatar-preview" class="block"></span>
+                    <span class="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-ink text-surface flex items-center justify-center text-xs" aria-hidden="true">
+                        <i class="fas fa-pen"></i>
+                    </span>
+                </button>
+                <div class="min-w-0">
+                    <p class="text-sm font-bold text-ink-3">Imię — stuknij, aby zmienić</p>
+                    <p id="dashboard-user-name" class="font-display text-2xl font-bold cursor-pointer truncate" title="Stuknij, aby zmienić imię"></p>
                 </div>
-
-                <div class="mt-5">
-                    <p class="text-sm font-bold text-ink-3 mb-2">Kolor znaku</p>
-                    <div id="dashboard-color-picker" class="flex items-center gap-1.5 flex-wrap" title="Twój kolor tożsamości"></div>
-                </div>
+                <input type="file" id="profile-photo-input" class="hidden" accept="image/jpeg,image/png,image/webp,image/heic">
             </section>
 
-            <section class="mb-6">
-                <button id="dashboard-payment-btn" class="card tap w-full min-h-tap p-3 flex items-center justify-between gap-2 text-left" title="Widoczne dla znajomych przy Twoich należnościach">
+            <!-- Wszystkie wiersze ustawień noszą jedną klasę `.settings-row`: ta sama
+                 wysokość, ten sam odstęp wewnętrzny, ten sam stopień pisma. Wcześniej
+                 każdy wiersz miał własny zestaw klas i różnice było widać gołym okiem. -->
+            <section class="mb-6 space-y-2">
+                <button id="dashboard-payment-btn" class="settings-row tap" title="Widoczne dla znajomych przy Twoich należnościach">
                     <span id="dashboard-payment-summary" class="truncate">Dodaj sposób płatności</span>
-                    <i class="fas fa-chevron-right text-ink-3 text-sm flex-shrink-0"></i>
+                    <span class="settings-row-value"><i class="fas fa-chevron-right text-sm"></i></span>
                 </button>
-
-                <button id="push-toggle-btn" class="card tap w-full min-h-tap p-3 mt-2 flex items-center justify-between gap-2 text-left" title="Przypomnienia o zaległościach na telefon">
-                    <span id="push-toggle-label" class="truncate">Włącz powiadomienia</span>
-                    <i class="fas fa-chevron-right text-ink-3 text-sm flex-shrink-0"></i>
-                </button>
-                <p id="push-toggle-note" class="text-xs text-ink-3 mt-1"></p>
             </section>
 
+            <!-- APLIKACJA — ustawienia urządzenia, nie tożsamości. Trzymane osobno od
+                 profilu, bo profil widzi grupa, a to widzi wyłącznie ten telefon. -->
             <section class="mb-6">
-                <h3 class="font-display text-2xl font-bold mb-3">Ile kto wydał</h3>
-                <div id="profile-spending" class="space-y-2"></div>
+                <h3 class="settings-group-title mb-3">Aplikacja</h3>
+
+                <div class="space-y-2">
+                    <button id="push-toggle-btn" class="settings-row tap" title="Przypomnienia o zaległościach na telefon">
+                        <span id="push-toggle-label" class="truncate">Włącz powiadomienia</span>
+                        <span class="settings-row-value"><i class="fas fa-chevron-right text-sm"></i></span>
+                    </button>
+
+                    <button id="theme-toggle-btn" class="settings-row tap" title="Motyw jasny albo ciemny">
+                        <span id="theme-toggle-label" class="truncate">Motyw</span>
+                        <span class="settings-row-value">
+                            <span id="theme-toggle-value">Ciemny</span>
+                            <i id="theme-toggle-icon" class="fas fa-moon"></i>
+                        </span>
+                    </button>
+
+                    <!-- Jeden przycisk na wszystkie systemy. Android dostaje systemowe okno
+                         instalacji, iPhone — arkusz z krokami, bo Safari takiego okna nie ma.
+                         Instrukcja wisiała wcześniej na ekranie na stałe i mówiła CO zrobić,
+                         nie mówiąc PO CO. -->
+                    <button id="install-pwa-btn" class="settings-row tap" title="Dodaj aplikację do ekranu początkowego">
+                        <span class="truncate">Zainstaluj na urządzeniu</span>
+                        <span class="settings-row-value"><i class="fas fa-chevron-right text-sm"></i></span>
+                    </button>
+                </div>
+                <p id="push-toggle-note" class="text-xs text-ink-3 mt-2"></p>
             </section>
+
         </div>
 
 
@@ -404,12 +429,19 @@ the verdict, and DESIGN.md
             <section class="card p-5 mb-3">
                 <label for="total-bill-amount" class="block font-bold mb-2">Pełna kwota rachunku</label>
                 <div class="flex items-center gap-2">
-                    <input type="number" inputmode="decimal" id="total-bill-amount" class="field flex-grow min-w-0 text-2xl font-bold" placeholder="0,00">
-                    <select id="currency-select" class="field w-auto flex-shrink-0 font-bold">
-                        <option value="PLN">PLN</option>
-                        <option value="EUR">EUR</option>
-                        <option value="USD">USD</option>
-                    </select>
+                    <!-- `type="text"` z klawiaturą numeryczną, nie `type="number"`:
+                         pole liczbowe wymusza kropkę dziesiętną, więc kwota pokazywała
+                         się jako „480.00" obok wszystkich innych kwot pisanych po polsku
+                         przecinkiem. Wpis czyta `parseLocalFloat`, który przyjmuje oba. -->
+                    <input type="text" inputmode="decimal" id="total-bill-amount" class="field flex-grow min-w-0 text-2xl font-bold" placeholder="0,00">
+                    <!-- Waluta i płatnik otwierają ARKUSZ, nie rozwijaną listę systemową:
+                         lista systemowa przychodzi z białym tłem, niebieskim zaznaczeniem
+                         i własną czcionką, więc na ciemnym ekranie jest ciałem obcym,
+                         a jej wyglądu nie da się ustawić w żadnej przeglądarce. -->
+                    <button id="currency-select" class="field choice-field w-auto flex-shrink-0 font-bold" data-value="PLN">
+                        <span id="currency-select-label">PLN</span>
+                        <i class="fas fa-chevron-down choice-field-chevron"></i>
+                    </button>
                 </div>
 
                 <!-- Suma pozycji i jej stan STOJĄ W JEDNEJ LINII, a wyjaśnienie pod spodem.
@@ -422,8 +454,11 @@ the verdict, and DESIGN.md
                 <p id="control-status" class="text-sm text-ink-2 mt-1"></p>
                 <p id="pln-conversion-display" class="text-sm text-ink-3 mt-1"></p>
 
-                <label for="payer-select" class="block font-bold mt-5 mb-2">Kto wyłożył pieniądze</label>
-                <select id="payer-select" class="field"></select>
+                <p class="block font-bold mt-5 mb-2">Kto wyłożył pieniądze</p>
+                <button id="payer-select" class="field choice-field w-full" data-value="">
+                    <span id="payer-select-label" class="truncate">Wskaż osobę…</span>
+                    <i class="fas fa-chevron-down choice-field-chevron"></i>
+                </button>
             </section>
 
             <!-- POZYCJE — bohater tego ekranu i znak całej aplikacji.
@@ -440,7 +475,13 @@ the verdict, and DESIGN.md
             <!-- PARAGON — źródło pozycji. Odczyt modelem stoi tuż przy zdjęciach, bo to
                  jeden ruch: zrób zdjęcie, odczytaj, zaakceptuj. -->
             <section id="receipt-photos-section" class="mb-3 mt-6">
-                <h3 class="font-display text-xl font-extrabold tracking-tight mb-3">Paragon</h3>
+                <h3 class="font-display text-xl font-extrabold tracking-tight mb-1">Paragon</h3>
+                <!-- Bez tego zdania odczyt paragonu był funkcją dla wtajemniczonych:
+                     przycisk „Odczytaj paragon" pojawia się DOPIERO po dodaniu zdjęcia,
+                     więc kto nie wiedział, że taka rzecz istnieje, nie miał skąd się
+                     dowiedzieć. Zdanie mówi też wprost, że nic nie wejdzie do rachunku
+                     bez akceptacji — to jest obietnica przy cudzych pieniądzach. -->
+                <p id="receipt-hint" class="text-sm text-ink-2 mb-3">Dodaj zdjęcie, a aplikacja odczyta z niego pozycje i ceny. Zobaczysz je do sprawdzenia, zanim trafią do rachunku.</p>
                 <div class="flex items-center gap-3 flex-wrap">
                     <div id="receipt-thumbnails-container" class="flex gap-3 flex-wrap"></div>
                     <div id="photo-dropzone" class="tap w-24 h-24 p-2 bg-surface-2 rounded-block flex flex-col items-center justify-center text-center text-ink-2 cursor-pointer">
@@ -489,22 +530,211 @@ the verdict, and DESIGN.md
          na telefonie trzymanym jedną ręką. W V1 każda akcja wymagała sięgnięcia na górę.
          Środek należy do czynności, dla której ludzie tu wracają: nowy rachunek. -->
     <nav id="deck-nav" class="deck hidden" aria-label="Nawigacja pokoju">
-        <button id="nav-room" class="deck-btn tap" aria-current="page" title="Bilans">
-            <i class="fas fa-wallet"></i><span class="deck-btn-label">Bilans</span>
-        </button>
-        <button id="nav-settle" class="deck-btn tap" title="Kto komu ile">
-            <i class="fas fa-right-left"></i><span class="deck-btn-label">Kto komu</span>
-        </button>
-        <button id="create-new-bill-btn" class="deck-add tap" title="Nowy rachunek">
+        <!-- Same ikony. Nazwa zakładki stoi jako tytuł na górze otwartego widoku,
+             więc podpis w pasku byłby tą samą informacją podaną dwa razy. Czytnikom
+             ekranu nazwę niesie `aria-label`. -->
+        <div class="deck-side">
+            <button id="nav-room" class="deck-btn tap" aria-current="page" aria-label="Bilans" title="Bilans">
+                <i class="fas fa-wallet"></i>
+            </button>
+            <button id="nav-settle" class="deck-btn tap" aria-label="Kto komu ile" title="Kto komu ile">
+                <i class="fas fa-right-left"></i>
+            </button>
+        </div>
+        <button id="create-new-bill-btn" class="deck-add tap" aria-label="Nowy rachunek" title="Nowy rachunek">
             <i class="fas fa-plus"></i>
         </button>
-        <button id="nav-bills" class="deck-btn tap" title="Rachunki">
-            <i class="fas fa-receipt"></i><span class="deck-btn-label">Rachunki</span>
-        </button>
-        <button id="nav-me" class="deck-btn tap" title="Twój profil">
-            <i class="fas fa-user"></i><span class="deck-btn-label">Ty</span>
-        </button>
+        <div class="deck-side">
+            <button id="nav-bills" class="deck-btn tap" aria-label="Rachunki" title="Rachunki">
+                <i class="fas fa-receipt"></i>
+            </button>
+            <button id="nav-me" class="deck-btn tap" aria-label="Twój profil" title="Twój profil">
+                <i class="fas fa-user"></i>
+            </button>
+        </div>
     </nav>
+
+    <!-- INSTALACJA NA URZĄDZENIU — arkusz spod przycisku w „Aplikacji".
+         Najpierw PO CO, potem JAK. Kroki iPhone'a niosą te same ikony, które widać
+         na pasku Safari, bo instrukcja ma się czytać przy telefonie w drugiej ręce. -->
+    <div id="install-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md flex flex-col" style="max-height:85vh">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-2xl font-bold mb-1">Zainstaluj na urządzeniu</h3>
+            <p class="text-sm text-ink-2 mb-4">Aplikacja siada na ekranie początkowym jak każda inna: wchodzisz jednym stuknięciem, bez szukania adresu w przeglądarce, na pełnym ekranie i bez pasków. Rachunki liczą się dalej offline, a przypomnienia o zaległościach mogą przyjść na telefon.</p>
+
+            <div class="overflow-y-auto">
+                <!-- iPhone: Safari nie ma systemowego okna instalacji, więc trzy kroki ręcznie. -->
+                <div id="install-steps-ios" class="hidden space-y-2">
+                    <div class="card p-3 flex items-center gap-3">
+                        <i class="fas fa-arrow-up-from-bracket text-info w-6 text-center text-lg"></i>
+                        <span class="text-sm"><b>1.</b> Dotknij <b>Udostępnij</b> na dolnym pasku Safari.</span>
+                    </div>
+                    <div class="card p-3 flex items-center gap-3">
+                        <i class="fas fa-square-plus text-info w-6 text-center text-lg"></i>
+                        <span class="text-sm"><b>2.</b> Przewiń listę i wybierz <b>Do ekranu początkowego</b>.</span>
+                    </div>
+                    <div class="card p-3 flex items-center gap-3">
+                        <i class="fas fa-check text-info w-6 text-center text-lg"></i>
+                        <span class="text-sm"><b>3.</b> Potwierdź <b>Dodaj</b> w prawym górnym rogu.</span>
+                    </div>
+                    <div class="block-quiet p-4">
+                        <p class="text-sm font-bold">Zaraz po instalacji wejdź kodem pokoju</p>
+                        <p class="text-sm text-ink-2 mt-1">Skrót z ekranu początkowego otwiera aplikację bez adresu grupy — pierwszy raz trzeba wpisać kod:</p>
+                        <p id="install-room-serial" class="serial text-ink text-lg font-bold mt-2"></p>
+                    </div>
+                </div>
+
+                <!-- Android i desktop: systemowe okno instalacji. -->
+                <div id="install-steps-prompt" class="hidden">
+                    <button id="install-pwa-confirm" class="btn btn-primary w-full">Dodaj do ekranu początkowego</button>
+                    <p class="text-sm text-ink-3 mt-2">Otworzy się okno systemowe — potwierdź w nim instalację.</p>
+                </div>
+
+                <!-- Przeglądarka bez wsparcia albo aplikacja już zainstalowana. -->
+                <div id="install-steps-none" class="hidden block-quiet p-4">
+                    <p class="text-sm text-ink-2">Ta przeglądarka nie pozwala dodać aplikacji do ekranu początkowego. Otwórz stronę w Chrome (Android) albo Safari (iPhone) i spróbuj ponownie.</p>
+                </div>
+
+                <div id="install-steps-done" class="hidden block-quiet p-4">
+                    <p class="text-sm text-ink-2">Aplikacja jest już zainstalowana na tym urządzeniu — właśnie w niej jesteś.</p>
+                </div>
+            </div>
+
+            <button id="close-install-modal" class="btn btn-dark w-full mt-4 flex-shrink-0">Zamknij</button>
+        </div>
+    </div>
+
+    <!-- WYBÓR Z LISTY — jeden arkusz obsługujący każdy wybór jednokrotny
+         (waluta, płatnik). Treść wstawia `openChoiceSheet`. -->
+    <div id="choice-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md flex flex-col" style="max-height:80vh">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 id="choice-title" class="font-display text-2xl font-bold mb-4"></h3>
+            <div id="choice-options" class="space-y-2 overflow-y-auto"></div>
+            <button id="close-choice-modal" class="btn btn-dark w-full mt-5 flex-shrink-0">Zamknij</button>
+        </div>
+    </div>
+
+    <!-- STATUS UCZESTNIKA — arkusz zamiast rozwijanej listy systemowej. -->
+    <div id="status-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-2xl font-bold mb-1">Twój status</h3>
+            <p class="text-sm text-ink-2 mb-4">Mówi ekipie, czy Twoja część rachunku jest już opisana.</p>
+            <div class="space-y-2">
+                <button class="status-option card tap w-full min-h-tap p-3 flex items-center gap-3 text-left" data-status="incomplete">
+                    <i class="fas fa-question-circle text-info w-5 text-center"></i>
+                    <span class="flex-grow min-w-0">
+                        <span class="block font-semibold">Nieuzupełnione</span>
+                        <span class="block text-sm text-ink-3">Jeszcze nie wskazałeś swoich pozycji.</span>
+                    </span>
+                    <i class="status-option-check fas fa-check text-ink hidden flex-shrink-0"></i>
+                </button>
+                <button class="status-option card tap w-full min-h-tap p-3 flex items-center gap-3 text-left" data-status="completed">
+                    <i class="fas fa-user-check text-ink-2 w-5 text-center"></i>
+                    <span class="flex-grow min-w-0">
+                        <span class="block font-semibold">Uzupełnione</span>
+                        <span class="block text-sm text-ink-3">Twoja część rachunku jest kompletna.</span>
+                    </span>
+                    <i class="status-option-check fas fa-check text-ink hidden flex-shrink-0"></i>
+                </button>
+                <button class="status-option card tap w-full min-h-tap p-3 flex items-center gap-3 text-left" data-status="not_applicable">
+                    <i class="fas fa-ban text-ink-3 w-5 text-center"></i>
+                    <span class="flex-grow min-w-0">
+                        <span class="block font-semibold">Mnie nie dotyczy</span>
+                        <span class="block text-sm text-ink-3">Nie brałeś udziału w tym rachunku.</span>
+                    </span>
+                    <i class="status-option-check fas fa-check text-ink hidden flex-shrink-0"></i>
+                </button>
+            </div>
+            <button id="close-status-modal" class="btn btn-dark w-full mt-5">Zamknij</button>
+        </div>
+    </div>
+
+    <!-- TWÓJ ZNAK — arkusz spod znaku na ekranie „Ty". Dwie drogi do tego samego
+         pytania „jak mam wyglądać przy pozycjach rachunku": własne zdjęcie albo kolor. -->
+    <div id="mark-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-2xl font-bold mb-1">Twój znak</h3>
+            <p class="text-sm text-ink-2 mb-4">Tak widzi Cię ekipa przy pozycjach rachunku i w rozliczeniach.</p>
+            <div class="space-y-2">
+                <button id="profile-photo-btn" class="settings-row tap">
+                    <span class="truncate">Ustaw własne zdjęcie</span>
+                    <span class="settings-row-value"><i class="fas fa-camera text-sm"></i></span>
+                </button>
+                <button id="profile-color-btn" class="settings-row tap">
+                    <span class="truncate">Wybierz kolor znaku</span>
+                    <span class="settings-row-value">
+                        <span id="profile-color-dot" class="w-6 h-6 rounded-full block" style="background-color:transparent"></span>
+                        <i class="fas fa-chevron-right text-sm"></i>
+                    </span>
+                </button>
+                <button id="profile-photo-remove-btn" class="settings-row tap hidden">
+                    <span class="truncate">Usuń zdjęcie</span>
+                    <span class="settings-row-value"><i class="fas fa-trash text-sm"></i></span>
+                </button>
+            </div>
+            <button id="close-mark-modal" class="btn btn-dark w-full mt-5">Gotowe</button>
+        </div>
+    </div>
+
+    <!-- PALETA KOLORU ZNAKU — arkusz spod pola „Kolor znaku" na profilu. -->
+    <div id="color-picker-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-2xl font-bold mb-1">Kolor znaku</h3>
+            <p class="text-sm text-ink-2 mb-4">Tym kolorem ekipa rozpoznaje Cię przy pozycjach rachunku.</p>
+            <div id="dashboard-color-picker" class="grid grid-cols-6 gap-2 justify-items-center"></div>
+            <button id="close-color-picker-btn" class="btn btn-dark w-full mt-5">Gotowe</button>
+        </div>
+    </div>
+
+    <!-- USTAWIENIA POKOJU — arkusz spod nazwy pokoju. Ustawienia stoją przy rzeczy,
+         której dotyczą; zwijana sekcja „Pokój" na pulpicie zniknęła bez zamiennika. -->
+    <div id="room-settings-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-lg flex flex-col" style="max-height:85vh">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-2xl font-bold mb-4">Ustawienia pokoju</h3>
+
+            <div class="overflow-y-auto space-y-3">
+                <div class="card p-5">
+                    <p class="text-sm font-bold text-ink-3">Kod pokoju</p>
+                    <p class="mt-1 text-sm text-ink-2">Podaj go przy stole — działa też wtedy, gdy skrót z ekranu początkowego zgubi adres grupy.</p>
+                    <div class="mt-2 flex items-center gap-2">
+                        <span id="room-settings-serial" class="serial text-ink text-lg font-bold flex-grow min-w-0 truncate"></span>
+                        <button id="room-settings-copy-serial-btn" class="btn btn-dark flex-shrink-0">Kopiuj</button>
+                    </div>
+                </div>
+
+                <div class="card p-5">
+                    <p class="text-sm font-bold text-ink-3">Link do pokoju</p>
+                    <div class="mt-2 flex items-center gap-2">
+                        <input type="text" id="group-share-link" class="field flex-grow min-w-0" readonly>
+                        <button id="copy-group-link-btn" class="btn btn-dark flex-shrink-0">Kopiuj</button>
+                    </div>
+                </div>
+
+                <div class="card p-5 grid grid-cols-2 gap-5">
+                    <div>
+                        <p class="text-sm font-bold text-ink-3">Twoje udziały</p>
+                        <p id="summary-my-gross-spend" class="mt-1 font-bold text-lg">--</p>
+                    </div>
+                    <div>
+                        <p class="text-sm font-bold text-ink-3">Cała grupa</p>
+                        <p id="summary-group-gross-spend" class="mt-1 font-bold text-lg">--</p>
+                    </div>
+                    <div class="col-span-2">
+                        <p class="text-sm font-bold text-ink-3">Miejsce na zdjęcia</p>
+                        <p id="storage-usage" class="mt-1 text-sm text-ink-2">--</p>
+                    </div>
+                </div>
+            </div>
+
+            <button id="close-room-settings-btn" class="btn btn-dark w-full mt-4 flex-shrink-0">Gotowe</button>
+        </div>
+    </div>
 
     <div id="new-bill-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet pt-2 p-5 md:p-6 w-full max-w-lg">
@@ -752,8 +982,10 @@ the verdict, and DESIGN.md
 
             <p class="font-bold mb-2">Jak liczyć</p>
             <div class="seg mb-4">
-                <label class="seg-btn cursor-pointer flex items-center gap-2"><input type="radio" name="global-cost-format" value="fixed" checked class="w-4 h-4 accent-ink">Kwota</label>
-                <label class="seg-btn cursor-pointer flex items-center gap-2"><input type="radio" name="global-cost-format" value="percent" class="w-4 h-4 accent-ink">Procent</label>
+                <!-- Cel dotykowy to CAŁA etykieta, nie samo 16-pikselowe kółko: min-h-tap
+                     na etykiecie daje 44 px w pionie, a kółko zostaje tylko znacznikiem. -->
+                <label class="seg-btn cursor-pointer flex items-center gap-2 min-h-tap"><input type="radio" name="global-cost-format" value="fixed" checked class="w-4 h-4 accent-ink">Kwota</label>
+                <label class="seg-btn cursor-pointer flex items-center gap-2 min-h-tap"><input type="radio" name="global-cost-format" value="percent" class="w-4 h-4 accent-ink">Procent</label>
             </div>
             <input type="number" inputmode="decimal" id="global-cost-value" class="field" placeholder="np. 10 albo 15">
 

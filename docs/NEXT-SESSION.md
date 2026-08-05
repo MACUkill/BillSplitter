@@ -16,27 +16,33 @@ Napisane 2026-08-05 na koniec sesji, w której powstał nowy świat wizualny.
 - **Narzędzia audytowe** — `tools/audit-layout.mjs`, `tools/audit-buttons.mjs`.
 - **Sieć asekuracyjna** — 157 testów, kontrakt selektorów, strażnik escapowania.
 
-### NIE MA — i to jest zakres tej sesji
+### ZAKRES — stan na 2026-08-06
 
-Właściciel wypisał to wprost 2026-08-05. Żadnego z tych punktów nie ma w dokumentacji:
+Lista właściciela z 2026-08-05, ze statusem po partiach 1, 1b i 1c.
+Wykonanie opisane w `docs/UI-UX.md` §11, decyzje w §10.
 
-1. **Responsywność** — nic nie jest udokumentowane ani sprawdzone poza 390×844.
-   **Priorytet: telefon i TABLET**, potem desktop. Audyt chodzi na jednej szerokości;
-   trzeba go rozszerzyć o punkty łamania i przejrzeć każdy ekran na każdym.
-2. **System powiadomień w interfejsie** — „uzupełnij swoje koszty", kropka w nawigacji
-   przy nieobejrzanych rachunkach, odznaki. Push istnieje w kodzie (FCM), ale
-   powiadomienia *wewnątrz* aplikacji nie są zaprojektowane.
-3. **Struktura ustawień** — właściciel chce rozdzielone i uporządkowane:
-   ustawienia profilu, ustawienia grupy, ustawienia aplikacji. Dziś to jest wymieszane.
-4. **Zakładka rozliczeń i przelewów** jako osobne miejsce, nie sekcja pulpitu.
-5. **Rachunki w jednym miejscu z filtrowaniem** — dziś filtr jest szczątkowy.
-6. **Historia zmian** — kto zmienił kwotę albo pozycję.
-7. **Własne wiadomości przypominające o płatności**, z **domyślną klasyczną treścią**
-   wpisaną z góry. Mechanizm głosu produktu: humor tylko od człowieka, nigdy przy
-   kwocie ani przy błędzie; treść widzi wyłącznie adresat.
-8. **Morfowanie [+] w arkusz** — rozpisane w `docs/UI-UX.md` §4, niezbudowane.
-9. **Nawigacja widoczna na każdym ekranie** i zakładki jako prawdziwe miejsca —
-   decyzja w `docs/UI-UX.md` §3, niezbudowana. To jest korzeń większości bezsensów.
+| # | Punkt | Stan |
+|---|---|---|
+| 1 | **Responsywność** — telefon, tablet, desktop | **zrobione**: kontrakt w `DESIGN.md`, audyt chodzi na 360/390/834/1280, siatka 2× od 768 px |
+| 2 | **Powiadomienia w interfejsie** — kropki, odznaki, skrzynka | **do zrobienia** (partia 2, §10.2) |
+| 3 | **Struktura ustawień** — profil / grupa / aplikacja | **zrobione co do podziału**; brakuje zawartości ustawień pokoju (skład, QR, waluta, opuszczenie) |
+| 4 | **Rozliczenia jako osobne miejsce** | **zrobione** — zakładka „Kto komu ile" |
+| 5 | **Rachunki z filtrowaniem** | **do zrobienia** (partia 2, §10.4): pigułki `Czekają na Ciebie` / `Moje`, nagłówki dat, licznik |
+| 6 | **Historia zmian** | **do zrobienia** (partia 3) |
+| 7 | **Własne szablony przypomnień** | **do zrobienia** (partia 3) |
+| 8 | **Morfowanie [+] w arkusz** | **zrobione** (View Transitions API) |
+| 9 | **Nawigacja na każdym ekranie, zakładki jako miejsca** | **zrobione** (partia 1) |
+
+**Kolejność następnych partii** (rekomendacja przyjęta 2026-08-06):
+
+1. **Partia 2 — Rachunki** (§10.4): filtry pigułkami, nagłówki dat, licznik nad listą.
+   Najczęściej używana lista w aplikacji, a dziś ma dwa filtry i płaską listę.
+2. **Partia 3 — Powiadomienia i skrzynka** (§10.2): trzy poziomy, kropki na zakładkach,
+   odznaka liczbowa wyłącznie dla poziomu 1, skrzynka spod dzwonka.
+3. **Partia 4 — Ustawienia pokoju** (§10.3): skład grupy (z odniesieniem do ryzyka
+   podmiany cudzego numeru konta), kod QR, waluta domyślna, opuszczenie pokoju.
+4. **Partia 5 — Bilans** (§10.1): twarze ekipy, lista „co czeka na Ciebie".
+5. **Partia 6 — Historia zmian** i **szablony przypomnień**.
 10. **Research — traktuj jako obowiązkowy, nie opcjonalny.** Właściciel powiedział
     wprost 2026-08-05: *„nie jestem bogiem co wie wszystko; stworzyłem aplikację, która
     ma solidne podstawy, ale trzeba ją obrać w świetne szaty"*. Czyli: fundament
@@ -85,9 +91,12 @@ dynamiczny manifest jako eksperyment do potwierdzenia na telefonie. Ma znaczenie
 większe, że planowane jest wydanie natywne.
 
 **Świadomie otwarte ryzyko:** członek grupy może podmienić cudzy numer konta. Dotyczy
-zaufania, więc warto się do niego odnieść przy projektowaniu ustawień grupy.
+zaufania, więc warto się do niego odnieść przy projektowaniu ustawień grupy. To jedyne
+z otwartych ryzyk, które wchodzi do redesignu.
 *(Automatyczne kasowanie najstarszych zdjęć po przekroczeniu 4,5 GB — właściciel uznał
-2026-08-05 za nieistotne na tym etapie, do ogarnięcia dopiero przy wersji do monetyzacji.)*
+2026-08-05 za nieistotne na tym etapie, do ogarnięcia dopiero przy wersji do monetyzacji.
+Ekrany ustawień nie mają się do tego odnosić — nie dokładaj tam licznika ani ostrzeżenia
+o kasowaniu.)*
 
 **Waluty.** PLN / EUR / USD, kurs zapisywany w dniu dodania rachunku, waluty **nigdy się
 nie mieszają** w jednym saldzie. Zbiorcze saldo mieszające waluty jest jawnie poza zakresem.
@@ -122,12 +131,13 @@ rachunku albo listę „Twoje pokoje".
 
 ## Do sprawdzenia na starcie
 
-**Odczyt paragonu przez AI przestał działać** (zgłoszenie właściciela). Kod jest
-nietknięty: `runParseReceipt`, `httpsCallable(functions, 'parseReceipt')`, podgląd
-do akceptacji i logika przycisku są na miejscu, kontrakt selektorów zielony.
-Najbardziej prawdopodobna przyczyna leży poza kodem: **funkcja chmurowa potrzebuje
-klucza do modelu, którego emulator nie ma**, a w `dev` aplikacja idzie na emulator.
-Sprawdź to najpierw, zanim zaczniesz szukać regresji w interfejsie.
+**Odczyt paragonu przez AI — NAPRAWIONE 2026-08-06.** Przyczyna leżała poza kodem
+funkcji: aplikacja w dev bierze projekt z .env.local (billsplitter-push-test), a emulatory
+startowały na projekcie domyślnym z .firebaserc (billsplitter-2fdfa). Emulator funkcji
+routeuje po identyfikatorze projektu W ADRESIE, więc wywołanie parseReceipt trafiało pod
+/billsplitter-push-test/... i wracało 404 (w przeglądarce widoczne jako błąd CORS).
+Naprawa: skrypt npm run emulators startuje z --project test. Klucz OPENROUTER_API_KEY
+leży w functions/.secret.local i jest na miejscu.
 
 ---
 

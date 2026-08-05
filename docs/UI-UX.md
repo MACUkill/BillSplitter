@@ -3,7 +3,7 @@
 Dokument roboczy do wznawiania sesji. `DESIGN.md` mówi JAK ma wyglądać;
 ten plik mówi CO jest zrobione, co jest zepsute i co dalej.
 
-Stan na **2026-08-05**.
+Stan na **2026-08-06**. Ostatnia zamknięta partia: 1c (patrz §11).
 
 ---
 
@@ -20,7 +20,11 @@ przypięty, więc zaczynaj od ich obejrzenia.
 ```bash
 npm run dev          # aplikacja na http://localhost:5173
 npm run emulators    # Firebase Emulator Suite (w dev aplikacja idzie na emulator,
-                     # więc bez nich logowanie anonimowe pada i widać pusty ekran)
+                     # więc bez nich logowanie anonimowe pada i widać pusty ekran).
+                     # Startuje z --project test, bo .env.local kieruje aplikację na
+                     # billsplitter-push-test, a emulator funkcji routuje po
+                     # identyfikatorze projektu W ADRESIE: przy rozjeździe parseReceipt
+                     # wraca 404 (w przeglądarce widoczne jako błąd CORS).
 npm test             # 157 testów
 npm run build
 ```
@@ -30,9 +34,15 @@ npm run build
 Dwa przebiegi w `tools/`. Wymagają puppeteera: `npm i --no-save puppeteer`.
 
 ```bash
-node tools/audit-layout.mjs ./shots    # zrzuty + pomiar układu przy 390×844
-node tools/audit-buttons.mjs           # szuka martwych przycisków
+node tools/audit-layout.mjs ./shots          # zrzuty + pomiar układu, domyślnie 390×844
+node tools/audit-layout.mjs ./shots 834      # tablet; zrzuty lądują w ./shots/w834
+node tools/audit-buttons.mjs                 # szuka martwych przycisków, domyślnie 390
+node tools/audit-buttons.mjs 834             # to samo na tablecie
 ```
+
+Kontrakt responsywności z `DESIGN.md` wymaga **czterech szerokości: 360, 390, 834, 1280**.
+Oba przebiegi biorą szerokość jako argument (wysokość i tryb dotyku dobierają się same),
+a `audit-layout` trzyma zrzuty każdej szerokości w osobnym podkatalogu `w<szerokość>`.
 
 - **`audit-layout.mjs`** prowadzi aplikację przez pełną ścieżkę (grupa → rachunek →
   pozycje → odklikanie → koszt wspólny → pulpit → profil → oba motywy), zapisuje zrzut
@@ -77,7 +87,11 @@ odrzucone. Do rozstrzygnięcia osobno.
 
 ---
 
-## 3. STRUKTURA NAWIGACJI — do przebudowy (priorytet 1)
+## 3. STRUKTURA NAWIGACJI — ZBUDOWANE 2026-08-05 (partia 1)
+
+> **Stan: zrobione.** Pasek przełącza miejsca, jest widoczny na każdym ekranie pokoju,
+> podwójne wejścia zniknęły, ustawienia pokoju otwierają się spod nazwy pokoju.
+> Szczegóły wykonania i to, czego partia 1 NIE ruszyła, są w §11.
 
 ### Problem
 
@@ -94,6 +108,11 @@ właściciela 2026-08-05:
 - Pasek znika na ekranie rachunku, więc nie jest globalny.
 
 ### Decyzja
+
+> **Uzupełnione 2026-08-05:** tabela niżej opisuje pasek czterosegmentowy. Właściciel
+> rozstrzygnął tego samego dnia, że **rozliczenia dostają własne miejsce**, więc
+> obowiązuje wersja pięciosegmentowa z §10. Reszta tej sekcji (pasek zawsze widoczny,
+> koniec dublowania wejść, ustawienia pokoju spod nazwy pokoju) zostaje w mocy.
 
 **Zakładki stają się prawdziwymi miejscami, a pasek jest widoczny zawsze.**
 
@@ -143,15 +162,102 @@ Specyfikacja:
 
 Wskazane przez właściciela, jeszcze nienaprawione:
 
-- [ ] **Wybór koloru w profilu** wysypuje szesnaście kółek naraz. Ma być jedno pole
-      „Twój kolor" z bieżącym kolorem, a paleta w arkuszu po stuknięciu.
-- [ ] **Zwijana sekcja „Pokój"** — patrz §3, do przeniesienia pod nazwę pokoju.
-- [ ] **Dublowanie wejść** — patrz §3.
-- [ ] Pulpit przy jednym rachunku wygląda pusto: brak stanu pustego z zachętą.
+- [x] **Wybór koloru w profilu** — zrobione 2026-08-05 (partia 1b): pole „Kolor znaku"
+      z bieżącą barwą, paleta w arkuszu.
+- [x] **Zwijana sekcja „Pokój"** — skasowana, treść w arkuszu spod nazwy pokoju (partia 1).
+- [x] **Dublowanie wejść** — awatar w nagłówku usunięty, wejście do profilu tylko z paska.
+- [x] Stan pusty na Bilansie: „Pokój jest pusty" + kod pokoju (partia 1).
 - [ ] Odcień „coś czeka na ciebie" (błękit 9 %) ciągnie oko mocniej niż limonkowy
       bilans. Zejść do 6 %.
-- [ ] Pole kwoty pokazuje `480.00` zamiast `480,00` (polski separator).
-- [ ] Nazwa pokoju ucinana już przy średniej długości — rozważyć dwie linie.
+- [x] Pole kwoty pokazuje `480,00` — `type="text"` z klawiaturą numeryczną (partia 1b).
+- [x] Nazwa pokoju: stopień niżej poniżej 640 px, żeby mieściła się bez wielokropka.
+
+### Zweryfikowane przebiegiem audytowym 2026-08-05 (360 / 390 / 834 / 1280)
+
+Przebieg na czterech szerokościach, aplikacja na emulatorach. **Zero wyjazdów poza ekran,
+zero przewijania w poziomie, zero błędów konsoli na każdej szerokości.** To, co zostało:
+
+| Znalezisko | Gdzie | Waga |
+|---|---|---|
+| `status-select` ma **147×36 px** — poniżej progu 44 | wybór statusu na kafelku rachunku | **jedyna** usterka celu dotykowego, jaka przeżyła weryfikację |
+| **Pasek zasłania sekcję „Pokój"** i trzeci wiersz „Ile kto wydał" | 390 px, dół pulpitu i profilu | znika wraz z rozbiciem pulpitu (§10.1) |
+| **Nazwa pokoju ucięta do „Wyjazd …"** przy 390 px | nagłówek | potwierdza zaległość z listy wyżej |
+| **Szesnaście kółek koloru naraz** zajmuje pół ekranu profilu | profil | potwierdza zaległość z listy wyżej |
+| `480.00` zamiast `480,00` | pole kwoty rachunku | potwierdza zaległość z listy wyżej |
+| Pasek pokazuje **podpis tylko przy aktywnej** zakładce, reszta to same ikony | pasek, wszystkie szerokości | `DESIGN.md` przewiduje stopień „control" jako *podpis w pasku nawigacji* — rozjazd z systemem |
+| **Tablet 834 px: układ telefonowy rozciągnięty** — kafelek rachunku ciągnie się przez całą szerokość, nagłówek i filtr na przeciwnych krańcach, pod treścią pusta połowa ekranu | 834 i 1280 | to jest dokładnie błąd opisany w §9.6; naprawia go 10.6 |
+
+**Kolory tożsamości a role pieniężne — pomiar, nie wrażenie.** `src/identity.js:23-26`
+deklaruje paletę „celowo rozłączną z rolami pieniężnymi". Pomiar odległości barwy (CIE Lab)
+tego nie potwierdza: `#4338CA` indygo leży **dE 11,2** od błękitu stanu, `#1D4ED8` lazur
+**13,5**, `#BE123C` malina **17,4** od czerwieni długu, `#0F766E` szmaragd **24,9** od
+zieleni należności. Sześć z szesnastu kolorów siedzi bliżej niż 20 — na awatarze o średnicy
+28 px w wierszu pozycji to jest odległość myląca. **Reguła rozdziału kolorów z `DESIGN.md`
+jest dziś spełniona na papierze, nie w pikselach.** Do rozstrzygnięcia przy partii z ludźmi.
+
+**Narzędzie audytowe kłamało — naprawione w tej sesji.** Przed poprawką każdy przebieg
+zgłaszał 12 za małych celów i 5–6 nachodzeń. Po trzech poprawkach zostaje
+**1 cel i 0 nachodzeń**:
+
+- cele rozpychane klasą `hit-44` (warstwa `::after`) mierzono samym pudełkiem elementu,
+  więc naprawiona usterka wracała jako usterka;
+- pole wyboru owinięte etykietą mierzono kwadracikiem 16 px, choć klika się cały wiersz —
+  sprawdzone ręcznie w przeglądarce, klik w imię zaznacza osobę;
+- przycisk w otwartym oknie porównywano z przyciskiem strony pod zasłoną, co dawało
+  „nachodzenie" tam, gdzie jest zwykłe piętro.
+
+Zasłonięcie treści przez pasek nawigacji ma teraz osobny worek `covered` — to inna usterka
+i inna naprawa niż dwa przyciski w jednym miejscu.
+
+### Odczyt paragonu — naprawiony 2026-08-05
+
+Zgłoszenie „odczyt przestał działać" nie miało źródła w kodzie. Klucz OpenRouter w
+`functions/.secret.local` był **unieważniony** (`401 User not found`). Po wymianie klucza
+przebieg kontrolny przez emulator: **HTTP 200 w 3,6 s**, pięć pozycji z ilościami,
+`receiptTotal: 264`, `modifiers: []` — czyli podatek wliczony nie wraca jako napiwek
+(poprawka z `923b1cd` trzyma). Koszt jednego odczytu: **0,001028 $** modelem
+`google/gemini-3.1-flash-lite`, zgodnie z komentarzem w `functions/index.js:147-149`.
+
+Miejsce klucza ma znaczenie: emulator czyta **`functions/.secret.local`**, nie `.env.local`
+w katalogu głównym (to plik Vite dla przeglądarki). Klucz bez przedrostka `VITE_` i tak nie
+wchodzi do paczki — sprawdzone przebiegiem `npm run build` i przeszukaniem `dist/` — ale
+trzymanie sekretu serwerowego w pliku frontendu jest mylące i nie działa. Na produkcji:
+`firebase functions:secrets:set OPENROUTER_API_KEY`.
+
+### Przejście ręczne w przeglądarce, grupa 13 osób (2026-08-05)
+
+Pierwszy przebieg aplikacji **w skali z `PRODUCT.md`** (12–25 osób), na żywych emulatorach.
+Kryterium było zapisane, ale nigdy nie sprawdzone. Nie przeszło.
+
+**Ekran rachunku puchnie liniowo z liczbą osób.** Sekcja „Uczestnicy" wypisuje każdą osobę
+jako pełną kartę z czterema wierszami rozbicia (koszty własne / pozycje / koszty wspólne /
+łącznie) — także wtedy, gdy wszystkie cztery są zerowe. Pomiar: **12 kart × 217 px = 2 700 px
+przy 4 061 px całej strony, czyli 66 % ekranu rachunku to karty w większości puste.** Przy
+25 osobach wychodzi ponad 5 000 px. Scena „dwadzieścia sekund przy stole" tego nie znosi.
+Karta musi się zwijać do jednej linii, a rozwijać na żądanie.
+
+**Wybór płatnika to systemowa lista rozwijana z trzynastoma imionami** — bez twarzy, bez
+kolorów, bez zdjęć. `DESIGN.md` mówi „ludzie są obecni wszędzie tam, gdzie stoi kwota";
+tu przy najważniejszym pytaniu rachunku („kto wyłożył pieniądze") ludzi nie ma wcale.
+
+**Na pulpicie ekipa nie istnieje wizualnie.** Trzynaście osób w pokoju i ani jednej twarzy
+na ekranie startowym pokoju. To największa różnica do poziomu referencji.
+
+**Pomoc „?" tłumaczy zasady, nie interfejs.** Dzisiejsze okno na ekranie rachunku to siedem
+punktów ciągłego tekstu o regułach produktu („suma pozycji pilnuje, żeby wpisy nie
+przekroczyły kwoty rachunku"). Nie ma tam ani jednej ikony i ani jednego zdania o tym, co
+robi konkretny przycisk. Życzenie właściciela z 10.7 to więc przebudowa treści, nie kosmetyka.
+
+**Drobne, ale realne:**
+
+- „**13 osoby w grupie**" — zła odmiana liczebnika; przy 2–4 działa, od 5 w górę nie.
+- „**Dołącz do Wyjazd w Bieszczady 2026**" — nazwa wstawiona w zdanie bez odmiany
+  ani cudzysłowu.
+- „**138,50PLN**" — brak spacji przed walutą, powtarza się w całym rozbiciu uczestnika.
+- **Baner „potwierdź płatnika" wpycha treść w dół** po wyborze płatnika: przyciski
+  przeskakują o ~75 px pod palcem, który już celuje.
+- Pole kwoty przyjmuje i pokazuje `1480.50`, a zdanie pod nim mówi już `1 480,50 PLN` —
+  ta sama liczba w dwóch zapisach na jednym ekranie.
 
 Naprawione w tej sesji (nie wracać):
 
@@ -216,3 +322,439 @@ Nie do obejścia przy żadnej zmianie interfejsu:
   Do dokumentu grupy pisze każdy, kto zna link.
 - `src/calc.rounding.test.js` — reguła „kwota nierozpisana dzieli się po równo",
   zaokrąglanie na korzyść płatnika.
+
+---
+
+## 9. RESEARCH ZEWNĘTRZNY (2026-08-05)
+
+Wykonany na polecenie właściciela: warstwa doświadczenia ma pochodzić z zewnątrz, nie
+z głowy. Zebrane **rozwiązania problemów**, nie układy do skopiowania. Każde ustalenie
+sprawdzone przeciw `PRODUCT.md`; to, co się z nim gryzie, jest odrzucone z powodem.
+
+### 9.1 Dzielenie rachunków — czego uczy konkurencja
+
+Źródło pierwszorzędne: badanie z użytkownikami przeprowadzone na ścieżce „ureguluj"
+w Splitwise ([case study](https://medium.com/@giuseppeditaranto98/redesigning-the-settle-up-functionality-on-splitwise-ux-case-study-5e988cc99708)).
+Zgłoszone przez badanych problemy, wszystkie dotyczą nas jeden do jednego:
+
+| Problem u nich | Nasz stan | Wniosek |
+|---|---|---|
+| Mylące słownictwo „OWE / LENT / PAID" | mamy „winien / dostajesz" plus dwa tryby rozliczeń | Słownictwo domknąć raz, w jednym słowniku. `PRODUCT.md` już to zapowiada („wolna ręka w słowniku"). |
+| Ureguluj niedostępne w trakcie przewijania | pasek zjeżdża, „Kto komu ile" jest sekcją | Potwierdza decyzję §3: **rozliczenia muszą być miejscem, nie sekcją**. |
+| **Brak powiadomienia, gdy ktoś się rozliczył** | mamy push tylko dla przypomnień (`sendNudgePush`) | Największa luka. Wpłata i potwierdzenie wpłaty to zdarzenia, o których druga strona dziś dowiaduje się przypadkiem. |
+| Brak przelewu w aplikacji, niejasne metody płatności | mamy metody płatności w profilu, arkusz ZBP/EPC zaległy | Podnosi wagę arkusza płatności — to nie ozdoba, to najczęstszy zgłaszany brak. |
+| Nadmiar przycisków, brak hierarchii | pulpit ma dziś wszystko naraz | Potwierdza rozbicie pulpitu na miejsca. |
+
+Wynik ich przebudowy: domknięcie ścieżki rozliczenia **z zerowego odsetka do 100 %**.
+Dźwignia jest w nawigacji i słowniku, nie w grafice.
+
+Porównania rynkowe (Tricount, Settle Up, Splitwise) zgodnie wskazują ten sam podział ról:
+Splitwise przegrywa na progu wejścia, bo ma „więcej menu i ustawień"; Tricount wygrywa
+prostotą startu; Settle Up wygrywa **czytelnym rozdziałem czerwone/zielone** i pracą
+offline ([1](https://splitpilot.io/blog/tricount-vs-splitwise/),
+[2](https://tetras-ltd.com/en/blog/tricount-vs-splitwise-vs-settle-up-best-app)).
+Wszystkie trzy przewagi mamy już wpisane w `PRODUCT.md` (zero kont, ścieżka awaryjna
+offline, role pieniężne w kolorze). **Redesign ma ich nie zgubić przy dokładaniu miejsc** —
+to jest realne ryzyko rozbicia pulpitu na cztery zakładki.
+
+### 9.2 Aplikacje bankowe — lista transakcji i filtry
+
+Ustalenie kierunkowe: dobra lista transakcji jest traktowana jak **zbiór do odpytania**,
+nie jak archiwum — wyszukiwanie, filtry, grupowanie po dacie, rozwijany szczegół
+([Meniga](https://www.meniga.com/resources/user-experience-in-mobile-banking-apps/),
+[UXPin](https://www.uxpin.com/studio/blog/filter-ui-and-ux/)).
+
+Twarde reguły do przeniesienia na listę rachunków:
+
+- **Aktywne filtry muszą być widoczne** jako pigułki do skasowania. Na telefonie panel
+  filtra jest schowany, więc bez pigułek użytkownik nie wie, czemu czegoś nie widzi.
+  Dziś mamy `#bill-filters` z dwoma stanami („Wszystkie / Ukryte", `src/main.js:558`)
+  i to jest jedyny wymiar — a przy 12–25 osobach i kilkunastu rachunkach z wyjazdu to
+  za mało.
+- **Licznik wyników aktualizowany na żywo** — „7 rachunków · 1 240,00 zł" nad listą.
+  Sam licznik jest tańszy niż statystyki, których `PRODUCT.md` zabrania, i nie jest
+  kategorią wydatku — jest sumą tego, co widać.
+- **Grupowanie po dacie** zamiast płaskiej listy. Scena „wspólny wyjazd" z `PRODUCT.md`
+  to kilkanaście rachunków przez kilka dni; „Dzisiaj / Wczoraj / 3 sierpnia" robi z tego
+  dziennik wyjazdu bez dokładania jednej funkcji.
+- Wymiary filtra sensowne dla nas: **osoba** (kto płacił / kogo dotyczy), **waluta**
+  (waluty się nie mieszają, więc to naturalny podział), **stan** (nierozpisane / do
+  odklikania przeze mnie / ukryte). **Nie**: kategoria wydatku — poza zakresem z `PRODUCT.md`.
+
+### 9.3 Powiadomienia w interfejsie
+
+Rozstrzygnięcie wzorca, potwierdzone niezależnie w kilku źródłach
+([Braze](https://www.braze.com/resources/articles/beware-red-dot-badging),
+[Setproduct](https://www.setproduct.com/blog/badge-ui-design)):
+
+- **Kropka** = „tu jest coś nowego", gdy liczba nie ma znaczenia.
+- **Liczba** = gdy użytkownik musi znać ilość, żeby ocenić pilność.
+- Slack używa obu naraz i to jest wzorzec do naśladowania: liczba przy tym, co jest
+  skierowane do ciebie osobiście, kropka przy zwykłym ruchu w tle.
+- **Ślepota na czerwoną kropkę** jest udokumentowana: znacznik, który zapala się zawsze,
+  przestaje cokolwiek znaczyć. Odznaka musi mieć próg.
+
+Przełożenie na nas (rozdział ról, zgodny z regułą rozdziału kolorów z `DESIGN.md`):
+
+| Sygnał | Postać | Gdzie |
+|---|---|---|
+| Przypomnienie skierowane do mnie | **liczba** (czerwień długu) | dzwonek — jest, `#nudges-badge` |
+| Ktoś wpłacił / potwierdził moją wpłatę | **liczba** | zakładka rozliczeń |
+| Nowy rachunek, którego nie widziałem | **kropka** | zakładka rachunków |
+| Rachunek czeka na moje odklikanie | **kropka**, dodatkowo błękit stanu na kafelku | zakładka rachunków + kafelek |
+| Zmiana cudzej kwoty na rachunku, który mnie dotyczy | **kropka** | dziennik zmian |
+
+Wymóg z tego samego źródła: **każde powiadomienie musi dać się zakotwiczyć w jednym
+miejscu nawigacji**. To jest test poprawności naszej architektury informacji — jeżeli
+sygnału nie da się przypiąć do zakładki, to znaczy, że brakuje miejsca albo miejsce jest złe.
+
+Do zaprojektowania osobno, bo dziś nie ma tego wcale: **„uzupełnij swoje koszty"** —
+sygnał, który nie jest przypomnieniem o pieniądzach, tylko o niedokończonej pracy na
+rachunku. Musi być odróżnialny od windykacji, inaczej wpadnie w ten sam kanał i zabije
+mu wagę.
+
+### 9.4 Struktura ustawień
+
+Wytyczne systemowe ([Android](https://developer.android.com/design/ui/mobile/guides/patterns/settings),
+[Toptal](https://www.toptal.com/designers/ux/settings-ux)):
+
+- Grupować w małe zbiory z nagłówkami; przy większej liczbie **rozbić na podekrany**.
+- **Konto, informacje o aplikacji, pomoc i opinie to osobne miejsca, nie pozycje na
+  liście ustawień.**
+- Zaczynać od architektury informacji, nie od listy przełączników.
+- Polityka domyślnych wartości: „uprzejme domyślne", czyli takie, których większość
+  nie musi zmieniać.
+
+Nasz stan (z inwentaryzacji kodu): ustawienia leżą w **trzech niepowiązanych miejscach** —
+profil (`index.html:337-368`), zwijana sekcja „Pokój" na pulpicie (`index.html:289-327`)
+i przełącznik motywu w nagłówku (`src/main.js:96-125`). Właściciel chce trzech poziomów:
+**profil / grupa / aplikacja**. To się składa z wytyczną: trzy poziomy to trzy zbiory,
+a nie jedna długa lista.
+
+### 9.5 Historia zmian
+
+Wzorzec ([AppMaster](https://appmaster.io/blog/audit-logging-internal-tools-activity-feed),
+[wolf-tech](https://wolf-tech.io/blog/designing-an-activity-feed-for-b2b-saas-events-aggregation-and-privacy-safe-logging)):
+rozdzielić **dziennik zdarzeń** (dopisywany, kompletny, źródło prawdy) od **strumienia
+dla człowieka** (zagregowany, czytelny, bez szumu). Wpis odpowiada na pięć pytań: kto,
+co, jaka zmiana, kiedy, skąd.
+
+Dla nas ważna jest agregacja: przy 12–25 osobach odklikujących pozycje równocześnie
+surowy dziennik zamieni się w ścianę. Grupować po człowieku i oknie czasu
+(„Kasia odkliknęła 4 pozycje · 19:41"), rozwijać na żądanie. Zdarzenia warte pokazania:
+zmiana kwoty rachunku, dodanie/usunięcie pozycji, zmiana składu, wpłata i jej
+potwierdzenie, usunięcie rachunku. Odklikanie własnej pozycji **nie** jest zdarzeniem
+dziennika — jest już widoczne na żywym paragonie.
+
+### 9.6 Responsywność
+
+Ustalenia ([Framer](https://www.framer.com/blog/responsive-breakpoints/),
+[BrowserStack](https://www.browserstack.com/guide/responsive-design-breakpoints)):
+
+- Rozciągnięcie układu telefonowego na tablet to najczęstszy błąd: elementy wyglądają
+  na przeskalowane, a nie zaprojektowane. **Adaptacja na tablet jest strukturalna, nie
+  proporcjonalna.**
+- Punkt łamania wynika z układu, nie z listy urządzeń. 3–5 punktów wystarcza.
+- Podejście od telefonu w górę (`min-width`) jest standardem.
+
+Nasz stan: **jeden punkt łamania w całym projekcie** — `640 px`, użyty wyłącznie do
+kosmetyki arkuszy (`src/tailwind.css:402`, `:556`). Kontener ma `max-w-4xl`
+(`index.html:165`), czyli na desktopie jedna kolumna rozciąga się do 56 rem i wygląda
+dokładnie tak, jak opisuje ten błąd. Audyt chodzi na jednej szerokości 390 px na sztywno
+(`tools/audit-layout.mjs:13`) i nie da się go sparametryzować — to jest pierwsza rzecz
+do naprawienia w narzędziach, bo bez tego nie zobaczymy niczego, co budujemy.
+
+### 9.7 Czego research NIE zmienia
+
+Sprawdzone i odrzucone jako sprzeczne z `PRODUCT.md`:
+
+- **Kategorie wydatków i wykresy** — obecne w każdej aplikacji do finansów osobistych,
+  u nas jawnie poza zakresem.
+- **Konta i lista znajomych** (rozwiązanie Splitwise na „kto to jest") — łamie zasadę
+  „zero progu wejścia". Tożsamość zostaje przy pokoju.
+- **Saldo zbiorcze mieszające waluty** — poza zakresem, mimo że tak robi konkurencja.
+- **Gotowe żarty w szablonach przypomnień** — łamie zasadę głosu produktu: humor
+  pochodzi wyłącznie od człowieka.
+
+---
+
+## 10. ARCHITEKTURA INFORMACJI (rozstrzygnięcia właściciela 2026-08-05)
+
+Cztery decyzje podjęte przez właściciela po researchu z §9. To jest mapa, którą buduje
+się partiami — nie propozycja.
+
+### 10.1 Miejsca
+
+Pasek ma **pięć segmentów** i jest widoczny na każdym ekranie wewnątrz pokoju.
+
+| Segment | Co niesie | Skąd się bierze dzisiaj |
+|---|---|---|
+| **Bilans** *(wejście)* | mój nominał per waluta, twarze ekipy, lista „co czeka na Ciebie", rozwijane „ile kto wyłożył" | `renderBalancePanel()` `src/main.js:895`, `computeSpending()` `:1273` (dziś w profilu) |
+| **Rozliczenia** | „kto komu ile" / „najmniej przelewów", moje wiersze na górze, wpłaty do potwierdzenia, historia, arkusz płatności | `renderSettlements()` `src/main.js:986` — dziś sekcja pulpitu |
+| **[+]** | nowy rachunek, morfowanie koła w arkusz (§4) | `new-bill-modal` `index.html:509` |
+| **Rachunki** | lista z filtrami, grupowaniem po dacie i licznikiem | `renderBillsList()` `src/main.js:1356` |
+| **Ty** | profil (zdjęcie, ksywka, kolor, metody płatności) + **Aplikacja** (motyw, powiadomienia, instalacja, pomoc) | `renderProfile()` `src/main.js:1288` + motyw `:96-125` + push `:2492` |
+
+Poza paskiem, ale wewnątrz pokoju:
+
+- **Ekran rachunku** — pasek zostaje widoczny (dziś znika, `src/main.js:467-473`).
+- **Ustawienia pokoju** — arkusz spod **nazwy pokoju** w nagłówku, z chevronem.
+  Wchłania zwijaną sekcję „Pokój" (`index.html:289-327`), która znika z pulpitu.
+- **Skrzynka** — arkusz spod dzwonka (`#nudges-bell`), dwa segmenty: **Dla Ciebie**
+  i **Wszystko**. Opis w 10.2.
+
+Ekrany poza pokojem (`start`, `join`, `loading`) paska nie mają — nie ma czego przełączać.
+
+**Znika bez zamiennika:** zwijana sekcja „Pokój", awatar w nagłówku jako wejście do
+profilu (zostaje jako niekliakalny podgląd tożsamości), zakładki przewijające do sekcji,
+podwójne wejście do „kto komu ile" i do rachunków.
+
+### 10.2 Powiadomienia — trzy poziomy, jeden próg
+
+Decyzja właściciela: *„powiadomienia muszą się ograniczać do najważniejszych i kluczowych.
+Nie chcę spamu i widocznej KAŻDEJ zmiany"*. Stąd twardy podział — sygnał **kosztuje**,
+więc dostaje go tylko to, co dotyczy moich pieniędzy albo mojego ruchu.
+
+**Poziom 1 — push i odznaka liczbowa.** Dotyczy moich pieniędzy i domyka dług.
+
+| Zdarzenie | Dlaczego tu |
+|---|---|
+| Przypomnienie o zwrocie skierowane do mnie | treść widzi wyłącznie adresat; to jest windykacja |
+| Ktoś zgłosił wpłatę do mnie i czeka na moje potwierdzenie | blokuje domknięcie długu po mojej stronie |
+| Odbiorca potwierdził moją wpłatę | zamyka pętlę; bez tego użytkownik nie wie, że skończył |
+
+**Poziom 2 — kropka na zakładce, bez pusha.** Coś mnie dotyczy, ale nie ma pilności.
+
+| Zdarzenie | Gdzie kropka |
+|---|---|
+| Nowy rachunek, w którym jestem uczestnikiem | Rachunki |
+| Rachunek czeka na moje odklikanie („uzupełnij swoje koszty") | Rachunki + błękit stanu na kafelku |
+| Zmieniła się kwota rachunku, w którym mam udział | Rachunki |
+
+**Poziom 3 — Aktywność, zero sygnału.** Wchodzisz, kiedy chcesz wiedzieć.
+
+Kto co odkliknął, dodanie i edycja pozycji przez innych, zmiana składu rachunku,
+ukrycie rachunku, dołączenie kogoś do pokoju, zmiana nazwy pokoju, usunięcie rachunku.
+
+**Reguły progu** (bez nich wracamy do ślepoty na czerwoną kropkę, §9.3):
+
+1. Odznaka **liczbowa** wyłącznie dla poziomu 1. Nigdy dla poziomu 2.
+2. Kropka gaśnie po wejściu w miejsce, którego dotyczy. Odznaka gaśnie po obsłużeniu
+   sprawy, nie po samym obejrzeniu.
+3. Poziom 3 **nie zapala niczego, nigdy** — ani kropki na zakładce, ani na dzwonku.
+4. Nic, co zrobiłem sam, nie generuje sygnału dla mnie.
+5. Push wychodzi wyłącznie z poziomu 1 i tylko wtedy, gdy aplikacja jest zamknięta;
+   przy otwartej wystarcza toast, jak dziś (`onMessage`, `src/main.js:2551`).
+
+**Skrzynka** ma dwa segmenty: **Dla Ciebie** (poziom 1 i 2, domyślny, tu żyje odznaka)
+oraz **Wszystko** (pełna Aktywność, poziom 3, agregowana po człowieku i oknie czasu —
+„Kasia odkliknęła 4 pozycje · 19:41"). Historia zmian jednego rachunku jest dostępna
+także z ekranu tego rachunku, bo tam jest jej kontekst.
+
+### 10.3 Ustawienia — trzy zbiory, dwa wejścia
+
+| Zbiór | Wejście | Zawartość |
+|---|---|---|
+| **Profil** | zakładka „Ty" | zdjęcie, ksywka, kolor, metody płatności |
+| **Aplikacja** | zakładka „Ty", niżej | motyw, powiadomienia push, instalacja PWA, pomoc, o aplikacji |
+| **Pokój** | nazwa pokoju w nagłówku | nazwa, kod i QR, link, skład grupy, miejsce na zdjęcia, waluta domyślna, szablony przypomnień, opuszczenie pokoju |
+
+Ustawienia pokoju stoją przy rzeczy, której dotyczą — to samo rozstrzygnięcie co §3.
+Przy składzie grupy trzeba się odnieść do świadomie otwartego ryzyka z `PRODUCT.md`:
+**każdy członek może podmienić cudzy numer konta**. Skoro ryzyko zostaje, interfejs ma
+je pokazywać — zmiana cudzej metody płatności jest zdarzeniem Aktywności, widocznym.
+
+### 10.4 Rachunki
+
+- **Filtry pigułkami, zawsze widoczne**: `Wszystkie` · `Czekają na Ciebie` · `Moje` ·
+  `Ukryte`, a wymiary **osoba** i **waluta** w arkuszu filtra. Aktywny filtr zostaje
+  na ekranie jako pigułka do skasowania (§9.2).
+- **Nagłówki dat** zamiast płaskiej listy: „Dzisiaj / Wczoraj / 3 sierpnia".
+- **Licznik nad listą**: „7 rachunków · 1 240,00 zł". Suma tego, co widać po filtrze —
+  nie statystyka, nie kategoria.
+- Dzisiejszy stan do zastąpienia: `currentBillFilter` z dwiema wartościami
+  (`src/main.js:558`), `getBillUserState()` (`:1348`).
+
+### 10.5 Stany puste
+
+Cztery, wszystkie dziś nieobsłużone albo szczątkowe:
+
+| Miejsce | Stan | Co ma mówić |
+|---|---|---|
+| Bilans | pokój bez rachunków | zachęta do pierwszego rachunku, kod pokoju do podania przy stole |
+| Rozliczenia | zero długów | **moment nagrody** — „Wszystko wyrównane", nie pusta lista |
+| Rachunki | filtr bez wyników | co odfiltrowano i jak to skasować jednym stuknięciem |
+| Skrzynka | brak spraw | spokojnie, bez zachęty do działania |
+
+### 10.6 Responsywność
+
+Decyzja właściciela: **jedna kolumna szersza, listy w siatce 2×**. Master-detail
+odrzucony.
+
+| Od | Co się zmienia |
+|---|---|
+| `<640` | telefon: jedna kolumna, arkusze od dołu, pasek dolny — stan dzisiejszy |
+| `≥640` | arkusze wracają na środek (jest, `src/tailwind.css:402`) |
+| `≥768` | **tablet**: kontener rośnie, listy rachunków i wierszy rozliczeń łamią się na dwie kolumny kafelków; nominał bilansu i ekran rachunku zostają jedną kolumną |
+| `≥1024` | kontener zatrzymuje się na 56 rem (`max-w-4xl`, `index.html:165`); siatka 2× zostaje, pasek pływa wyśrodkowany |
+
+Kwota nigdy nie wchodzi do siatki — bohater zostaje w kolumnie. Wartości liczbowe
+trafiają do `DESIGN.md` jako kontrakt, razem z rozszerzeniem `tools/audit-layout.mjs`
+o parametr szerokości (dziś 390 px na sztywno, `tools/audit-layout.mjs:13`).
+
+### 10.7 Pomoc „?" — wyjaśnia ekran, na którym stoisz
+
+Życzenie właściciela 2026-08-05: *„chcę mieć jakiś rodzaj tutorialu, na razie w prostej
+wersji ten button ?, który wytłumaczy prosto najważniejsze rzeczy. Bardzo proste
+i zrozumiałe. Jak w niego klikniemy, tłumaczy, co robią poszczególne buttony i sekcje"*.
+
+**Wersja pierwsza: legenda ekranu.** „?" stoi w nagłówku każdego miejsca (jest już jako
+`#help-fab`, `help-modal` `index.html:543`) i otwiera arkusz z listą tego, co jest na
+tym ekranie: **ikona taka sama jak w interfejsie + jedno zdanie**. Nic więcej.
+
+- Treść **zależy od miejsca** — na Rachunkach tłumaczy filtry i kafelek, na Rozliczeniach
+  dwa tryby i wpłatę, na rachunku żywy paragon i sumę kontrolną.
+- Jedno zdanie na pozycję, język prosty, bez słownictwa produktowego. Test: zrozumiałe
+  dla kogoś, kto pierwszy raz widzi aplikację, w hałasie, w dwadzieścia sekund.
+- Kolejność pozycji = kolejność na ekranie, z góry na dół. Legenda nie jest spisem funkcji,
+  tylko mapą tego, co użytkownik właśnie widzi.
+- Zamyka się jak każdy arkusz: tło, Escape, uchwyt.
+
+**Czego tu nie ma i dlaczego:** przymusowego przewodnika po pierwszym wejściu (blokuje
+scenę „dwadzieścia sekund przy stole"), dymków prowadzących krok po kroku i kropek
+„nowość". Pomoc jest **na żądanie**. Prowadzenie krok po kroku zostaje jako możliwa
+druga wersja, po zbudowaniu legendy — nie odwrotnie.
+
+### 10.8 Pierwsze uruchomienie — dodanie do ekranu początkowego
+
+Życzenie właściciela: informacja ma się pokazać **przy pierwszym uruchomieniu**, nie wisieć
+ciągle, a potem być dostępna w ustawieniach. Decyzja należy do użytkownika.
+
+**Kiedy:** raz, po pierwszym wejściu **do pokoju** — nie na ekranie startowym. Zanim
+człowiek zobaczy wartość, propozycja instalacji jest zaczepką.
+
+**Warunki wyświetlenia** (wszystkie muszą być spełnione):
+
+1. aplikacja nie chodzi już jako zainstalowana (`display-mode: standalone`),
+2. użytkownik nie widział tej propozycji wcześniej (znacznik w `localStorage`),
+3. jest w pokoju, nie na ekranie startowym.
+
+**Postać:** arkusz od dołu, dwa wyjścia — „Dodaj" i „Nie teraz". Oba zamykają na zawsze;
+żadnego przypominania, żadnego drugiego podejścia. Odrzucenie jest odpowiedzią, nie
+odroczeniem.
+
+**Dwie ścieżki, bo systemy różnią się naprawdę:**
+
+| System | Co się dzieje |
+|---|---|
+| Android / Chrome | „Dodaj" wywołuje systemowe okno instalacji (`beforeinstallprompt`, mamy w `setupPwaInstallButton()` `src/main.js:2563`) |
+| **iPhone / Safari** | systemowego okna **nie ma** — arkusz pokazuje trzy kroki z ikoną Udostępnij: *Udostępnij → Do ekranu początkowego → Dodaj* |
+
+**Ostrzeżenie do wpisania w ścieżkę iOS:** skrót z ekranu początkowego otwiera ekran
+startowy, nie pokój, i ma osobny magazyn danych (`PRODUCT.md`, „Znany problem: PWA na
+iPhonie"). Instrukcja musi więc kończyć się **kodem pokoju do wpisania po instalacji** —
+inaczej użytkownik wykonuje trzy kroki i ląduje w pustej aplikacji. To jest jedyny
+uczciwy sposób podania tego, dopóki dynamiczny `start_url` nie zostanie potwierdzony
+na żywym telefonie.
+
+**Później:** stałe wejście „Dodaj do ekranu początkowego" w **Ty → Aplikacja** (10.3),
+z tą samą treścią. Dziś ten przycisk siedzi w zwijanej sekcji „Pokój"
+(`#install-pwa-btn`, `#ios-install-hint`, `index.html:289-327`), która znika — przenosi
+się razem z resztą ustawień aplikacji.
+
+---
+
+## 11. PARTIA 1 — SZKIELET NAWIGACJI (zbudowane 2026-08-05)
+
+Pierwsza partia budowy IA z §10. Zamknięta audytem na czterech szerokościach
+(360 / 390 / 834 / 1280), przebiegiem przycisków i 157 testami.
+
+### Co weszło
+
+| Zmiana | Gdzie |
+|---|---|
+| Zakładki są **miejscami**, nie skokami przewijania: `view-balance`, `view-settle`, `view-bills` | `index.html`, `showDeckView()` w `src/main.js` |
+| Pasek **widoczny na ekranie rachunku** i na profilu; na rachunku podświetla „Rachunki" | `showScreen()` |
+| Awatar w nagłówku przestał być przyciskiem — jest podglądem tożsamości | `index.html` (nagłówek pokoju) |
+| Strzałka „wróć" z profilu usunięta — powrót idzie paskiem | ekran profilu |
+| **Ustawienia pokoju** jako arkusz spod nazwy pokoju (kod, link, udziały, miejsce na zdjęcia) | `#room-settings-modal` |
+| Zwijana sekcja „Pokój" **skasowana**, nie przestylowana | pulpit |
+| **Aplikacja** na ekranie „Ty": powiadomienia, motyw, „Jak to działa", instalacja PWA | ekran profilu |
+| Motyw przeniesiony z nagłówka pokoju do „Aplikacji"; ikona pokazuje stan WŁĄCZONY, nie docelowy | `applyTheme()` |
+| Zwijanie rozliczeń usunięte — miejsca się nie zwija | pulpit |
+| Pomoc „?" zna ekran profilu; treść pomocy pulpitu opisuje pasek, a nie nieistniejący wybór „prosty / zaawansowany" | `HELP_CONTENT` |
+| Stan pusty na Bilansie: „Pokój jest pusty" + kod pokoju; podpis zera rozróżnia „nic nie policzone" od „wszystko rozliczone" | `renderBalancePanel()` |
+
+### Naprawy układu z tej samej partii
+
+- **Koło [+] stoi na środku paska** niezależnie od aktywnej zakładki. Zakładki siedzą
+  w dwóch skrzydłach o równej szerokości (`.deck-side`); wcześniej rozwinięcie
+  „Rachunki" spychało jedyny przycisk akcji w lewo.
+- **Aktywna pigułka jest jasna także w ciemnym motywie** — wcześniej `--surface` na
+  `--surface-2` znaczyło „tu jesteś" wyłącznie etykietą.
+- **Cel dotykowy wyboru statusu ma realne 44 px** (otoczka straciła odstęp pionowy,
+  który tylko wyglądał na klikalny).
+- **Radio „Kwota / Procent"** klika się całą etykietą, nie 16-pikselowym kółkiem.
+- **Nazwa pokoju schodzi o stopień skali poniżej 640 px** — przy 3 rem „Wyjazd
+  w Bieszczady" kończył się na „Wyjazd w …".
+- **Listy rachunków i rozliczeń łamią się na dwie kolumny od 768 px** (kontrakt
+  responsywności z `DESIGN.md`; kwota zostaje w jednej kolumnie).
+
+### Zmiana w narzędziu audytowym
+
+`tools/audit-layout.mjs` liczy teraz zasłonięcie przez pasek **w układzie dokumentu**:
+zgłasza wyłącznie treść, której spod paska nie da się wyjąć przewinięciem (czyli tę,
+która przy końcu przewijania nadal siedzi pod paskiem). Odkąd pasek jest widoczny wszędzie,
+chwilowe nachodzenie przy przewijaniu jest normą, a nie usterką — bez tej poprawki narzędzie
+zgłaszało kilkanaście fałszywych alarmów na ekran. Ścieżka audytu obeszła nowe miejsca:
+`12-rozliczenia`, `13-rachunki`, `14-ustawienia-pokoju`, `15-profil`, `16-profil-jasny`.
+
+### Partia 1b — interakcje i kontrolki (2026-08-05, po uwagach właściciela)
+
+| Uwaga właściciela | Co zrobione |
+|---|---|
+| „Ile kto wydał" nie ma być w profilu | rozpiska usunięta; statystyka pokoju (Twoje udziały / cała grupa) została w ustawieniach pokoju |
+| „Jak to działa" w profilu bez sensu, skoro jest „?" | przycisk usunięty; pomoc żyje wyłącznie pod „?" i zna też ekran profilu |
+| Wybór koloru wygląda amatorsko | jedno pole „Kolor znaku" z bieżącą barwą; paleta w arkuszu, kółka bez liter, wybrane z ptaszkiem |
+| Pasek nachodzi, brzydki [+] | cztery zakładki o stałej, równej szerokości z podpisem pod ikoną widocznym zawsze; pasek ma stałą szerokość; koło [+] siedzi w pasku, bez poświaty, z reakcją na naciśnięcie |
+| Rozwinięty select wygląda obco | listy systemowe zastąpione arkuszami: status uczestnika, waluta, płatnik |
+| Ikona przy selektorze statusu nachodzi | otoczka wyrównuje w osi, chevron wyśrodkowany w pionie, ikona nie jest rozciągana |
+| [+] ma morfować w arkusz | View Transitions API — koło rozrasta się w arkusz „nowy rachunek" i zbiega z powrotem; bez wsparcia albo przy ograniczonym ruchu zostaje zwykłe pojawienie |
+
+Przy okazji: kwota rachunku pokazuje się z przecinkiem (480,00), a toast stoi wyżej,
+żeby nie stykał się z paskiem.
+
+**Nowe uchwyty:** `#choice-modal` (uniwersalny wybór jednokrotny), `#status-modal`,
+`#color-picker-modal`, klasa `.choice-field`. Każdy nowy wybór jednokrotny ma iść przez
+`openChoiceSheet` — nie dokładaj nowych elementów `select`.
+
+### Czego partia 1 NIE ruszyła (kolejne partie)
+
+1. **Skrzynka** spod dzwonka i trzy poziomy powiadomień (§10.2) — dzwonek działa po staremu.
+2. **Rachunki**: filtry pigułkami `Czekają na Ciebie` / `Moje`, nagłówki dat, licznik
+   nad listą (§10.4). Dziś nadal `Wszystkie` / `Ukryte`.
+3. **Bilans**: twarze ekipy, lista „co czeka na Ciebie", rozwijane „ile kto wyłożył”
+   (dziś „Ile kto wydał” siedzi na ekranie „Ty”).
+4. **Ustawienia pokoju**: skład grupy, QR, waluta domyślna, szablony przypomnień,
+   opuszczenie pokoju, odniesienie do ryzyka podmiany cudzego numeru konta (§10.3).
+5. **Morfowanie [+] w arkusz** (§4) — koło nadal otwiera okno bez przejścia.
+6. **Historia zmian** (§10.5 i brief) — niezaczęte.
+7. **Stany puste**: zrobiony Bilans; Rozliczenia, Rachunki po filtrze i Skrzynka czekają.
+
+### Partia 1c — dopieszczenie (2026-08-06, po uwagach właściciela)
+
+| Uwaga | Co zrobione |
+|---|---|
+| Aktywna zakładka źle siedzi na krawędzi paska (rozjazd promieni) | zakładka ma promień pigułki, tak jak pasek; aktywna to jasne koło |
+| Awatar w nagłówku ma inną wielkość niż przyciski i jest zbędny | usunięty w całości — zdjęcie i kolor są w zakładce „Ty" |
+| Podpisy w pasku zabierają miejsce | pasek to same ikony; nazwa miejsca stoi jako `view-title` na górze każdej zakładki (Bilans / Kto komu ile / Rachunki / Twój profil) |
+| Wybór osób wygląda inaczej w trzech miejscach | jeden komponent `person-row` (zdjęcie + imię + okrągły znacznik) w składzie rachunku, uczestnikach nowego rachunku i „kto to wziął" |
+| Niespójne przyciski i promienie na ekranie „Ty" | wszystkie wiersze to `settings-row`: jedna wysokość, jeden odstęp, jeden stopień pisma, promień `block` |
+| Instrukcja instalacji nie mówi PO CO | arkusz spod „Zainstaluj na urządzeniu": najpierw powód, potem kroki z ikonami Safari, na końcu kod pokoju do wpisania po instalacji |
+| Nie widać, że paragon da się odczytać | zdanie pod nagłówkiem „Paragon" mówi o odczycie i o tym, że pozycje idą do sprawdzenia przed wejściem do rachunku |
+
+**Naprawa spoza interfejsu:** odczyt paragonu wracał z 404. Aplikacja w `dev` bierze
+projekt z `.env.local` (`billsplitter-push-test`), a emulatory startowały na projekcie
+domyślnym z `.firebaserc` (`billsplitter-2fdfa`). Emulator funkcji routuje po
+identyfikatorze projektu w adresie, więc wywołanie nie trafiało w nic. `npm run emulators`
+startuje teraz z `--project test`. Po zmianie trzeba **zrestartować emulatory**.

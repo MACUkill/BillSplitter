@@ -239,6 +239,41 @@ Wszystkie okna są **arkuszami wjeżdżającymi od dołu** na telefonie i wracaj
 od 640 px. Każdy arkusz ma uchwyt u góry i zamyka się kliknięciem w tło albo klawiszem
 Escape — z wyjątkiem potwierdzeń nieodwracalnych.
 
+### Kontrakt responsywności
+
+Trzy punkty łamania i ani jednego więcej. Każdy istnieje, bo układ go potrzebuje,
+nie dlatego, że istnieje urządzenie o tej szerokości. Podejście od telefonu w górę
+(`min-width`) — telefon jest stanem podstawowym, reszta jest wzbogaceniem.
+
+| Punkt | Nazwa | Co się zmienia |
+|---|---|---|
+| — | **telefon** | jedna kolumna, margines 16 px, arkusze od dołu na pełną szerokość, pasek dolny |
+| `640px` | **arkusz na środku** | arkusze przestają być wysuwane od dołu: środek, `max-width: 32rem`, promień 28 px ze wszystkich stron |
+| `768px` | **tablet** | kontener `max-width: 48rem`, margines 24 px; listy kafelkowe łamią się na **dwie kolumny**, odstęp 16 px |
+| `1024px` | **sufit** | kontener zatrzymuje się na `max-width: 56rem` i dalej nie rośnie; arkusze `max-width: 36rem` |
+
+**Reguła jednej kolumny dla kwoty.** Nominał bilansu, kwota rachunku i suma kontrolna
+zostają pełną szerokością kolumny na każdej szerokości ekranu. Do siatki wchodzą
+wyłącznie listy powtarzalnych kafelków: rachunki i wiersze rozliczeń. Kwota jest
+bohaterem, a bohater nie stoi w dwóch kolumnach.
+
+**Reguła strukturalnej adaptacji.** Powyżej 768 px nie wolno skalować układu telefonowego
+proporcjonalnie — zmienia się liczba kolumn listy, nie rozmiar elementów. Cel dotykowy
+zostaje 48 px na akcji i 44 px na kontrolce na **każdej** szerokości; tablet trzyma się
+w dłoniach tak samo jak telefon.
+
+**Reguła paska w dłoni.** Pasek nawigacji zostaje dolny i pływający na każdej szerokości,
+wyśrodkowany, `max-width: 28rem`. Na dużym ekranie nie przenosi się do góry ani na bok —
+to samo miejsce, ten sam gest, jedna nauka.
+
+**Typografia przy zmianie szerokości.** Nominał bilansu 3 rem do 767 px, 3,75 rem od
+768 px. Żaden inny stopień skali się nie zmienia — osiem stopni obowiązuje na wszystkich
+szerokościach.
+
+**Weryfikacja jest częścią kontraktu.** Każdy ekran przechodzi audyt układu na czterech
+szerokościach: **360** (mały telefon), **390** (odniesienie), **834** (tablet) i **1280**
+(desktop). Zgłoszenie na którejkolwiek z nich jest zgłoszeniem.
+
 ## Elevation & Depth
 
 Głębokość robi jasność i miękki cień, nie kreska. Karta odcina się od podłoża bielą;
@@ -274,6 +309,33 @@ twarzy. Pozycja niczyja: cichy blok z zachętą „Stuknij, jeśli to Twoje".
 ### Pola i przełączniki
 `field` — cichy blok bez ramki, ognisko obwódką błękitu. `seg` — pigułka z segmentami
 44 px, stan przez `aria-pressed`. `chip` — mała pigułka informacyjna.
+
+### Wybór z listy — bez rozwijanych list systemowych
+`<select>` **nie wchodzi**. Rozwinięta lista systemowa przychodzi z białym tłem,
+niebieskim zaznaczeniem i cudzą czcionką, a jej wyglądu nie da się ustawić w żadnej
+przeglądarce — na ciemnym ekranie jest ciałem obcym.
+
+- **Wybór jednokrotny** (waluta, płatnik, status): `choice-field` — pole wyglądające jak
+  `field`, z chevronem po prawej — otwiera arkusz z opcjami. W kodzie: `openChoiceSheet`.
+- **Wybór osób** (skład rachunku, uczestnicy nowego rachunku, „kto to wziął"): wiersz
+  `person-row` — zdjęcie albo znak, imię, okrągły znacznik po prawej. Promień `block`,
+  zaznaczenie przez `aria-pressed`, nigdy przez systemowy kwadracik. W kodzie:
+  `personRowHtml` i `selectedPersonIds`.
+- **Wiersz ustawienia** (ekran „Ty"): `settings-row` — jedna wysokość, jeden odstęp
+  wewnętrzny, jeden stopień pisma, wartość i chevron po prawej. Promień `block`.
+
+Reguła promieni w kolumnie: **akcja to pigułka, kafelek listy to `block` (20 px)**.
+Mieszanie 14 px, 20 px i pigułki w jednej kolumnie widać gołym okiem.
+
+### Dolna nawigacja
+Pływająca pigułka o **stałej szerokości**, cztery zakładki **samymi ikonami** i koło
+akcji dokładnie na środku. Zakładki mają równe kolumny (`deck-side` po dwie), więc nic
+nie przesuwa się przy zmianie miejsca. Aktywna zakładka to jasne koło (`--surface`
+w motywie jasnym, `--ink` w ciemnym), nie kolor ikony.
+
+Nazwa miejsca **nie stoi w pasku** — pada raz, jako `view-title` na górze otwartej
+zakładki. Podpis w pasku i tytuł na ekranie to ta sama informacja podana dwa razy,
+a na wąskim telefonie podpis urywał się wielokropkiem.
 
 ## Motion
 

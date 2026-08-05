@@ -100,8 +100,12 @@ Ograniczenia techniczne:
   oznacza utratę dostępu do pokoi. To znany, świadomie przyjęty koszt.
 
 Świadomie otwarte (nie do naprawy w redesignie, ale nie do zapomnienia): członek grupy
-może podmienić cudzy numer konta; po przekroczeniu 4,5 GB aplikacja kasuje najstarsze
-zdjęcia bez pytania.
+może podmienić cudzy numer konta — to jedyny z tych punktów, do którego projekt ustawień
+grupy ma się odnieść.
+
+Poza zakresem redesignu: po przekroczeniu 4,5 GB aplikacja kasuje najstarsze zdjęcia bez
+pytania. Właściciel uznał 2026-08-05 ten punkt za nieistotny na tym etapie — do ogarnięcia
+dopiero przy wersji do monetyzacji. **Nowe ekrany ustawień nie mają się do niego odnosić.**
 
 ### Rozstrzygnięcia zakresu (2026-08-03/04)
 

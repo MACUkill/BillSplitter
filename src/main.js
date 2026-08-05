@@ -99,8 +99,15 @@
         const activeTheme = () => storedTheme() || (prefersDark() ? 'dark' : 'light');
         const applyTheme = (theme) => {
             document.documentElement.dataset.theme = theme;
+            // Ikona pokazuje motyw WŁĄCZONY TERAZ, ten sam stan co podpis obok.
+            // Wcześniej pokazywała motyw docelowy: przy ciemnym świeciło słońce,
+            // więc obrazek i podpis mówiły dwie różne rzeczy naraz.
             const icon = document.getElementById('theme-toggle-icon');
-            if (icon) icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+            if (icon) icon.className = theme === 'dark' ? 'fas fa-moon' : 'fas fa-sun';
+            // Motyw siedzi w „Aplikacji" jako wiersz z wartością, nie jako ikona-zagadka
+            // w nagłówku pokoju. Wiersz mówi wprost, co jest ustawione teraz.
+            const value = document.getElementById('theme-toggle-value');
+            if (value) value.textContent = theme === 'dark' ? 'Ciemny' : 'Jasny';
         };
         const toggleTheme = () => {
             const next = activeTheme() === 'dark' ? 'light' : 'dark';
@@ -152,13 +159,42 @@
             // Błąd dostaje `role="alert"`, żeby czytnik ekranu przeczytał go od razu;
             // potwierdzenie idzie łagodniej i nie przerywa czytania.
             toast.setAttribute('role', isError ? 'alert' : 'status');
-            toast.className = `toast-in fixed bottom-24 left-4 right-4 sm:left-auto sm:right-5 sm:max-w-sm px-4 py-3 rounded-block z-50 font-semibold shadow-lift transition-opacity duration-300 ${isError ? 'bg-owe text-white' : 'bg-ink text-surface'}`;
+            toast.className = `toast-in fixed bottom-28 left-4 right-4 sm:left-auto sm:right-5 sm:max-w-sm px-4 py-3 rounded-block z-50 font-semibold shadow-lift transition-opacity duration-300 ${isError ? 'bg-owe text-white' : 'bg-ink text-surface'}`;
             document.body.appendChild(toast);
             setTimeout(() => {
                 toast.style.opacity = '0';
                 setTimeout(() => toast.remove(), 400);
             }, 3600);
         }
+
+        // --- MORFOWANIE: przycisk ROZRASTA SIĘ w arkusz ---------------------------
+        // Okno, które wyskakuje znikąd, nie mówi, skąd się wzięło. Tutaj limonkowe koło
+        // [+] rośnie w arkusz „nowy rachunek" i wraca do koła przy zamknięciu — jeden
+        // przedmiot w ruchu zamiast dwóch niezależnych zdarzeń.
+        //
+        // Nazwa `view-transition-name` musi być w danej chwili unikatowa w całym
+        // dokumencie, więc nadajemy ją TYLKO na czas przejścia: staremu kształtowi przed
+        // zmianą DOM, nowemu w jej trakcie. Przeglądarki bez View Transitions API i tryb
+        // ograniczonego ruchu dostają zwykłe pojawienie — bez ubytku funkcji.
+        const MORPH_NAME = 'morph-sheet';
+        const prefersReducedMotion = () =>
+            !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+        const morphBetween = (fromEl, toEl, mutate) => {
+            if (!document.startViewTransition || prefersReducedMotion() || !fromEl || !toEl) {
+                mutate();
+                return;
+            }
+            fromEl.style.viewTransitionName = MORPH_NAME;
+            const transition = document.startViewTransition(() => {
+                fromEl.style.viewTransitionName = '';
+                toEl.style.viewTransitionName = MORPH_NAME;
+                mutate();
+            });
+            // Nazwę trzeba zdjąć po przejściu, inaczej zostaje na elemencie i następne
+            // przejście widzi dwa kształty o tej samej nazwie — wtedy pomija animację.
+            transition.finished.finally(() => { toEl.style.viewTransitionName = ''; });
+        };
 
         // Podświetla element, którego wartość właśnie się zmieniła. Wywoływane po zapisie,
         // żeby było widać, ŻE się zapisało — bez tego udany zapis wygląda identycznie jak
@@ -351,14 +387,24 @@
                     </ul>`
             },
             'group-dashboard': {
-                title: 'Twoja grupa',
+                title: 'Pokój — co gdzie jest',
+                html: `<p>Pasek na dole to cztery miejsca w pokoju i jeden przycisk akcji pośrodku.</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li><b>Bilans</b> — ile jesteś na plusie albo na minusie. To jedna liczba, po którą tu wchodzisz.</li>
+                        <li><b>Kto komu</b> — kto komu ile oddaje. „Ureguluj" zapisuje wpłatę, a odbiorca ją potwierdza.</li>
+                        <li><b>[+]</b> pośrodku — nowy rachunek.</li>
+                        <li><b>Rachunki</b> — wszystkie rachunki pokoju, z filtrem Wszystkie / Ukryte.</li>
+                        <li><b>Ty</b> — Twoje zdjęcie, kolor, sposoby płatności i ustawienia aplikacji.</li>
+                    </ul>
+                    <p><b>Nazwa pokoju u góry</b> otwiera ustawienia pokoju: kod, link do zaproszenia i miejsce na zdjęcia. Kod przydaje się, gdy ktoś wchodzi z cudzego telefonu.</p>`
+            },
+            'profile': {
+                title: 'Ty i aplikacja',
                 html: `<ul class="list-disc pl-5 space-y-1">
-                        <li><b>Udostępnij link</b>, aby zaprosić znajomych.</li>
-                        <li><b>Nowy rachunek</b> — prosty (kwota po równo) lub zaawansowany (różne pozycje).</li>
-                        <li><b>Rozliczenia</b> pokazują, kto komu ile jest winien. „Ureguluj" zapisuje wpłatę, a odbiorca ją potwierdza — rachunki zostają zapisem tego, kto co skonsumował.</li>
-                        <li><b>Filtry</b>: Wszystkie / Ukryte.</li>
-                        <li><b>Kolor profilu</b> i <b>sposoby płatności</b> (konto, telefon, Revolut, PayPal, własne) — znajomi zobaczą je przy Twoich należnościach.</li>
-                        <li><b>Podsumowanie</b> pokazuje Twoje udziały i sumę całej grupy.</li>
+                        <li><b>Imię, zdjęcie i kolor znaku</b> — tak widzi Cię grupa przy pozycjach rachunku.</li>
+                        <li><b>Sposoby płatności</b> (konto, telefon, Revolut, PayPal, własne) — znajomi zobaczą je przy Twoich należnościach.</li>
+                        <li><b>Aplikacja</b> to ustawienia tego telefonu: powiadomienia o zaległościach, motyw jasny albo ciemny, instalacja na ekranie początkowym.</li>
+                        <li><b>Ile kto wydał</b> pokazuje, ile każdy wyłożył i ile skonsumował.</li>
                     </ul>`
             },
             'bill': {
@@ -386,20 +432,19 @@
         };
 
         // --- DOLNA NAWIGACJA — kciuk pracuje w dolnej trzeciej ekranu ---
-        // Pulpit jest JEDNĄ przewijaną stroną, więc nawigacja nie przełącza widoków, tylko
-        // przewija do sekcji. Podświetlenie idzie za tym, co realnie widać: gdyby zostawało
-        // tam, gdzie ktoś ostatnio stuknął, kłamałoby po każdym ręcznym przewinięciu.
-        const DECK_NAV_TARGETS = {
-            'nav-room': 'balance-panel',
-            'nav-settle': 'settlements-section',
-            'nav-bills': 'bills-section',
+        // Zakładka jest MIEJSCEM, nie skokiem przewijania. Wcześniej pulpit był jedną
+        // długą stroną, a pasek przewijał do sekcji: przy pustym pokoju nie było dokąd
+        // przewinąć i stuknięcie wyglądało na nieskuteczne, a podświetlenie skakało po
+        // każdym ruchu palca. Teraz każdy segment pokazuje swój widok i nic nie kłamie.
+        const DECK_NAV_VIEWS = {
+            'nav-room': 'view-balance',
+            'nav-settle': 'view-settle',
+            'nav-bills': 'view-bills',
         };
 
-        // Po ręcznym stuknięciu w zakładkę obserwator przewijania musi na chwilę zamilknąć.
-        // Bez tego przy krótkiej treści (pusty pokój, jeden rachunek) strona nie ma dokąd
-        // się przewinąć, obserwator natychmiast przywraca poprzednią zakładkę i stuknięcie
-        // wygląda na nieskuteczne — przycisk sprawia wrażenie martwego.
-        let deckNavLockedUntil = 0;
+        // Który widok pulpitu jest otwarty — pamiętany, żeby powrót z rachunku albo
+        // z profilu wracał tam, skąd się wyszło, a nie zawsze na bilans.
+        let currentDeckView = 'view-balance';
 
         const setDeckNavCurrent = (btnId) => {
             document.querySelectorAll('#deck-nav .deck-btn').forEach(btn => {
@@ -408,39 +453,28 @@
             });
         };
 
+        const showDeckView = (viewId) => {
+            currentDeckView = viewId;
+            Object.values(DECK_NAV_VIEWS).forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('hidden', id !== viewId);
+            });
+            const btnId = Object.keys(DECK_NAV_VIEWS).find(k => DECK_NAV_VIEWS[k] === viewId);
+            if (btnId) setDeckNavCurrent(btnId);
+            try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (_) { window.scrollTo(0, 0); }
+        };
+
         const setupDeckNav = () => {
-            Object.entries(DECK_NAV_TARGETS).forEach(([btnId, targetId]) => {
+            Object.entries(DECK_NAV_VIEWS).forEach(([btnId, viewId]) => {
                 const btn = document.getElementById(btnId);
                 if (!btn) return;
                 btn.onclick = () => {
                     if (currentScreenName !== 'group-dashboard') showScreen('group-dashboard');
-                    deckNavLockedUntil = Date.now() + 900;
-                    setDeckNavCurrent(btnId);
-                    const target = document.getElementById(targetId);
-                    if (!target) return;
-                    try { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
-                    catch (_) { target.scrollIntoView(); }
+                    showDeckView(viewId);
                 };
             });
             const meBtn = document.getElementById('nav-me');
             if (meBtn) meBtn.onclick = () => { renderProfile(); renderPushToggle(); showScreen('profile'); };
-
-            if (!('IntersectionObserver' in window)) return;
-            // Pas obserwacji w górnej części ekranu: sekcja staje się „bieżąca", gdy jej
-            // początek wchodzi tam, gdzie czyta się nagłówki, a nie gdy ledwo wystaje z dołu.
-            const observer = new IntersectionObserver((entries) => {
-                if (currentScreenName !== 'group-dashboard') return;
-                if (Date.now() < deckNavLockedUntil) return;
-                entries.forEach(entry => {
-                    if (!entry.isIntersecting) return;
-                    const btnId = Object.keys(DECK_NAV_TARGETS).find(k => DECK_NAV_TARGETS[k] === entry.target.id);
-                    if (btnId) setDeckNavCurrent(btnId);
-                });
-            }, { rootMargin: '-30% 0px -60% 0px' });
-            Object.values(DECK_NAV_TARGETS).forEach(id => {
-                const el = document.getElementById(id);
-                if (el) observer.observe(el);
-            });
         };
 
         const showScreen = (screenName) => {
@@ -462,14 +496,22 @@
             // Kontekstowy przycisk pomocy „?" — widoczny tylko na ekranach z treścią.
             const fab = document.getElementById('help-fab');
             if (fab) fab.classList.toggle('hidden', !HELP_CONTENT[screenName]);
-            // Dolna nawigacja żyje tylko tam, gdzie jest po co nawigować. Na ekranie rachunku
-            // schodzi z drogi: liczy się jedna czynność i wolne miejsce pod kciukiem.
+            // Dolna nawigacja jest widoczna na KAŻDYM ekranie wewnątrz pokoju, także na
+            // rachunku. Znikała tam wcześniej i wyjście z rachunku miało tylko strzałkę
+            // w rogu — inna droga powrotna niż wszędzie indziej, czyli druga nauka.
+            // Ekrany poza pokojem (start, dołączanie, wczytywanie) paska nie mają:
+            // nie ma czego przełączać.
             const deck = document.getElementById('deck-nav');
             if (deck) {
-                const onDeck = screenName === 'group-dashboard' || screenName === 'profile';
+                const onDeck = screenName === 'group-dashboard' || screenName === 'profile' || screenName === 'bill';
                 deck.classList.toggle('hidden', !onDeck);
                 if (screenName === 'profile') setDeckNavCurrent('nav-me');
-                else if (screenName === 'group-dashboard') setDeckNavCurrent('nav-room');
+                // Rachunek należy do Rachunków — pasek mówi, w której części pokoju stoisz.
+                else if (screenName === 'bill') setDeckNavCurrent('nav-bills');
+                else if (screenName === 'group-dashboard') {
+                    const btnId = Object.keys(DECK_NAV_VIEWS).find(k => DECK_NAV_VIEWS[k] === currentDeckView);
+                    setDeckNavCurrent(btnId || 'nav-room');
+                }
             }
             if (screenName === 'start') renderMyRooms();
         };
@@ -577,10 +619,8 @@
                 // gdy skrót z ekranu początkowego iPhone'a otworzy aplikację bez adresu grupy.
                 const serialEl = document.getElementById('room-serial');
                 if (serialEl) serialEl.textContent = formatSerial(currentGroupId);
-                // Znak w prawym górnym rogu to TWOJA rozeta, nie ogólna ikonka ludzika —
-                // ten sam znak, którym jesteś podpisany przy każdej pozycji rachunku.
-                const markEl = document.getElementById('dashboard-user-mark');
-                if (markEl) markEl.innerHTML = myMember ? avatarHtml(myMember.name, myMember.id, 'w-8 h-8 text-lg') : '';
+                const serialSheetEl = document.getElementById('room-settings-serial');
+                if (serialSheetEl) serialSheetEl.textContent = formatSerial(currentGroupId);
                 userNameEl.onclick = async () => {
                     if (!myMember) return;
                     await updateDoc(groupDocRef, {
@@ -613,22 +653,7 @@
                         payBtn.onclick = () => openPaymentModal();
                     }
 
-                    const picker = document.getElementById('dashboard-color-picker');
-                    if (picker) {
-                        const current = colorForMember(myMember.id, myMember.name);
-                        // Próbka pokazuje dokładnie to, co ekipa zobaczy przy Twoim imieniu:
-                        // pełne koło w danym kolorze z Twoją literą. Wybrany dostaje pierścień.
-                        const myMark = escapeHtml(initials(myMember.name));
-                        picker.innerHTML = PROFILE_COLORS.map(c =>
-                            `<button class="profile-color-swatch tap w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-sm" data-color="${c}" title="Ustaw swój kolor" style="background-color:${c};box-shadow:${c === current ? '0 0 0 3px rgb(var(--surface)), 0 0 0 5px rgb(var(--ink))' : 'none'}">${myMark}</button>`
-                        ).join('');
-                        picker.querySelectorAll('.profile-color-swatch').forEach(sw => {
-                            sw.onclick = async () => {
-                                await updateDoc(groupDocRef, { [`members.${myMember.id}.color`]: sw.dataset.color });
-                                showToast('Zmieniono kolor profilu.');
-                            };
-                        });
-                    }
+                    renderColorField(myMember);
                 }
                 // Numery kont / metody / imiona / zdjęcia mogły się zmienić — odśwież widoki.
                 renderBillsList();
@@ -669,10 +694,15 @@
             // przy stole i przepisuje z cudzego telefonu. Link mieszka niżej, w stopce pokoju.
             const serialBtn = document.getElementById('room-serial-btn');
             if (serialBtn) serialBtn.onclick = () => copyText(currentGroupId, 'Kod pokoju skopiowany.');
-            document.getElementById('toggle-summary-btn').onclick = () => {
-                document.getElementById('summary-content').classList.toggle('hidden');
-                document.getElementById('summary-arrow-icon').classList.toggle('rotated');
-            };
+
+            // Ustawienia pokoju otwierają się spod NAZWY pokoju — stoją przy rzeczy,
+            // której dotyczą. Zwijana sekcja „Pokój" na pulpicie zniknęła bez zamiennika.
+            const roomSettingsBtn = document.getElementById('room-settings-btn');
+            if (roomSettingsBtn) roomSettingsBtn.onclick = () => document.getElementById('room-settings-modal').classList.add('active');
+            const roomSettingsCopySerial = document.getElementById('room-settings-copy-serial-btn');
+            if (roomSettingsCopySerial) roomSettingsCopySerial.onclick = () => copyText(currentGroupId, 'Kod pokoju skopiowany.');
+            const closeRoomSettings = document.getElementById('close-room-settings-btn');
+            if (closeRoomSettings) closeRoomSettings.onclick = () => document.getElementById('room-settings-modal').classList.remove('active');
 
             document.querySelectorAll('.bill-filter-btn').forEach(btn => {
                 btn.onclick = () => { currentBillFilter = btn.dataset.filter; renderBillsList(); };
@@ -898,6 +928,15 @@
             const actionsEl = document.getElementById('balance-actions');
             if (!amountsEl || !captionEl || !actionsEl) return;
 
+            // Zachęta do pierwszego rachunku żyje tylko w pustym pokoju — potem
+            // znika bez śladu, żeby nie zabierać miejsca kwocie.
+            const emptyEl = document.getElementById('balance-empty');
+            if (emptyEl) {
+                emptyEl.classList.toggle('hidden', latestBills.length > 0);
+                const serial = document.getElementById('balance-empty-serial');
+                if (serial) serial.textContent = formatSerial(currentGroupId);
+            }
+
             const { rows } = myLedgerRows();
             const byCurrency = {};
             rows.forEach((r) => {
@@ -910,9 +949,14 @@
             });
 
             if (currencies.length === 0) {
-                // Stan pusty jest tu stanem SUKCESU, nie brakiem danych — i tak ma wyglądać.
+                // Zero znaczy dwie różne rzeczy i podpis musi je rozróżniać: w pokoju
+                // z rachunkami to SUKCES („wszystko rozliczone"), a w pokoju bez
+                // rachunków — po prostu początek. Jeden podpis na oba stany kłamał
+                // w świeżym pokoju i kłócił się z zachętą poniżej.
                 amountsEl.innerHTML = `<p class="amount text-5xl">0,00</p>`;
-                captionEl.textContent = 'Wszystko rozliczone. Nikt nikomu nic nie jest winien.';
+                captionEl.textContent = latestBills.length === 0
+                    ? 'Jeszcze nic nie policzone.'
+                    : 'Wszystko rozliczone. Nikt nikomu nic nie jest winien.';
                 actionsEl.innerHTML = '';
                 return;
             }
@@ -1235,11 +1279,13 @@
                 const p = participants[id];
                 const inBill = p && p.status !== 'not_applicable';
                 const isPayer = billData.payerId === id;
-                return `<label class="tap flex items-center gap-2 p-2 min-h-tap rounded-lg ${isPayer ? 'bg-surface-2' : 'cursor-pointer'}">
-                    <input type="checkbox" class="bill-member-cb w-5 h-5 accent-ink" data-id="${id}" ${inBill ? 'checked' : ''} ${isPayer ? 'disabled' : ''}>
-                    ${avatarHtml(m.name, id)}
-                    <span class="flex-grow truncate font-medium">${escapeHtml(m.name)}${isPayer ? ' <span class="text-xs text-ink-3">(płatnik)</span>' : ''}</span>
-                </label>`;
+                return personRowHtml({
+                    id,
+                    name: m.name,
+                    selected: inBill,
+                    disabled: isPayer, // płatnika nie da się wypisać z własnego rachunku
+                    note: isPayer ? '(płatnik)' : '',
+                });
             }).join('');
         };
         const openBillMembersModal = () => {
@@ -1268,23 +1314,100 @@
             }
         };
 
-        // --- Krok 5: ekran „Profil" — personalizacja (przeniesiona) + „ile kto wydał" ---
-        // onSelf = suma udziałów (co skonsumował); fronted = ile wyłożył jako płatnik. Per waluta, w groszach.
-        const computeSpending = (bills) => {
-            const res = {};
-            const ensure = (id) => res[id] || (res[id] = { onSelf: {}, fronted: {} });
-            (bills || []).forEach(b => {
-                const cur = b.currency || 'PLN';
-                if (b.payerId && b.payerConfirmed && toGrosze(b.totalAmount || 0) > 0) {
-                    const f = ensure(b.payerId).fronted; f[cur] = (f[cur] || 0) + toGrosze(b.totalAmount || 0);
-                }
-                calculateAllForBill(b).participantTotals.forEach(pt => {
-                    const g = toGrosze(pt.total); if (g <= 0) return;
-                    const s = ensure(pt.participant.id).onSelf; s[cur] = (s[cur] || 0) + g;
-                });
+        // --- Krok 5: ekran „Profil" — wyłącznie tożsamość i ustawienia urządzenia ---
+        // Rozpiska „ile kto wydał" NIE mieszka tutaj: profil odpowiada na pytanie
+        // „kim jestem w tej grupie", a nie „ile wydała ekipa". Statystyka pokoju
+        // (Twoje udziały / cała grupa) stoi w ustawieniach pokoju, przy pokoju.
+        // WIERSZ OSOBY — jedyny sposób pokazywania wyboru ludzi w tej aplikacji.
+        // Zdjęcie (albo znak), imię, znacznik po prawej. Używają go: skład rachunku,
+        // uczestnicy nowego rachunku i „kto to wziął" przy pozycji paragonu.
+        const personRowHtml = ({ id, name, selected, disabled = false, note = '' }) => `
+            <button type="button" class="person-row tap" data-id="${escapeHtml(String(id))}"
+                aria-pressed="${selected ? 'true' : 'false'}" ${disabled ? 'disabled' : ''}>
+                ${avatarHtml(name, id)}
+                <span class="flex-grow min-w-0 truncate font-medium">${escapeHtml(name)}${note ? ` <span class="text-xs text-ink-3">${escapeHtml(note)}</span>` : ''}</span>
+                <span class="person-row-check" aria-hidden="true"><i class="fas fa-check"></i></span>
+            </button>`;
+
+        // Odczyt zaznaczenia z listy wierszy — jedno miejsce, żeby trzy listy nie
+        // rozjechały się w sposobie pytania „kto jest zaznaczony".
+        const selectedPersonIds = (containerId) =>
+            [...document.querySelectorAll(`#${containerId} .person-row[aria-pressed="true"]`)]
+                .map((el) => el.dataset.id);
+
+        // WYBÓR JEDNOKROTNY — jeden arkusz dla każdej listy (waluta, płatnik).
+        // `options`: [{ value, label, hint?, avatarHtml? }].
+        const openChoiceSheet = ({ title, options, current, onPick }) => {
+            const modal = document.getElementById('choice-modal');
+            const list = document.getElementById('choice-options');
+            if (!modal || !list) return;
+            document.getElementById('choice-title').textContent = title;
+            list.innerHTML = options.map((o) => {
+                const selected = String(o.value) === String(current);
+                return `<button class="choice-option card tap w-full min-h-tap p-3 flex items-center gap-3 text-left" data-value="${escapeHtml(String(o.value))}" aria-pressed="${selected}">
+                    ${o.avatarHtml || ''}
+                    <span class="flex-grow min-w-0">
+                        <span class="block font-semibold truncate">${escapeHtml(o.label)}</span>
+                        ${o.hint ? `<span class="block text-sm text-ink-3 truncate">${escapeHtml(o.hint)}</span>` : ''}
+                    </span>
+                    <i class="fas fa-check text-ink flex-shrink-0 ${selected ? '' : 'hidden'}"></i>
+                </button>`;
+            }).join('');
+            list.querySelectorAll('.choice-option').forEach((btn) => {
+                btn.onclick = async () => {
+                    modal.classList.remove('active');
+                    if (btn.dataset.value !== String(current)) await onPick(btn.dataset.value);
+                };
             });
-            return res;
+            modal.classList.add('active');
         };
+
+        // STATUS UCZESTNIKA — arkusz z trzema opcjami. Wywołanie podaje bieżący stan
+        // i domknięcie, które ma zapisać wybór; arkusz nie wie nic o bazie.
+        const openStatusSheet = (participantId, currentStatus, onPick) => {
+            const modal = document.getElementById('status-modal');
+            if (!modal) return;
+            modal.querySelectorAll('.status-option').forEach((btn) => {
+                const selected = btn.dataset.status === currentStatus;
+                btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                const check = btn.querySelector('.status-option-check');
+                if (check) check.classList.toggle('hidden', !selected);
+                btn.onclick = async () => {
+                    modal.classList.remove('active');
+                    if (btn.dataset.status !== currentStatus) await onPick(btn.dataset.status);
+                };
+            });
+            modal.classList.add('active');
+        };
+
+        // KOLOR ZNAKU — jedno pole z bieżącym kolorem, paleta dopiero po stuknięciu.
+        // Szesnaście kółek wyłożonych naraz na ekranie profilu wyglądało jak paleta
+        // farb, a nie jak ustawienie: krzyczały wszystkie kolory naraz, w każdym stała
+        // litera imienia, a wybrany dało się rozpoznać wyłącznie po cienkim pierścieniu.
+        const renderColorField = (myMember) => {
+            if (!myMember) return;
+            const current = colorForMember(myMember.id, myMember.name);
+            const dot = document.getElementById('profile-color-dot');
+            if (dot) dot.style.backgroundColor = current;
+
+            const picker = document.getElementById('dashboard-color-picker');
+            if (!picker) return;
+            // Same kolory, bez liter: to jest wybór barwy, a nie podgląd awatara —
+            // podgląd stoi obok, w polu i na zdjęciu profilowym u góry ekranu.
+            picker.innerHTML = PROFILE_COLORS.map(c => {
+                const selected = c === current;
+                return `<button class="profile-color-swatch tap w-12 h-12 rounded-full flex items-center justify-center text-white" data-color="${c}" aria-pressed="${selected}" title="Ustaw ten kolor" style="background-color:${c}">${selected ? '<i class="fas fa-check"></i>' : ''}</button>`;
+            }).join('');
+            const groupRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
+            picker.querySelectorAll('.profile-color-swatch').forEach(sw => {
+                sw.onclick = async () => {
+                    await updateDoc(groupRef, { [`members.${myMember.id}.color`]: sw.dataset.color });
+                    document.getElementById('color-picker-modal').classList.remove('active');
+                    showToast('Zmieniono kolor znaku.');
+                };
+            });
+        };
+
         const renderProfile = () => {
             if (!groupData) return;
             const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
@@ -1300,18 +1423,7 @@
             }
             const removeBtn = document.getElementById('profile-photo-remove-btn');
             if (removeBtn) removeBtn.classList.toggle('hidden', !(myMember && myMember.photoURL));
-            const bills = latestBills.map(({ id, data }) => ({ ...data, id }));
-            const sp = computeSpending(bills);
-            const order = groupData.memberOrder || Object.keys(groupData.members || {});
-            const fmtMap = (m) => Object.keys(m).length ? Object.entries(m).map(([c, g]) => fmtMoney(g, c)).join(', ') : '—';
-            document.getElementById('profile-spending').innerHTML = order.map(id => {
-                const mm = groupData.members[id]; if (!mm) return '';
-                const s = sp[id] || { onSelf: {}, fronted: {} };
-                return `<div class="card flex items-center justify-between gap-2 p-3">
-                    <span class="flex items-center min-w-0">${avatarHtml(mm.name, id)}<span class="truncate font-medium">${escapeHtml(mm.name)}</span></span>
-                    <span class="text-sm text-right flex-shrink-0"><span class="block text-ink-2">na siebie: <b>${fmtMap(s.onSelf)}</b></span><span class="block text-ink-3 text-xs">wyłożył/a: ${fmtMap(s.fronted)}</span></span>
-                </div>`;
-            }).join('');
+            renderColorField(myMember);
         };
 
         // Zdjęcie profilowe (reużycie maszynerii zdjęć paragonów: heic2any + Storage).
@@ -1533,14 +1645,16 @@
             }
 
             if (isMe) {
-                const options = `<option value="incomplete" ${status === 'incomplete' ? 'selected' : ''}>Nieuzupełnione</option>
-                       <option value="completed" ${status === 'completed' ? 'selected' : ''}>Uzupełnione</option>
-                       <option value="not_applicable" ${status === 'not_applicable' ? 'selected' : ''}>Mnie nie dotyczy</option>`;
+                // NIE `<select>`. Rozwinięta lista systemowa wypada z tego świata:
+                // biała ramka, niebieskie podświetlenie i systemowa czcionka lądują na
+                // ciemnym ekranie jako obcy przedmiot, a wyglądu listy nie da się
+                // ostylować w żadnej przeglądarce. Stąd przycisk + arkusz z opcjami,
+                // czyli ten sam język, co reszta wyborów w aplikacji.
                 return `
-                    <div class="status-select-wrapper ${current.bg}">
-                        <i class="fas ${current.icon} ${current.color} mr-2"></i>
-                        <select class="status-select font-semibold ${current.color}" data-participant-id="${participantId}">${options}</select>
-                    </div>`;
+                    <button class="status-select-wrapper status-select ${current.bg}" data-participant-id="${participantId}" data-status="${status}" aria-haspopup="dialog" title="Zmień swój status">
+                        <i class="fas ${current.icon} ${current.color}"></i>
+                        <span class="font-semibold ${current.color}">${current.text}</span>
+                    </button>`;
             }
 
             return `<span class="font-semibold ${current.color} flex items-center"><i class="fas ${current.icon} mr-2"></i>${current.text}</span>`;
@@ -1860,10 +1974,13 @@
             const wrap = document.getElementById('shared-cost-participants');
             wrap.innerHTML = Object.values(billData.participants || {})
                 .filter(p => p.status !== 'not_applicable')
-                .map(p => `<label class="tap flex items-center gap-2 p-2 min-h-tap rounded-lg cursor-pointer">
-                    <input type="checkbox" class="shared-participant-checkbox w-5 h-5 accent-ink" value="${p.id}" ${picked.includes(p.id) ? 'checked' : ''}>
-                    ${avatarHtml(p.name, p.id, 'w-7 h-7 text-sm mr-1')}<span class="truncate">${escapeHtml(p.name)}</span>
-                </label>`).join('');
+                .map(p => personRowHtml({ id: p.id, name: p.name, selected: picked.includes(p.id) }))
+                .join('');
+            wrap.onclick = (e) => {
+                const row = e.target.closest('.person-row');
+                if (!row) return;
+                row.setAttribute('aria-pressed', row.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+            };
 
             // Rozbicie na sztuki ma sens tylko dla istniejącej pozycji o ilości > 1.
             const splitBtn = document.getElementById('item-split-btn');
@@ -1890,7 +2007,7 @@
             const description = document.getElementById('shared-cost-desc').value.trim();
             const amount = parseLocalFloat(document.getElementById('shared-cost-amount').value);
             const quantity = Math.max(1, Math.trunc(parseLocalFloat(document.getElementById('item-quantity').value)) || 1);
-            const sharedBy = Array.from(document.querySelectorAll('.shared-participant-checkbox:checked')).map(cb => cb.value);
+            const sharedBy = selectedPersonIds('shared-cost-participants');
             if (!description) { showToast('Podaj nazwę pozycji.', true); return; }
             if (!(amount > 0)) { showToast('Podaj cenę pozycji.', true); return; }
 
@@ -1972,26 +2089,27 @@
             document.getElementById('bill-name').textContent = billData.billName;
             
             const currencySelect = document.getElementById('currency-select');
-            currencySelect.value = billData.currency;
+            currencySelect.dataset.value = billData.currency;
+            document.getElementById('currency-select-label').textContent = billData.currency;
             currencySelect.disabled = !canEditMainFields;
             
             const totalAmountInput = document.getElementById('total-bill-amount');
             if (document.activeElement !== totalAmountInput) {
-                totalAmountInput.value = billData.totalAmount > 0 ? billData.totalAmount.toFixed(2) : '';
+                // Przecinek, nie kropka — ta sama notacja, co we wszystkich kwotach obok.
+                totalAmountInput.value = billData.totalAmount > 0
+                    ? billData.totalAmount.toFixed(2).replace('.', ',')
+                    : '';
             }
             totalAmountInput.disabled = !canEditMainFields;
             
             const payerSelect = document.getElementById('payer-select');
             // „Nikt" brzmiało jak stwierdzenie faktu („nikt nie zapłacił"), a to jest
             // pole do wypełnienia. Zachęta mówi, co zrobić.
-            payerSelect.innerHTML = '<option value="">Wskaż osobę…</option>';
-            Object.values(billData.participants || {}).forEach(p => {
-                const option = document.createElement('option');
-                option.value = p.id;
-                option.textContent = p.name;
-                if (billData.payerId === p.id) option.selected = true;
-                payerSelect.appendChild(option);
-            });
+            const currentPayer = billData.payerId ? (billData.participants || {})[billData.payerId] : null;
+            payerSelect.dataset.value = billData.payerId || '';
+            const payerLabel = document.getElementById('payer-select-label');
+            payerLabel.textContent = currentPayer ? currentPayer.name : 'Wskaż osobę…';
+            payerLabel.classList.toggle('text-ink-3', !currentPayer);
             // Payer selection should be locked after confirmation to avoid confusion.
             payerSelect.disabled = isPayerConfirmed;
 
@@ -2223,16 +2341,40 @@
             document.getElementById('total-bill-amount').onchange = async (e) => {
                 await updateDoc(billDocRef, { totalAmount: parseLocalFloat(e.target.value) });
             };
-            document.getElementById('currency-select').onchange = async (e) => {
-                await updateDoc(billDocRef, await currencyPatch(e.target.value));
+            document.getElementById('currency-select').onclick = () => {
+                openChoiceSheet({
+                    title: 'Waluta rachunku',
+                    current: billData.currency,
+                    options: [
+                        { value: 'PLN', label: 'PLN', hint: 'złoty polski' },
+                        { value: 'EUR', label: 'EUR', hint: 'euro' },
+                        { value: 'USD', label: 'USD', hint: 'dolar amerykański' },
+                    ],
+                    onPick: async (value) => { await updateDoc(billDocRef, await currencyPatch(value)); },
+                });
             };
-            
-            document.getElementById('payer-select').onchange = async (e) => {
-                const newPayerId = e.target.value || null;
+
+            document.getElementById('payer-select').onclick = () => {
+                openChoiceSheet({
+                    title: 'Kto wyłożył pieniądze',
+                    current: billData.payerId || '',
+                    options: [
+                        { value: '', label: 'Nikt jeszcze', hint: 'wskażesz później' },
+                        ...Object.values(billData.participants || {}).map((p) => ({
+                            value: p.id,
+                            label: p.name,
+                            avatarHtml: avatarHtml(p.name, p.id),
+                        })),
+                    ],
+                    onPick: (value) => setBillPayer(value || null),
+                });
+            };
+
+            const setBillPayer = async (newPayerId) => {
                 const oldPayerId = billData.payerId;
 
                 if (newPayerId === oldPayerId) return;
-                
+
                 const updates = { 
                     payerId: newPayerId,
                     payerConfirmed: false
@@ -2266,6 +2408,22 @@
 
                     const calcBtn = e.target.closest('.calculator-toggle-btn');
                     const addBtn = e.target.closest('.add-amount-btn');
+                    const statusBtn = e.target.closest('.status-select');
+
+                    // Status otwiera arkusz z trzema opcjami — zamiana za rozwijaną
+                    // listę systemową, której nie da się ostylować (patrz szablon statusu).
+                    if (statusBtn) {
+                        openStatusSheet(participantId, statusBtn.dataset.status, async (newStatus) => {
+                            const updates = buildStatusUpdate(billData, participantId, newStatus);
+                            if (newStatus === 'not_applicable') {
+                                updates[`participants.${participantId}.individualAmount`] = 0;
+                                updates[`participants.${participantId}.individualAmounts`] = [];
+                                updates[`participants.${participantId}.calculatorActive`] = false;
+                            }
+                            await updateDoc(billDocRef, updates);
+                        });
+                        return;
+                    }
 
                     if (calcBtn) {
                         const newCalculatorState = !participant.calculatorActive;
@@ -2310,18 +2468,6 @@
                     const updates = {};
                     let statusShouldChange = false;
                     let newTotal = participant.individualAmount;
-                    
-                    if (target.classList.contains('status-select')) {
-                        const newStatus = e.target.value;
-                        Object.assign(updates, buildStatusUpdate(billData, participantId, newStatus));
-                        if (newStatus === 'not_applicable') {
-                            updates[`participants.${participantId}.individualAmount`] = 0;
-                            updates[`participants.${participantId}.individualAmounts`] = [];
-                            updates[`participants.${participantId}.calculatorActive`] = false;
-                        }
-                        await updateDoc(billDocRef, updates);
-                        return;
-                    }
                     
                     if (target.id.startsWith('your-sum-input-')) {
                         newTotal = parseLocalFloat(target.value);
@@ -2562,32 +2708,57 @@
 
         const setupPwaInstallButton = () => {
             const installButton = document.getElementById('install-pwa-btn');
-            const iosHint = document.getElementById('ios-install-hint');
+            const modal = document.getElementById('install-modal');
 
-            // Czy apka już działa jako zainstalowana (standalone)? Wtedy nic nie pokazujemy.
-            const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+            // Czy apka już działa jako zainstalowana (standalone)?
+            const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches
                 || window.navigator.standalone === true;
-            // iOS Safari nie odpala `beforeinstallprompt` — trzeba pokazać ręczną instrukcję.
+            // iOS Safari nie odpala `beforeinstallprompt` — zostają kroki ręczne.
             const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-            if (isIos && !isStandalone && iosHint) iosHint.classList.remove('hidden');
+
+            // Arkusz mówi najpierw PO CO instalować, a dopiero potem JAK. Wcześniej
+            // instrukcja wisiała na ekranie profilu na stałe i podawała same kroki,
+            // więc czytało się to jak polecenie bez powodu.
+            const showInstallSheet = () => {
+                if (!modal) return;
+                const paths = {
+                    'install-steps-ios': isIos && !isStandalone(),
+                    'install-steps-prompt': !isIos && !isStandalone() && !!deferredInstallPrompt,
+                    'install-steps-none': !isIos && !isStandalone() && !deferredInstallPrompt,
+                    'install-steps-done': isStandalone(),
+                };
+                Object.entries(paths).forEach(([id, visible]) => {
+                    const el = document.getElementById(id);
+                    if (el) el.classList.toggle('hidden', !visible);
+                });
+                // Kod pokoju w kroku po instalacji: skrót z ekranu początkowego otwiera
+                // aplikację bez adresu grupy, więc bez kodu użytkownik ląduje w pustce.
+                const serial = document.getElementById('install-room-serial');
+                if (serial) serial.textContent = currentGroupId ? formatSerial(currentGroupId) : '—';
+                modal.classList.add('active');
+            };
 
             window.addEventListener('beforeinstallprompt', (e) => {
                 e.preventDefault();
                 deferredInstallPrompt = e;
-                if (installButton) installButton.classList.remove('hidden');
             });
 
-            if (installButton) installButton.addEventListener('click', async () => {
+            if (installButton) installButton.addEventListener('click', showInstallSheet);
+
+            const confirmBtn = document.getElementById('install-pwa-confirm');
+            if (confirmBtn) confirmBtn.onclick = async () => {
                 if (!deferredInstallPrompt) return;
-                installButton.classList.add('hidden');
+                if (modal) modal.classList.remove('active');
                 deferredInstallPrompt.prompt();
                 const { outcome } = await deferredInstallPrompt.userChoice;
                 console.log(`Akcja użytkownika (instalacja): ${outcome}`);
                 deferredInstallPrompt = null;
-            });
+            };
+
+            const closeBtn = document.getElementById('close-install-modal');
+            if (closeBtn) closeBtn.onclick = () => modal && modal.classList.remove('active');
 
             window.addEventListener('appinstalled', () => {
-                if (installButton) installButton.classList.add('hidden');
                 deferredInstallPrompt = null;
                 showToast('Aplikacja została zainstalowana!');
             });
@@ -2878,11 +3049,9 @@
                 showToast('Usunięto metodę.');
             });
 
-            // Rozliczenia: zwijanie, przełącznik trybu, „Ureguluj", modal
-            document.getElementById('toggle-settlements-btn').onclick = () => {
-                document.getElementById('settlements-content').classList.toggle('hidden');
-                document.getElementById('settlements-arrow-icon').classList.toggle('rotated');
-            };
+            // Rozliczenia: przełącznik trybu, „Ureguluj", modal.
+            // Zwijanie zniknęło razem z sekcją: rozliczenia są własnym miejscem w pasku,
+            // a miejsca się nie zwija — wchodzi się do niego albo nie.
             document.querySelectorAll('.settle-mode-btn').forEach(btn => {
                 btn.onclick = () => { settlementMode = btn.dataset.mode; renderSettlements(); };
             });
@@ -2963,26 +3132,53 @@
             const bmModal = document.getElementById('bill-members-modal');
             document.getElementById('close-bill-members-modal').onclick = () => bmModal.classList.remove('active');
             bmModal.onclick = (e) => { if (e.target === bmModal) bmModal.classList.remove('active'); };
-            document.getElementById('bill-members-list').addEventListener('change', async (e) => {
-                const cb = e.target.closest('.bill-member-cb');
-                if (!cb) return;
-                await toggleBillMember(cb.dataset.id, cb.checked);
+            document.getElementById('bill-members-list').addEventListener('click', async (e) => {
+                const row = e.target.closest('.person-row');
+                if (!row || row.disabled) return;
+                const include = row.getAttribute('aria-pressed') !== 'true';
+                // Zaznaczenie przestawiamy od razu: zapis do bazy wraca własną drogą
+                // i przerysowuje listę, ale wiersz ma odpowiedzieć na palec natychmiast.
+                row.setAttribute('aria-pressed', include ? 'true' : 'false');
+                await toggleBillMember(row.dataset.id, include);
             });
 
-            // Ekran „Profil"
-            const openProfileBtn = document.getElementById('open-profile-btn');
-            if (openProfileBtn) openProfileBtn.onclick = () => { renderProfile(); renderPushToggle(); showScreen('profile'); };
+            // Ekran „Profil" — jedno wejście, zakładka „Ty" w pasku (patrz setupDeckNav).
+            // Awatar w nagłówku pokoju był drugim wejściem do tego samego miejsca i już
+            // nie jest klikalny; strzałka „wróć" zniknęła razem z nim.
             const pushBtn = document.getElementById('push-toggle-btn');
             if (pushBtn) pushBtn.onclick = enablePush;
-            const backProfileBtn = document.getElementById('back-to-dashboard-from-profile-btn');
-            if (backProfileBtn) backProfileBtn.onclick = () => showScreen('group-dashboard');
+            // Znak: stuknięcie w awatar otwiera arkusz „Twój znak", a z niego prowadzą
+            // dwie drogi — własne zdjęcie albo kolor.
+            const markBtn = document.getElementById('profile-mark-btn');
+            if (markBtn) markBtn.onclick = () => document.getElementById('mark-modal').classList.add('active');
+            const closeMarkBtn = document.getElementById('close-mark-modal');
+            if (closeMarkBtn) closeMarkBtn.onclick = () => document.getElementById('mark-modal').classList.remove('active');
+            const colorBtn = document.getElementById('profile-color-btn');
+            if (colorBtn) colorBtn.onclick = () => {
+                document.getElementById('mark-modal').classList.remove('active');
+                document.getElementById('color-picker-modal').classList.add('active');
+            };
+            const closeColorBtn = document.getElementById('close-color-picker-btn');
+            if (closeColorBtn) closeColorBtn.onclick = () => document.getElementById('color-picker-modal').classList.remove('active');
+            const closeStatusBtn = document.getElementById('close-status-modal');
+            if (closeStatusBtn) closeStatusBtn.onclick = () => document.getElementById('status-modal').classList.remove('active');
+            const closeChoiceBtn = document.getElementById('close-choice-modal');
+            if (closeChoiceBtn) closeChoiceBtn.onclick = () => document.getElementById('choice-modal').classList.remove('active');
             // Zdjęcie profilowe
             const photoBtn = document.getElementById('profile-photo-btn');
             const photoInput = document.getElementById('profile-photo-input');
             const photoRemove = document.getElementById('profile-photo-remove-btn');
-            if (photoBtn && photoInput) photoBtn.onclick = () => photoInput.click();
+            // Arkusz „Twój znak" schodzi z drogi, gdy odpalamy systemowe okno pliku —
+            // inaczej wraca się z wyboru zdjęcia na wciąż otwarty arkusz.
+            if (photoBtn && photoInput) photoBtn.onclick = () => {
+                document.getElementById('mark-modal').classList.remove('active');
+                photoInput.click();
+            };
             if (photoInput) photoInput.onchange = async (e) => { const file = e.target.files && e.target.files[0]; e.target.value = ''; if (file) await uploadProfilePhoto(file); };
-            if (photoRemove) photoRemove.onclick = removeProfilePhoto;
+            if (photoRemove) photoRemove.onclick = () => {
+                document.getElementById('mark-modal').classList.remove('active');
+                removeProfilePhoto();
+            };
             // kopiuj-kwotę bierze aktualną wartość z pola
             document.getElementById('settle-amount-input').oninput = (e) => {
                 const v = parseLocalFloat(e.target.value);
@@ -3073,7 +3269,12 @@
                 updateParticipantsButton();
                 participantsChecklist.classList.add('hidden');
                 checkCreateButtonState();
-                modal.classList.add('active');
+                // Koło [+] rozrasta się w arkusz zamiast go wystrzelić.
+                morphBetween(
+                    document.getElementById('create-new-bill-btn'),
+                    modal.querySelector('.sheet'),
+                    () => modal.classList.add('active'),
+                );
             };
 
             nameInput.addEventListener('input', (e) => {
@@ -3085,7 +3286,21 @@
                 participantsChecklist.classList.toggle('hidden');
             });
 
-            cancelBtn.onclick = () => modal.classList.remove('active');
+            // Zamknięcie odtwarza to samo wstecz: arkusz zbiega się z powrotem do koła.
+            const closeNewBillModal = () => morphBetween(
+                modal.querySelector('.sheet'),
+                document.getElementById('create-new-bill-btn'),
+                () => modal.classList.remove('active'),
+            );
+            cancelBtn.onclick = closeNewBillModal;
+            // `stopPropagation`, bo globalny strażnik tła zamyka okna zwykłym zdjęciem
+            // klasy. Gdyby dobiegł pierwszy, arkusza nie byłoby już na ekranie w chwili
+            // robienia zdjęcia „przed" i morfowanie nie miałoby z czego wyjść.
+            modal.addEventListener('click', (e) => {
+                if (e.target !== modal) return;
+                e.stopPropagation();
+                closeNewBillModal();
+            });
 
             createBtn.onclick = async () => {
                 if (newBillState.participantIds.length === 0) {
