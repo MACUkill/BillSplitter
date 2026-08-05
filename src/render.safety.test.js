@@ -21,6 +21,7 @@ const SAFE = [
   /^screenName$/,                        // nazwa ekranu z kodu, nie z bazy
   /^nameHtml$/,                          // już zescapowany fragment HTML
   /^avatarHtml\(/,                       // funkcja escapuje wewnątrz
+  /^initials\(/,                         // pierwsza litera imienia, wstawiana już zescapowana
   /^escapeHtml\(/,                       // jawnie zescapowane
   /^fmtMoney\(/,                         // formatuje liczby
   /^paymentIconClass\(/,                 // klasa CSS ze słownika w kodzie

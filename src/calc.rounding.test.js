@@ -219,9 +219,67 @@ describe('rachunek zaawansowany — składowe', () => {
       [{ id: 'g1', type: 'fixed', value: 4 }],
     );
     const res = calculateAll(bill);
-    // aktywny tylko 'a': 10 (ind) + 4 (cały napiwek) = 14
-    expect(pt(res, 'a').total).toBeCloseTo(14, 2);
+    // Aktywny jest tylko 'a': 10 (koszt własny) + 4 (cały napiwek) = 14 rozpisane,
+    // a pozostałe 6 z dwudziestu to kwota nierozpisana, która przy jednym aktywnym
+    // uczestniku trafia w całości do niego. Rachunek na 20 rozchodzi się w całości —
+    // dawniej ta szóstka zostawała po cichu na płatniku.
+    expect(pt(res, 'a').total).toBeCloseTo(20, 2);
+    expect(pt(res, 'a').restAmount).toBeCloseTo(6, 2);
     expect(pt(res, 'b').total).toBe(0);
+  });
+});
+
+describe('jeden rachunek, który rośnie: kwota nierozpisana idzie po równo', () => {
+  it('rachunek bez ani jednej pozycji dzieli się po równo', () => {
+    const bill = adv(90, [{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+    const res = calculateAll(bill);
+    expect(pt(res, 'a').total).toBeCloseTo(30, 2);
+    expect(pt(res, 'b').total).toBeCloseTo(30, 2);
+    expect(pt(res, 'c').total).toBeCloseTo(30, 2);
+    expect(res.unallocated).toBeCloseTo(90, 2);
+  });
+
+  it('część rozpisana imiennie, reszta po równo', () => {
+    // 100 na rachunku, 40 wzięte imiennie przez 'a' → 60 nierozpisane, po 30 na osobę.
+    const bill = adv(100, [{ id: 'a', ind: 40 }, { id: 'b' }]);
+    const res = calculateAll(bill);
+    expect(res.unallocated).toBeCloseTo(60, 2);
+    expect(res.perPersonUnallocated).toBeCloseTo(30, 2);
+    expect(pt(res, 'a').total).toBeCloseTo(70, 2);
+    expect(pt(res, 'b').total).toBeCloseTo(30, 2);
+  });
+
+  it('rachunek rozpisany co do grosza nie dokłada nikomu reszty', () => {
+    const bill = adv(100, [{ id: 'a', ind: 60 }, { id: 'b', ind: 40 }]);
+    const res = calculateAll(bill);
+    expect(res.unallocated).toBe(0);
+    expect(pt(res, 'a').total).toBeCloseTo(60, 2);
+    expect(pt(res, 'b').total).toBeCloseTo(40, 2);
+  });
+
+  it('pozycje ponad kwotę rachunku nie tworzą ujemnej reszty (to błąd wpisu, nie rabat)', () => {
+    const bill = adv(50, [{ id: 'a', ind: 40 }, { id: 'b', ind: 30 }]);
+    const res = calculateAll(bill);
+    expect(res.unallocated).toBe(0);
+    expect(res.control.status).toBe('over');
+    expect(pt(res, 'a').total).toBeCloseTo(40, 2);
+    expect(pt(res, 'b').total).toBeCloseTo(30, 2);
+  });
+
+  it('bez kwoty rachunku nie ma czego dzielić', () => {
+    const bill = adv(0, [{ id: 'a' }, { id: 'b' }]);
+    const res = calculateAll(bill);
+    expect(res.unallocated).toBe(0);
+    expect(pt(res, 'a').total).toBe(0);
+    expect(res.control.status).toBe('empty');
+  });
+
+  it('„nie dotyczy" nie dostaje udziału w kwocie nierozpisanej', () => {
+    const bill = adv(60, [{ id: 'a' }, { id: 'b' }, { id: 'c', status: 'not_applicable' }]);
+    const res = calculateAll(bill);
+    expect(pt(res, 'a').total).toBeCloseTo(30, 2);
+    expect(pt(res, 'b').total).toBeCloseTo(30, 2);
+    expect(pt(res, 'c').total).toBe(0);
   });
 });
 

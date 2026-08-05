@@ -6,26 +6,38 @@
     <title>BillSplitter - Rozliczaj się ze znajomymi</title>
     <link rel="icon" href="/icons/icon-16x16.png">
     <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#2563eb">
+    <!-- Kolor paska systemowego idzie za podłożem aplikacji, żeby ekran nie miał szwu. -->
+    <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0C0D11" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="BillSplitter">
     <link rel="apple-touch-icon" href="/icons/icon-180x180.png">
     <!-- Tailwind nie przychodzi już z sieci — jest kompilowany do arkusza w buildzie
          (src/tailwind.css → import w main.js). Dzięki temu produkcja nie zależy od cudzego
-         serwera, a przeglądarka nie generuje styli w locie przy każdym wejściu. -->
+         serwera, a przeglądarka nie generuje styli w locie przy każdym wejściu.
+         Tą samą drogą idą teraz kroje pisma (Bricolage Grotesque + Archivo z pakietów npm):
+         aplikacja pracuje przy słabym zasięgu w lokalu, więc font z cudzego serwera
+         byłby realnym ryzykiem, a nie detalem. -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .modal { display: none; }
+        /* JEDNA SKALA WARSTW. Wcześniej każde okno miało własne z-20/z-30/z-40 wpisane
+           w markup, więc pływająca nawigacja (z-40) zasłaniała przycisk „Stwórz rachunek"
+           w oknie z niższą warstwą — akcji nie dało się kliknąć. Warstwę ustala teraz
+           arkusz w jednym miejscu, a nawigacja i tak schodzi z drogi (patrz `.deck`). */
+        .modal { display: none; z-index: 50; }
         .modal.active { display: flex; }
-        .control-sum-ok { color: #22c55e; }
-        .control-sum-bad { color: #ef4444; }
+        /* Okno kasowania zdjęcia otwiera się NAD podglądem zdjęcia. */
+        .modal-top { z-index: 60; }
+        /* Suma kontrolna to jedyne miejsce, w którym aplikacja mówi „temu rachunkowi
+           można ufać": zgodność zieleń, rozbieżność czerwień — pieniądze, których
+           nikt nie przypisał, to ten sam rodzaj problemu co dług. */
+        .control-sum-ok { color: rgb(var(--due)); }
+        .control-sum-bad { color: rgb(var(--owe)); }
         .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
+            border: 4px solid rgb(var(--ink) / 0.12);
+            border-top: 4px solid rgb(var(--ink) / 0.55);
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -35,14 +47,17 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        /* Wybór statusu to pełnoprawny cel dotykowy, nie etykieta: 44 px wysokości,
+           bo przy 24 px trafienie kciukiem w ruchu było kwestią szczęścia. */
         .status-select-wrapper {
             position: relative;
             display: inline-flex;
-            align-items: center;
-            border-radius: 0.5rem;
-            padding: 0.25rem 0.5rem;
+            align-items: stretch;
+            min-height: 2.75rem;
+            border-radius: 999px;
+            padding: 0.25rem 0.75rem;
         }
-        .status-select, .simple-status-select {
+        .status-select {
             -webkit-appearance: none;
             -moz-appearance: none;
             appearance: none;
@@ -51,6 +66,13 @@
             padding-right: 1.5rem;
             margin: 0;
             width: auto;
+            /* Pole rozciąga się na całą wysokość otoczki, żeby cel dotykowy miał
+               realne 44 px, a nie 24 px wysokości samego tekstu. `align-self` nie
+               wystarcza: pole wyboru ma własną wysokość wewnętrzną i ignoruje
+               rozciąganie, dopóki nie dostanie jej wprost. */
+            align-self: stretch;
+            height: 100%;
+            min-height: 2.25rem;
             font-family: inherit;
             font-size: inherit;
             cursor: pointer;
@@ -65,11 +87,6 @@
             right: 0.5rem;
             pointer-events: none;
         }
-        .bill-type-btn.selected {
-            border-color: #3b82f6;
-            background-color: #eff6ff;
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
-        }
         input[type=number]::-webkit-inner-spin-button,
         input[type=number]::-webkit-outer-spin-button {
             -webkit-appearance: none;
@@ -78,41 +95,36 @@
         input[type=number] {
             -moz-appearance: textfield;
         }
-        .calculator-toggle-btn.active {
-            background-color: #dbeafe;
-            color: #2563eb;
-        }
         #photo-dropzone.drag-over {
-            border-color: #3b82f6;
-            background-color: #eff6ff;
+            background-color: rgb(var(--info) / 0.12);
+            outline: 2px dashed rgb(var(--info));
         }
         .thumbnail-container {
             position: relative;
         }
+        /* Kasownik zdjęcia był widoczny dopiero po najechaniu myszą — na telefonie
+           nie istniał w ogóle. Teraz jest widoczny zawsze; zdjęć jest najwyżej pięć,
+           więc pięć małych znaczków nie zaśmieca ekranu. */
         .delete-photo-btn {
             position: absolute;
             top: -0.5rem;
             right: -0.5rem;
-            background-color: rgba(239, 68, 68, 0.9);
-            color: white;
+            background-color: rgb(var(--surface));
+            color: rgb(var(--owe));
             border-radius: 9999px;
             width: 1.75rem;
             height: 1.75rem;
             display: flex;
             align-items: center;
             justify-content: center;
-            border: 2px solid white;
-            opacity: 0;
-            transition: opacity 0.2s;
+            border: 1px solid rgb(var(--owe) / 0.4);
             cursor: pointer;
         }
-        .thumbnail-container:hover .delete-photo-btn {
-            opacity: 1;
-        }
         .delete-photo-btn:disabled {
-            background-color: #9ca3af;
+            color: rgb(var(--ink-3));
+            border-color: rgb(var(--ink) / 0.2);
             cursor: not-allowed;
-            opacity: 0.5 !important;
+            opacity: 0.5;
         }
         /* Reguła była przypięta do jednego id (#summary-arrow-icon), więc strzałka sekcji
            „Rozliczenia" dostawała klasę `rotated` i nic się nie działo. Uogólnione na klasę. */
@@ -121,399 +133,470 @@
         }
     </style>
 </head>
-<body class="bg-gray-100 text-gray-800">
+<body class="bg-bg text-ink">
+<!--
+THESIS: Rachunek dzieli CAŁA EKIPA NARAZ i to musi być widać. Odrzucamy układ, w którym jedna
+osoba wpisuje za wszystkich, a reszta czeka — i odrzucamy poprzedni świat (banknot, gilosz,
+mikrodruk, przygaszone barwniki), wyrzucony przez właściciela w całości 2026-08-04.
+OWN-WORLD: białe podłoże, duże miękkie karty (24 px), NASYCONY KOLOR NA CAŁYCH BLOKACH zamiast
+akcentów; limonka marki zawsze pod czarnym tekstem i zawsze znaczy „naciśnij to"; Bricolage
+Grotesque na kwotach, Archivo w interfejsie; okrągłe zdjęcia ludzi wszędzie tam, gdzie stoi
+kwota. Role pieniężne (winien/dostajesz/informacja) rozłączne z limonką i z kolorami ludzi.
+STORY: widzisz, ile jesteś winien i komu; odklikujesz swoje pozycje, gdy robi to równocześnie
+cała ekipa; domykasz dług — przypomnij, wpłać, potwierdź.
+FIRST VIEWPORT: nazwa pokoju i twoje zdjęcie u góry, pod tym limonkowy blok bilansu z kwotą
+w wielkiej skali, rząd okrągłych akcji, potem wiersze ludzi ze zdjęciami. Nawigacja pływa
+nad dolną krawędzią, w zasięgu kciuka.
+FORM: świat przypięty referencjami właściciela (Referencje/), więc bez losowania kierunku —
+poprzeczką jest poziom rzemiosła z tych ekranów. Znak własny wybrany 2026-08-04: ŻYWY PARAGON —
+zdjęcia ekipy lądują na liniach paragonu w czasie rzeczywistym, gdy ktoś odklika swoje.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review,
+the verdict, and DESIGN.md
+-->
 
-    <div id="offline-banner" class="hidden fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white text-sm text-center py-1.5 px-4 shadow">
-        <i class="fas fa-triangle-exclamation mr-2"></i>Jesteś offline — zmiany zapiszą się lokalnie i zsynchronizują po odzyskaniu połączenia.
+    <!-- Pasek offline PRZESUWA treść zamiast ją zasłaniać. Wcześniej wisiał nad
+         nagłówkiem pokoju i zakrywał nazwę grupy dokładnie wtedy, gdy sieć wysiadała
+         — czyli w chwili, gdy pewność „jestem we właściwym pokoju" jest najbardziej
+         potrzebna. `body:has()` odsuwa całą treść dokładnie o wysokość paska. -->
+    <div id="offline-banner" class="hidden fixed top-0 left-0 right-0 z-50 bg-info text-surface text-sm font-semibold text-center py-2 px-4">
+        <i class="fas fa-triangle-exclamation mr-2"></i>Jesteś offline. Zmiany zapiszą się lokalnie i zsynchronizują po odzyskaniu połączenia.
     </div>
 
-    <div id="app-container" class="max-w-4xl mx-auto p-4 md:p-8">
+    <div id="app-container" class="max-w-4xl mx-auto p-4 md:p-8 pb-36">
 
-        <div id="loading-screen" class="fixed inset-0 bg-white flex flex-col items-center justify-center z-50">
+        <div id="loading-screen" class="fixed inset-0 bg-bg flex flex-col items-center justify-center z-50">
             <div class="loader"></div>
-            <p class="mt-4 text-gray-600">Ładowanie...</p>
+            <p class="mt-4 font-bold text-ink-3">Wczytywanie</p>
         </div>
 
-        <div id="start-screen" class="hidden bg-white p-8 rounded-2xl shadow-lg text-center">
-            <h1 class="text-4xl font-bold text-gray-800 mb-2">BillSplitter</h1>
-            <p class="text-gray-600 mb-8">Twórz grupy i rozliczaj rachunki ze znajomymi.</p>
+        <!-- EKRAN STARTOWY.
+             Zakładanie grupy szło wcześniej przez jedno pole „imiona po przecinku" — nikt
+             tak nie pisze na telefonie, a literówka w środku listy kosztowała przepisanie
+             całości. Teraz osoby dodaje się POJEDYNCZO i widać je jako żetony z awatarem:
+             każdy da się skasować osobno, kolejność jest widoczna, a klawiatura telefonu
+             podpowiada imiona. Pierwszy żeton to Ty — grupa zawsze ma autora. -->
+        <div id="start-screen" class="hidden">
             <div class="max-w-md mx-auto">
+                <div class="mb-8">
+                    <h1 class="font-display text-5xl font-extrabold tracking-tight leading-none mb-3">Podziel rachunek</h1>
+                    <p class="text-ink-2 text-lg">Zrób zdjęcie paragonu, a ekipa odklika swoje pozycje. Bez kont i bez logowania.</p>
+                </div>
+
                 <div id="my-rooms"></div>
-                <label for="group-name" class="block text-left font-medium text-gray-700 mb-2">Nazwa grupy (np. "Ekipa z pracy"):</label>
-                <input type="text" id="group-name" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="np. Znajomi z uczelni">
 
-                <label for="member-names" class="block text-left font-medium text-gray-700 mt-4 mb-2">Imiona członków grupy (oddzielone przecinkami):</label>
-                <textarea id="member-names" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" rows="3" placeholder="Ania, Bartek, Kasia, Zosia..."></textarea>
+                <div class="card p-5">
+                    <label for="group-name" class="block font-bold mb-2">Nazwa grupy</label>
+                    <input type="text" id="group-name" class="field" placeholder="np. Wyjazd w Bieszczady" autocomplete="off">
 
-                <button id="create-group-btn" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors duration-300 mt-6 text-lg disabled:bg-gray-400 disabled:cursor-wait" disabled>
-                    <i class="fas fa-spinner fa-spin mr-2"></i>Łączenie z usługą...
-                </button>
+                    <p class="font-bold mt-6 mb-2">Kto jest w grupie</p>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="member-name-input" class="field flex-grow" placeholder="Imię" autocomplete="off" enterkeyhint="done">
+                        <button id="add-member-btn" class="btn btn-dark flex-shrink-0" title="Dodaj osobę do grupy">
+                            <i class="fas fa-plus"></i>
+                        </button>
+                    </div>
+                    <p id="member-hint" class="text-sm text-ink-3 mt-2">Zacznij od siebie. Resztę dopiszesz teraz albo później.</p>
+                    <div id="member-chips" class="flex flex-wrap gap-2 mt-3"></div>
+
+                    <!-- Pole ukryte trzyma listę imion dla logiki zakładania grupy. Zostaje,
+                         bo to ono jest źródłem prawdy przy zapisie, a żetony są jego widokiem. -->
+                    <input type="hidden" id="member-names" value="">
+
+                    <button id="create-group-btn" class="btn btn-primary w-full mt-5" disabled>
+                        Łączenie z usługą...
+                    </button>
+                </div>
             </div>
         </div>
 
         <div id="group-dashboard-screen" class="hidden">
-             <div class="bg-white p-6 md:p-8 rounded-2xl shadow-lg">
-                <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-                    <div>
-                        <h2 id="dashboard-group-name" class="text-3xl font-bold text-gray-800"></h2>
-                        <p class="text-gray-500">Udostępnij link, aby zaprosić znajomych do grupy:</p>
-                        <div class="mt-2 flex items-center space-x-2">
-                             <input type="text" id="group-share-link" class="w-full md:w-96 p-2 border border-gray-300 rounded-lg bg-gray-50" readonly>
-                             <button id="copy-group-link-btn" class="bg-gray-200 px-4 py-2 rounded-lg hover:bg-gray-300 transition"><i class="fas fa-copy"></i></button>
-                        </div>
-                    </div>
-                     <div class="mt-4 md:mt-0 flex items-center gap-4 md:justify-end">
-                        <button id="nudges-bell" class="hidden relative w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center" title="Przypomnienia">
-                            <i class="fas fa-bell text-gray-600"></i>
-                            <span id="nudges-badge" class="hidden absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">0</span>
-                        </button>
-                        <div class="text-left md:text-right">
-                            <p class="font-semibold text-gray-700">Jesteś jako:</p>
-                            <button id="open-profile-btn" class="mt-1 inline-flex items-center gap-2 text-lg text-blue-600 font-semibold hover:underline">
-                                <span id="dashboard-user-name-display"></span><i class="fas fa-user-gear"></i><span class="text-sm">Profil</span>
-                            </button>
-                        </div>
+
+            <!-- NAGŁÓWEK POKOJU — nazwa i twoje zdjęcie. Kod pokoju stoi tuż pod nazwą,
+                 bo to on ratuje wejście na iPhonie, gdzie skrót z ekranu początkowego
+                 gubi adres grupy. -->
+            <header class="flex items-center justify-between gap-3 mb-6">
+                <div class="min-w-0">
+                    <h2 id="dashboard-group-name" class="font-display text-3xl md:text-4xl font-extrabold tracking-tight leading-none truncate"></h2>
+                    <button id="room-serial-btn" class="tap mt-1 flex items-center gap-1.5 text-ink-3 text-sm min-h-tap" title="Kod pokoju: stuknij, aby skopiować">
+                        <i class="fas fa-hashtag text-xs"></i>
+                        <span id="room-serial" class="serial text-ink-2"></span>
+                    </button>
+                </div>
+                <div class="flex items-center gap-1 flex-shrink-0">
+                    <!-- Pomoc mieszka w nagłówku ekranu, nie w pływającym kole. Koło
+                         wchodziło na treść przy każdym przewinięciu: raz na kafelek
+                         zdjęcia, raz na ołówek przy pozycji paragonu. -->
+                    <button id="help-fab" class="help-btn tap hidden w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Pomoc: jak to działa?" aria-label="Pomoc">
+                        <i class="fas fa-question"></i>
+                    </button>
+                    <button id="theme-toggle-btn" class="tap w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Motyw jasny albo ciemny">
+                        <i id="theme-toggle-icon" class="fas fa-moon"></i>
+                    </button>
+                    <button id="nudges-bell" class="tap hidden relative w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Przypomnienia">
+                        <i class="fas fa-bell"></i>
+                        <span id="nudges-badge" class="hidden absolute top-0 right-0 min-w-[1.25rem] h-5 px-1 bg-owe text-white text-[0.6875rem] font-bold rounded-full flex items-center justify-center">0</span>
+                    </button>
+                    <button id="open-profile-btn" class="tap w-12 h-12 rounded-full flex items-center justify-center" title="Twój profil">
+                        <span id="dashboard-user-mark" class="w-11 h-11 block"></span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- BILANS — limonkowy blok. Jedna liczba, po którą ludzie tu przychodzą,
+                 w skali, której nie da się przeoczyć w hałasie i przy złym świetle. -->
+            <section id="balance-panel" class="block-brand relative overflow-hidden p-6 mb-3">
+                <p class="text-sm font-bold opacity-60">Twój bilans</p>
+                <div id="balance-amounts" class="mt-2 space-y-1"></div>
+                <p id="balance-caption" class="mt-2 text-sm font-semibold opacity-70"></p>
+                <div id="balance-actions" class="mt-5 flex flex-wrap gap-2"></div>
+                <span id="dashboard-user-name-display" class="sr-only"></span>
+            </section>
+
+            <!-- KTO KOMU ILE — wiersze ludzi ze zdjęciami. Domyślnie otwarte:
+                 to jest powód, dla którego ktoś otwiera aplikację. -->
+            <section id="settlements-section" class="mb-3">
+                <!-- Nagłówek i przełącznik trybu STOJĄ W DWÓCH RZĘDACH na telefonie.
+                     Obok siebie „Kto komu ile" i „Najmniej przelewów" nie mieszczą się
+                     poniżej 400 px i zaczynają się zawijać jedno na drugie. -->
+                <div class="mb-3 mt-6">
+                    <button id="toggle-settlements-btn" class="tap flex items-center gap-2 min-h-tap">
+                        <h3 class="font-display text-xl font-extrabold tracking-tight">Kto komu ile</h3>
+                        <i id="settlements-arrow-icon" class="fas fa-chevron-down text-ink-3 text-xs transition-transform rotated"></i>
+                    </button>
+                    <div class="seg mt-1">
+                        <button data-mode="net" class="settle-mode-btn seg-btn" aria-pressed="true">Kto komu</button>
+                        <button data-mode="min" class="settle-mode-btn seg-btn" aria-pressed="false">Najmniej przelewów</button>
                     </div>
                 </div>
+                <div id="settlements-content">
+                    <div id="settlements-list" class="space-y-2"></div>
+                </div>
+            </section>
 
-                <div class="border-t pt-6">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-2xl font-semibold">Historia rachunków</h3>
-                        <button id="create-new-bill-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition">
-                            <i class="fas fa-plus mr-2"></i>Nowy rachunek
-                        </button>
-                    </div>
-                    <div id="bill-filters" class="flex flex-wrap gap-2 mb-4">
-                        <button data-filter="all" class="bill-filter-btn px-3 py-1 rounded-full text-sm font-semibold">Wszystkie</button>
-                        <button data-filter="hidden" class="bill-filter-btn px-3 py-1 rounded-full text-sm font-semibold">Ukryte</button>
-                    </div>
-                    <div id="bills-history-list" class="space-y-3">
-                        <p class="text-gray-500">Brak rachunków. Dodaj pierwszy!</p>
-                    </div>
-
-                    <div class="mt-6 text-center">
-                        <button id="install-pwa-btn" class="hidden bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition shadow-lg">
-                            <i class="fas fa-download mr-2"></i> Zainstaluj aplikację na telefonie
-                        </button>
-                        <div id="ios-install-hint" class="hidden max-w-md mx-auto text-sm text-gray-600 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                            <i class="fas fa-mobile-screen-button mr-1 text-blue-600"></i>
-                            Zainstaluj na iPhone: dotknij <b>Udostępnij</b> <i class="fas fa-arrow-up-from-bracket"></i>, a potem <b>„Do ekranu początkowego"</b>.
-                        </div>
+            <!-- RACHUNKI -->
+            <section id="bills-section" class="mb-3">
+                <div class="flex items-center justify-between gap-3 mb-3 mt-6">
+                    <h3 class="font-display text-xl font-extrabold tracking-tight">Rachunki</h3>
+                    <div id="bill-filters" class="seg">
+                        <button data-filter="all" class="bill-filter-btn seg-btn" aria-pressed="true">Wszystkie</button>
+                        <button data-filter="hidden" class="bill-filter-btn seg-btn" aria-pressed="false">Ukryte</button>
                     </div>
                 </div>
+                <div id="bills-history-list" class="space-y-2"></div>
+            </section>
 
-                <div class="border-t pt-6 mt-6">
-                    <div class="flex justify-between items-center cursor-pointer" id="toggle-settlements-btn">
-                        <h3 class="text-2xl font-semibold">Rozliczenia</h3>
-                        <i id="settlements-arrow-icon" class="fas fa-chevron-down text-gray-500 transition-transform rotated"></i>
-                    </div>
-                    <div id="settlements-content" class="mt-4">
-                        <div class="flex flex-wrap gap-2 mb-4">
-                            <button data-mode="net" class="settle-mode-btn px-3 py-1 rounded-full text-sm font-semibold">Kto komu ile</button>
-                            <button data-mode="min" class="settle-mode-btn px-3 py-1 rounded-full text-sm font-semibold">Najmniej przelewów</button>
+            <!-- POKÓJ — rzeczy potrzebne rzadko, ale nie do ukrycia. -->
+            <section class="mb-4">
+                <button id="toggle-summary-btn" class="tap flex items-center gap-2 min-h-tap mt-6">
+                    <h3 class="font-display text-xl font-extrabold tracking-tight">Pokój</h3>
+                    <i id="summary-arrow-icon" class="fas fa-chevron-down text-ink-3 text-xs transition-transform"></i>
+                </button>
+                <div id="summary-content" class="hidden mt-3 space-y-3">
+                    <div class="card p-5">
+                        <p class="text-sm font-bold text-ink-3">Link do pokoju</p>
+                        <div class="mt-2 flex items-center gap-2">
+                            <input type="text" id="group-share-link" class="field flex-grow min-w-0" readonly>
+                            <button id="copy-group-link-btn" class="btn btn-dark flex-shrink-0">Kopiuj</button>
                         </div>
-                        <div id="settlements-list" class="space-y-4"></div>
                     </div>
-                </div>
-
-                <div class="border-t pt-6 mt-6">
-                    <div class="flex justify-between items-center cursor-pointer" id="toggle-summary-btn">
-                        <h3 class="text-2xl font-semibold">Podsumowanie finansowe</h3>
-                        <i id="summary-arrow-icon" class="fas fa-chevron-down text-gray-500 transition-transform"></i>
-                    </div>
-                    <div id="summary-content" class="hidden mt-4 space-y-4 bg-gray-50 p-4 rounded-lg">
-                        
+                    <div class="card p-5 grid grid-cols-2 gap-5">
                         <div>
-                            <p class="font-semibold text-gray-700">Suma Twoich udziałów w rachunkach:</p>
-                            <p id="summary-my-gross-spend" class="text-lg font-bold text-gray-800">--</p>
+                            <p class="text-sm font-bold text-ink-3">Twoje udziały</p>
+                            <p id="summary-my-gross-spend" class="mt-1 font-bold text-lg">--</p>
                         </div>
                         <div>
-                            <p class="font-semibold text-gray-700">Suma wszystkich rachunków w grupie:</p>
-                            <p id="summary-group-gross-spend" class="text-lg font-bold text-gray-800">--</p>
+                            <p class="text-sm font-bold text-ink-3">Cała grupa</p>
+                            <p id="summary-group-gross-spend" class="mt-1 font-bold text-lg">--</p>
                         </div>
-                        <div class="pt-2 border-t">
-                             <p class="font-semibold text-gray-700">Wykorzystane miejsce na zdjęcia:</p>
-                             <p id="storage-usage" class="text-sm font-bold text-gray-800">-- / 5 GB</p>
+                        <div class="col-span-2">
+                            <p class="text-sm font-bold text-ink-3">Miejsce na zdjęcia</p>
+                            <p id="storage-usage" class="mt-1 text-sm text-ink-2">--</p>
                         </div>
-
+                    </div>
+                    <button id="install-pwa-btn" class="btn btn-dark hidden w-full">
+                        Zainstaluj aplikację na telefonie
+                    </button>
+                    <div id="ios-install-hint" class="hidden card p-5 text-sm text-ink-2">
+                        Na iPhonie: dotknij <b class="text-ink">Udostępnij</b>, a potem <b class="text-ink">„Do ekranu początkowego"</b>. Po instalacji wejdź do pokoju kodem <span class="serial text-ink">z góry ekranu</span>, bo skrót otwiera aplikację bez adresu grupy.
                     </div>
                 </div>
+            </section>
 
-            </div>
         </div>
 
+        <!-- PROFIL — tożsamość w tym świecie to znak, kolor i zdjęcie. Numer konta stoi tu,
+             bo to on kończy rozliczenie, gdy ktoś chce oddać pieniądze. -->
         <div id="profile-screen" class="hidden">
-            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-lg">
-                <button id="back-to-dashboard-from-profile-btn" class="text-blue-600 hover:underline mb-4 flex items-center"><i class="fas fa-arrow-left mr-2"></i>Wróć do grupy</button>
-                <h2 class="text-3xl font-bold text-gray-800 mb-6">Twój profil</h2>
+            <header class="flex items-center gap-2 mb-4">
+                <button id="back-to-dashboard-from-profile-btn" class="tap w-11 h-11 -ml-2 rounded-lg flex items-center justify-center text-ink-2 flex-shrink-0" title="Wróć do pokoju">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 class="font-display text-3xl md:text-4xl font-bold">Twój profil</h2>
+            </header>
 
-                <div class="flex items-center gap-4 mb-6">
-                    <div id="profile-avatar-preview"></div>
-                    <div>
-                        <p class="text-sm text-gray-500">Imię (kliknij, aby zmienić)</p>
-                        <p id="dashboard-user-name" class="text-2xl font-semibold text-blue-600 cursor-pointer hover:underline" title="Kliknij, aby zmienić imię"></p>
+            <section class="card p-5 mb-6">
+                <div class="flex items-center gap-4">
+                    <div id="profile-avatar-preview" class="flex-shrink-0"></div>
+                    <div class="min-w-0">
+                        <p class="text-sm font-bold text-ink-3">Imię — stuknij, aby zmienić</p>
+                        <p id="dashboard-user-name" class="font-display text-2xl font-bold cursor-pointer truncate" title="Stuknij, aby zmienić imię"></p>
                         <div class="mt-1 flex items-center gap-3">
-                            <button id="profile-photo-btn" class="text-sm text-blue-600 hover:underline"><i class="fas fa-camera mr-1"></i>Zmień zdjęcie</button>
-                            <button id="profile-photo-remove-btn" class="hidden text-sm text-gray-400 hover:text-red-500"><i class="fas fa-trash mr-1"></i>Usuń</button>
+                            <button id="profile-photo-btn" class="tap min-h-tap text-sm font-semibold text-ink-2">Zmień zdjęcie</button>
+                            <button id="profile-photo-remove-btn" class="tap hidden min-h-tap text-sm font-semibold text-ink-3">Usuń</button>
                             <input type="file" id="profile-photo-input" class="hidden" accept="image/jpeg,image/png,image/webp,image/heic">
                         </div>
                     </div>
                 </div>
 
-                <div class="mb-6">
-                    <p class="font-semibold text-gray-700 mb-2">Kolor profilu</p>
-                    <div id="dashboard-color-picker" class="flex items-center gap-1.5 flex-wrap" title="Twój kolor profilu"></div>
+                <div class="mt-5">
+                    <p class="text-sm font-bold text-ink-3 mb-2">Kolor znaku</p>
+                    <div id="dashboard-color-picker" class="flex items-center gap-1.5 flex-wrap" title="Twój kolor tożsamości"></div>
                 </div>
+            </section>
 
-                <div class="mb-6">
-                    <p class="font-semibold text-gray-700 mb-2">Sposoby płatności</p>
-                    <button id="dashboard-payment-btn" class="w-full md:w-72 text-sm p-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2" title="Widoczne dla znajomych przy Twoich należnościach">
-                        <i class="fas fa-wallet text-gray-400"></i><span id="dashboard-payment-summary">Dodaj sposób płatności</span>
-                    </button>
-                </div>
+            <section class="mb-6">
+                <button id="dashboard-payment-btn" class="card tap w-full min-h-tap p-3 flex items-center justify-between gap-2 text-left" title="Widoczne dla znajomych przy Twoich należnościach">
+                    <span id="dashboard-payment-summary" class="truncate">Dodaj sposób płatności</span>
+                    <i class="fas fa-chevron-right text-ink-3 text-sm flex-shrink-0"></i>
+                </button>
 
-                <div class="mb-6">
-                    <p class="font-semibold text-gray-700 mb-2">Powiadomienia</p>
-                    <button id="push-toggle-btn" class="w-full md:w-72 text-sm p-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center justify-center gap-2" title="Przypomnienia o zaległościach na telefon">
-                        <i class="fas fa-bell text-gray-400"></i><span id="push-toggle-label">Włącz powiadomienia</span>
-                    </button>
-                    <p id="push-toggle-note" class="text-xs text-gray-400 mt-1"></p>
-                </div>
+                <button id="push-toggle-btn" class="card tap w-full min-h-tap p-3 mt-2 flex items-center justify-between gap-2 text-left" title="Przypomnienia o zaległościach na telefon">
+                    <span id="push-toggle-label" class="truncate">Włącz powiadomienia</span>
+                    <i class="fas fa-chevron-right text-ink-3 text-sm flex-shrink-0"></i>
+                </button>
+                <p id="push-toggle-note" class="text-xs text-ink-3 mt-1"></p>
+            </section>
 
-                <div class="border-t pt-6">
-                    <h3 class="text-xl font-semibold mb-3">Ile kto wydał w grupie</h3>
-                    <div id="profile-spending" class="space-y-2"></div>
-                </div>
-            </div>
+            <section class="mb-6">
+                <h3 class="font-display text-2xl font-bold mb-3">Ile kto wydał</h3>
+                <div id="profile-spending" class="space-y-2"></div>
+            </section>
         </div>
 
 
-        <div id="join-screen" class="hidden bg-white p-8 rounded-2xl shadow-lg text-center">
-            <h2 class="text-2xl font-bold mb-4">Dołącz do grupy <span id="join-group-name" class="text-blue-600"></span></h2>
-            <p class="text-gray-600 mb-6">Wybierz swoje imię z listy, aby dołączyć.</p>
-            <div id="name-selection-list" class="space-y-2"></div>
+        <div id="join-screen" class="hidden text-center">
+            <h2 class="font-display text-3xl font-bold mb-2">Dołącz do <span id="join-group-name"></span></h2>
+            <p class="text-ink-2 mb-6">Wybierz swoje imię z listy.</p>
+            <div id="name-selection-list" class="space-y-2 max-w-md mx-auto text-left"></div>
         </div>
 
+        <!-- EKRAN RACHUNKU — to jest miejsce, w którym cała ekipa pracuje RÓWNOCZEŚNIE.
+             Kolejność sekcji idzie za tym, po co ktoś tu wchodzi: najpierw kwota i suma
+             kontrolna (czy rachunek się spina), zaraz potem kafelki pozycji (stukam swoje),
+             a dopiero niżej paragon, koszty wspólne i rozpiska uczestników. -->
         <div id="bill-screen" class="hidden">
-            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-lg">
-                <div class="flex items-center mb-6">
-                    <button id="back-to-dashboard-btn" class="text-gray-500 hover:text-gray-800 mr-4"><i class="fas fa-arrow-left text-2xl"></i></button>
-                    <h2 id="bill-name" class="text-3xl font-bold text-gray-800"></h2>
+
+            <header class="flex items-center gap-2 mb-5">
+                <button id="back-to-dashboard-btn" class="tap w-12 h-12 -ml-2 rounded-full flex items-center justify-center text-ink-2 flex-shrink-0" title="Wróć do pokoju">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+                <h2 id="bill-name" class="font-display text-3xl md:text-4xl font-extrabold tracking-tight leading-none truncate min-w-0 flex-grow"></h2>
+                <button class="help-btn tap w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2 flex-shrink-0" title="Pomoc: jak to działa?" aria-label="Pomoc">
+                    <i class="fas fa-question"></i>
+                </button>
+            </header>
+
+            <div id="payer-confirmation-banner-advanced" class="mb-3"></div>
+
+            <!-- KWOTA I SUMA KONTROLNA — para, która mówi, czy rachunek się spina.
+                 Rozbieżność („ktoś nie wpisał pozycji") ma być widoczna bez szukania,
+                 więc suma kontrolna stoi tuż pod kwotą, a nie na dole ekranu. -->
+            <section class="card p-5 mb-3">
+                <label for="total-bill-amount" class="block font-bold mb-2">Pełna kwota rachunku</label>
+                <div class="flex items-center gap-2">
+                    <input type="number" inputmode="decimal" id="total-bill-amount" class="field flex-grow min-w-0 text-2xl font-bold" placeholder="0,00">
+                    <select id="currency-select" class="field w-auto flex-shrink-0 font-bold">
+                        <option value="PLN">PLN</option>
+                        <option value="EUR">EUR</option>
+                        <option value="USD">USD</option>
+                    </select>
                 </div>
 
-                <div id="payer-confirmation-banner-advanced" class="mb-4"></div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-gray-50 rounded-xl border border-gray-200 mb-6">
-                    <div>
-                        <label for="total-bill-amount" class="block text-sm font-medium text-gray-700">Pełna kwota rachunku</label>
-                        <div class="flex items-center">
-                            <input type="number" inputmode="decimal" id="total-bill-amount" class="mt-1 w-full text-2xl font-bold p-2 border-b-2 border-gray-300 focus:border-blue-500 outline-none bg-transparent" placeholder="0.00">
-                            <select id="currency-select" class="ml-2 mt-1 p-2 border border-gray-300 rounded-lg bg-white font-semibold">
-                                <option value="PLN">PLN</option>
-                                <option value="EUR">EUR</option>
-                                <option value="USD">USD</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="text-left md:text-right">
-                        <p class="block text-sm font-medium text-gray-700">Suma kontrolna</p>
-                        <p id="control-sum" class="mt-1 text-2xl font-bold">0.00 zł</p>
-                        <p id="pln-conversion-display" class="text-sm text-gray-500 h-5"></p>
-                        <p id="control-status" class="text-sm font-semibold h-5"></p>
-                    </div>
-                    <div>
-                        <label for="payer-select" class="block text-sm font-medium text-gray-700">Kto zapłacił rachunek?</label>
-                        <select id="payer-select" class="mt-1 w-full p-2 border border-gray-300 rounded-lg bg-white"></select>
-                    </div>
+                <!-- Suma pozycji i jej stan STOJĄ W JEDNEJ LINII, a wyjaśnienie pod spodem.
+                     Wcześniej wszystko leciało do jednego rzędu z `flex-wrap`, więc kwota
+                     spadała do osobnego wiersza i para „etykieta – wartość" się rozjeżdżała. -->
+                <div class="mt-4 flex items-baseline justify-between gap-3">
+                    <span class="text-sm font-bold text-ink-3 flex-shrink-0">Suma pozycji</span>
+                    <span id="control-sum" class="font-bold text-lg text-right">0,00 PLN</span>
                 </div>
+                <p id="control-status" class="text-sm text-ink-2 mt-1"></p>
+                <p id="pln-conversion-display" class="text-sm text-ink-3 mt-1"></p>
 
-                <div id="receipt-photos-section" class="mb-6">
-                    <h3 class="text-lg font-semibold text-gray-700 mb-3">Zdjęcia paragonów</h3>
-                    <div class="flex items-center gap-4">
-                        <div id="receipt-thumbnails-container" class="flex gap-4 flex-wrap"></div>
-                        <div id="photo-dropzone" class="w-24 h-24 p-2 border-2 border-dashed border-gray-400 rounded-lg flex flex-col items-center justify-center text-center text-gray-500 cursor-pointer hover:bg-gray-100 hover:border-blue-500 transition-all">
-                            <div id="dropzone-idle">
-                                <i class="fas fa-camera text-2xl mb-1"></i>
-                                <p class="text-xs leading-tight">Dodaj lub upuść zdjęcia</p>
-                            </div>
-                            <div id="dropzone-loading" class="hidden">
-                                <div class="loader !w-8 !h-8"></div>
-                            </div>
-                            <input type="file" id="photo-file-input" class="hidden" multiple accept="image/jpeg, image/png, image/webp, image/heic">
-                        </div>
-                    </div>
-                    <div class="mt-3 flex items-center gap-3 flex-wrap">
-                        <button id="parse-receipt-btn" class="hidden bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-purple-700 transition disabled:bg-gray-400 disabled:cursor-wait">
-                            <i class="fas fa-wand-magic-sparkles mr-2"></i><span id="parse-receipt-label">Odczytaj paragon</span>
-                        </button>
-                        <span id="parse-receipt-note" class="text-xs text-gray-500"></span>
-                    </div>
-                </div>
+                <label for="payer-select" class="block font-bold mt-5 mb-2">Kto wyłożył pieniądze</label>
+                <select id="payer-select" class="field"></select>
+            </section>
 
-                <div id="my-participant-card" class="mb-6"></div>
-
-                <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4 mb-6">
-                    <button id="add-shared-cost-btn" class="flex-1 bg-yellow-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-yellow-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed"><i class="fas fa-receipt mr-2"></i>Dodaj pozycję</button>
-                    <button id="add-global-cost-btn" class="flex-1 bg-orange-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-orange-600 transition disabled:bg-gray-400 disabled:cursor-not-allowed"><i class="fas fa-globe-americas mr-2"></i>Dodaj koszt ogólny</button>
-                </div>
-
-                <div id="global-costs-list" class="space-y-2 mb-6"></div>
+            <!-- POZYCJE — bohater tego ekranu i znak całej aplikacji.
+                 Stuknięcie w linię dopisuje mnie; twarze ekipy lądują na liniach na żywo. -->
+            <section class="mb-3 mt-6">
                 <div id="items-section-header"></div>
-                <div id="shared-costs-list" class="mb-6"></div>
-                <div class="flex justify-end border-t pt-4">
-                    <button id="edit-members-btn-advanced" class="text-sm text-blue-600 hover:underline"><i class="fas fa-user-plus mr-1"></i>Edytuj uczestników</button>
+                <div id="shared-costs-list" class="mb-3"></div>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <button id="add-shared-cost-btn" class="btn btn-dark flex-1">Dodaj pozycję</button>
+                    <button id="add-global-cost-btn" class="btn btn-quiet flex-1">Dodaj koszt wspólny</button>
                 </div>
-                <div id="participants-list" class="space-y-4 pt-2"></div>
-                
-                <div class="text-center mt-8 pt-4 border-t border-gray-200">
-                    <button id="delete-bill-btn-advanced" class="text-red-500 hover:text-red-700 hover:underline text-sm font-semibold transition">
-                        <i class="fas fa-trash-alt mr-1"></i>Usuń rachunek
-                    </button>
-                </div>
-            </div>
-        </div>
+            </section>
 
-        <div id="simple-bill-screen" class="hidden">
-            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-lg">
-                <div class="flex items-center mb-6">
-                    <button id="back-to-dashboard-from-simple-btn" class="text-gray-500 hover:text-gray-800 mr-4"><i class="fas fa-arrow-left text-2xl"></i></button>
-                    <h2 id="simple-bill-name" class="text-3xl font-bold text-gray-800"></h2>
-                </div>
-
-                <div id="payer-confirmation-banner-simple" class="mb-4"></div>
-
-                <div class="p-6 bg-gray-50 rounded-xl border border-gray-200 mb-6">
-                    <label for="simple-bill-total-amount" class="block text-sm font-medium text-gray-700">Pełna kwota do podziału</label>
-                    <div class="flex items-center">
-                        <input type="number" inputmode="decimal" id="simple-bill-total-amount" class="mt-1 w-full text-2xl font-bold p-2 border-b-2 border-gray-300 focus:border-blue-500 outline-none bg-transparent" placeholder="0.00">
-                        <select id="simple-bill-currency-select" class="ml-2 mt-1 p-2 border border-gray-300 rounded-lg bg-white font-semibold">
-                            <option value="PLN">PLN</option>
-                            <option value="EUR">EUR</option>
-                            <option value="USD">USD</option>
-                        </select>
-                    </div>
-                     <div class="mt-4">
-                        <label for="simple-bill-payer-select" class="block text-sm font-medium text-gray-700">Kto zapłacił rachunek?</label>
-                        <select id="simple-bill-payer-select" class="mt-1 w-full p-2 border border-gray-300 rounded-lg bg-white"></select>
-                    </div>
-                </div>
-
-                <div class="border-t pt-6">
-                     <div class="mb-4 flex justify-between items-start gap-2">
-                        <div>
-                            <h3 class="text-2xl font-semibold">Uczestnicy rachunku</h3>
-                            <p class="text-gray-600">Rachunek dotyczy <span id="simple-bill-participant-count" class="font-bold">wszystkich</span> osób. Każdy płaci <span id="simple-bill-amount-per-person" class="font-bold">0.00 PLN</span><span id="simple-pln-conversion-display" class="ml-2 text-sm text-gray-500"></span>.</p>
+            <!-- PARAGON — źródło pozycji. Odczyt modelem stoi tuż przy zdjęciach, bo to
+                 jeden ruch: zrób zdjęcie, odczytaj, zaakceptuj. -->
+            <section id="receipt-photos-section" class="mb-3 mt-6">
+                <h3 class="font-display text-xl font-extrabold tracking-tight mb-3">Paragon</h3>
+                <div class="flex items-center gap-3 flex-wrap">
+                    <div id="receipt-thumbnails-container" class="flex gap-3 flex-wrap"></div>
+                    <div id="photo-dropzone" class="tap w-24 h-24 p-2 bg-surface-2 rounded-block flex flex-col items-center justify-center text-center text-ink-2 cursor-pointer">
+                        <div id="dropzone-idle">
+                            <i class="fas fa-camera text-2xl mb-1"></i>
+                            <p class="text-xs font-semibold leading-tight">Dodaj zdjęcie</p>
                         </div>
-                        <button id="edit-members-btn-simple" class="text-sm text-blue-600 hover:underline whitespace-nowrap flex-shrink-0"><i class="fas fa-user-plus mr-1"></i>Edytuj</button>
-                    </div>
-                    <div id="simple-bill-participants-list" class="space-y-2">
+                        <div id="dropzone-loading" class="hidden">
+                            <div class="loader !w-8 !h-8"></div>
+                        </div>
+                        <input type="file" id="photo-file-input" class="hidden" multiple accept="image/jpeg, image/png, image/webp, image/heic">
                     </div>
                 </div>
-
-                <div class="text-center mt-8 pt-4 border-t border-gray-200">
-                    <button id="delete-bill-btn-simple" class="text-red-500 hover:text-red-700 hover:underline text-sm font-semibold transition">
-                        <i class="fas fa-trash-alt mr-1"></i>Usuń rachunek
+                <div class="mt-3 flex items-center gap-3 flex-wrap">
+                    <button id="parse-receipt-btn" class="btn btn-primary hidden">
+                        <span id="parse-receipt-label">Odczytaj paragon</span>
                     </button>
+                    <span id="parse-receipt-note" class="text-sm text-ink-3"></span>
                 </div>
-            </div>
-        </div>
+            </section>
 
-    </div>
+            <div id="global-costs-list" class="space-y-2 mb-3"></div>
 
-    <div id="new-bill-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-20">
-        <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-lg">
-            <h3 class="text-2xl font-bold mb-6">Stwórz nowy rachunek</h3>
+            <!-- TWÓJ UDZIAŁ — własna kwota stoi osobno od reszty ekipy, bo tylko ją edytujesz. -->
+            <div id="my-participant-card" class="mb-3 mt-6"></div>
 
-            <label for="new-bill-name" class="font-medium text-gray-700">Nazwa rachunku</label>
-            <input type="text" id="new-bill-name" class="w-full mt-1 mb-4 p-2 border border-gray-300 rounded-lg" placeholder="np. Lunch w piątek">
+            <section class="mb-3 mt-6">
+                <div class="flex items-center justify-between gap-3 mb-3">
+                    <h3 class="font-display text-xl font-extrabold tracking-tight">Uczestnicy</h3>
+                    <button id="edit-members-btn-advanced" class="btn btn-quiet flex-shrink-0">Edytuj skład</button>
+                </div>
+                <div id="participants-list" class="space-y-2"></div>
+            </section>
 
-            <div class="mb-4">
-                <label class="font-medium text-gray-700">Rachunek dla:</label>
-                <button id="edit-participants-btn-modal" class="ml-2 text-blue-600 font-semibold hover:underline">wszystkich</button>
-            </div>
-            <div id="participants-checklist-modal" class="hidden grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto border p-4 rounded-lg mb-4 bg-gray-50"></div>
-
-            <p class="font-medium text-gray-700 mb-2">Wybierz typ rachunku:</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-                <button data-bill-type="simple" class="bill-type-btn p-4 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition text-left">
-                    <p class="font-bold text-lg">Rachunek prosty</p>
-                    <p class="text-sm text-gray-600">Dzieli całą kwotę po równo każdemu.</p>
-                </button>
-                <button data-bill-type="advanced" class="bill-type-btn p-4 border-2 border-gray-300 rounded-lg hover:bg-gray-50 transition text-left">
-                    <p class="font-bold text-lg">Rachunek zaawansowany</p>
-                    <p class="text-sm text-gray-600">Np. rachunek w restauracji, z różnymi pozycjami.</p>
-                </button>
-            </div>
-
-            <div class="flex justify-between items-center">
-                <button id="cancel-new-bill" class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">Anuluj</button>
-                <button id="confirm-create-bill-btn" class="px-8 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>
-                    Stwórz
+            <div class="text-center mb-4 mt-8">
+                <button id="delete-bill-btn-advanced" class="tap min-h-tap px-4 rounded-full text-sm font-bold text-ink-3">
+                    Usuń rachunek
                 </button>
             </div>
         </div>
+
+
     </div>
 
-    <button id="help-fab" class="hidden fixed bottom-5 left-5 w-11 h-11 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 z-30 flex items-center justify-center" title="Pomoc – jak to działa?">
-        <i class="fas fa-question text-lg"></i>
-    </button>
+    <!-- DOLNA NAWIGACJA — kciuk pracuje w dolnej trzeciej ekranu, a cała aplikacja żyje
+         na telefonie trzymanym jedną ręką. W V1 każda akcja wymagała sięgnięcia na górę.
+         Środek należy do czynności, dla której ludzie tu wracają: nowy rachunek. -->
+    <nav id="deck-nav" class="deck hidden" aria-label="Nawigacja pokoju">
+        <button id="nav-room" class="deck-btn tap" aria-current="page" title="Bilans">
+            <i class="fas fa-wallet"></i><span class="deck-btn-label">Bilans</span>
+        </button>
+        <button id="nav-settle" class="deck-btn tap" title="Kto komu ile">
+            <i class="fas fa-right-left"></i><span class="deck-btn-label">Kto komu</span>
+        </button>
+        <button id="create-new-bill-btn" class="deck-add tap" title="Nowy rachunek">
+            <i class="fas fa-plus"></i>
+        </button>
+        <button id="nav-bills" class="deck-btn tap" title="Rachunki">
+            <i class="fas fa-receipt"></i><span class="deck-btn-label">Rachunki</span>
+        </button>
+        <button id="nav-me" class="deck-btn tap" title="Twój profil">
+            <i class="fas fa-user"></i><span class="deck-btn-label">Ty</span>
+        </button>
+    </nav>
 
-    <div id="help-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-40">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col" style="max-height:85vh">
-            <div class="flex items-center justify-between p-5 border-b">
-                <h3 class="text-xl font-bold flex items-center"><i class="fas fa-info-circle text-blue-500 mr-2"></i><span id="help-modal-title">Pomoc</span></h3>
-                <button id="close-help-modal" class="text-gray-400 hover:text-gray-700 text-3xl leading-none" title="Zamknij">&times;</button>
+    <div id="new-bill-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-lg">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-2xl font-bold mb-4">Nowy rachunek</h3>
+
+            <label for="new-bill-name" class="block text-sm font-bold text-ink-3">Nazwa rachunku</label>
+            <input type="text" id="new-bill-name" class="field min-h-tap w-full mt-1.5 mb-4 p-2" placeholder="np. Lunch w piątek">
+
+            <div class="mb-3 flex items-center gap-2">
+                <span class="text-sm font-bold text-ink-3">Rachunek dla</span>
+                <button id="edit-participants-btn-modal" class="tap min-h-tap px-2 rounded-lg font-semibold text-ink">wszystkich</button>
             </div>
-            <div id="help-modal-body" class="p-5 overflow-y-auto text-gray-700 text-sm space-y-3"></div>
+            <div id="participants-checklist-modal" class="hidden grid grid-cols-2 sm:grid-cols-3 gap-1 max-h-40 overflow-y-auto p-3 rounded-lg mb-4 bg-surface-2"></div>
+
+            <!-- Wybór „prosty / zaawansowany" zniknął z tego okna świadomie: wymuszał
+                 decyzję o kształcie rachunku, ZANIM ktokolwiek zobaczył paragon. Teraz jest
+                 jeden rachunek, który rośnie — zaczyna się od kwoty, a pozycje i koszty
+                 własne dopisuje się wtedy, gdy są potrzebne. Kwota nierozpisana dzieli się
+                 po równo, więc rachunek jest kompletny na każdym etapie. -->
+            <p class="block-quiet p-4 text-sm text-ink-2 mb-6">
+                Zacznij od samej kwoty. Pozycje z paragonu i koszty własne dopiszesz później —
+                to, czego nikt nie weźmie imiennie, podzieli się po równo.
+            </p>
+
+            <div class="flex justify-end gap-2">
+                <button id="cancel-new-bill" class="btn btn-quiet">Anuluj</button>
+                <button id="confirm-create-bill-btn" class="btn btn-primary" disabled>
+                    Stwórz rachunek
+                </button>
+            </div>
         </div>
     </div>
 
-    <div id="bill-members-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-40">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col" style="max-height:85vh">
-            <div class="flex items-center justify-between p-5 border-b">
-                <h3 class="text-xl font-bold flex items-center"><i class="fas fa-users text-blue-500 mr-2"></i>Uczestnicy rachunku</h3>
-                <button id="close-bill-members-modal" class="text-gray-400 hover:text-gray-700 text-3xl leading-none" title="Zamknij">&times;</button>
+
+    <div id="help-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-lg flex flex-col" style="max-height:85vh">
+            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
+                <h3 class="font-display text-xl font-bold"><span id="help-modal-title">Pomoc</span></h3>
+                <button id="close-help-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
+            </div>
+            <div id="help-modal-body" class="p-5 overflow-y-auto text-ink-2 text-sm space-y-3"></div>
+        </div>
+    </div>
+
+    <div id="bill-members-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-md flex flex-col" style="max-height:85vh">
+            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
+                <h3 class="font-display text-xl font-bold">Skład rachunku</h3>
+                <button id="close-bill-members-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
             </div>
             <div class="p-5 overflow-y-auto">
-                <p class="text-sm text-gray-500 mb-4">Zaznacz, kto bierze udział w tym rachunku. Płatnika nie można usunąć.</p>
+                <p class="text-sm text-ink-3 mb-4">Zaznacz, kto bierze udział w tym rachunku. Płatnika nie można usunąć.</p>
                 <div id="bill-members-list" class="space-y-1"></div>
             </div>
         </div>
     </div>
 
-    <div id="settle-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-40">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col" style="max-height:85vh">
-            <div class="flex items-center justify-between p-5 border-b">
-                <h3 class="text-xl font-bold flex items-center"><i class="fas fa-hand-holding-usd text-green-600 mr-2"></i>Ureguluj</h3>
-                <button id="close-settle-modal" class="text-gray-400 hover:text-gray-700 text-3xl leading-none" title="Zamknij">&times;</button>
+    <!-- URUGULUJ — moment, w którym pieniądze wracają. Kwota stoi tu nominałem,
+         bo to ona jest przepisywana do aplikacji bankowej. -->
+    <div id="settle-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-md flex flex-col" style="max-height:85vh">
+            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
+                <h3 class="font-display text-xl font-bold">Ureguluj</h3>
+                <button id="close-settle-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
             </div>
             <div class="p-5 overflow-y-auto">
-                <p class="text-gray-700 mb-2"><span id="settle-name-label">Wpłata do</span> <b id="settle-name">…</b>:</p>
-                <div class="flex items-center gap-2 mb-1">
-                    <input id="settle-amount-input" type="text" inputmode="decimal" class="w-32 text-2xl font-bold text-gray-900 p-1 border-b-2 border-gray-300 focus:border-blue-500 outline-none">
-                    <span id="settle-currency" class="text-lg font-semibold text-gray-500">PLN</span>
-                    <button id="settle-copy-amount" class="copy-account-btn text-sm text-blue-600 hover:underline ml-auto" title="Kopiuj kwotę"><i class="fas fa-copy mr-1"></i>kopiuj</button>
+                <p class="text-sm font-bold text-ink-3 mb-1.5"><span id="settle-name-label">Wpłata do</span> <b id="settle-name" class="text-ink">…</b></p>
+                <div class="flex items-center gap-2">
+                    <input id="settle-amount-input" type="text" inputmode="decimal" class="field min-h-tap w-36 p-2 text-2xl font-semibold">
+                    <span id="settle-currency" class="text-lg font-semibold text-ink-3">PLN</span>
+                    <button id="settle-copy-amount" class="copy-account-btn tap min-h-tap px-3 rounded-lg text-sm font-semibold text-ink ml-auto" title="Kopiuj kwotę">Kopiuj</button>
                 </div>
-                <p class="text-xs text-gray-400 mb-4">Możesz wpisać część kwoty (spłata częściowa).</p>
+                <p class="text-xs text-ink-3 mt-1.5 mb-4">Możesz wpisać część kwoty — spłata częściowa jest w porządku.</p>
                 <div id="settle-methods-wrap">
-                    <p class="text-sm font-semibold text-gray-600 mb-2">Sposoby płatności odbiorcy:</p>
                     <div id="settle-methods" class="space-y-2"></div>
                 </div>
             </div>
-            <div class="p-5 border-t">
-                <button id="settle-record-btn" class="w-full bg-green-600 text-white font-bold py-2.5 rounded-lg hover:bg-green-700"><i class="fas fa-check mr-2"></i>Zapisz wpłatę</button>
-                <p id="settle-record-note" class="text-xs text-gray-400 mt-2 text-center">Zapisuje, że przelałeś tę kwotę — odbiorca potwierdzi.</p>
+            <div class="p-5 border-t border-ink/10">
+                <button id="settle-record-btn" class="btn btn-dark w-full">Zapisz wpłatę</button>
+                <p id="settle-record-note" class="text-xs text-ink-3 mt-2 text-center">Zapisuje, że przelałeś tę kwotę — odbiorca potwierdzi.</p>
             </div>
         </div>
     </div>
 
-    <div id="nudges-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-40">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md flex flex-col" style="max-height:85vh">
-            <div class="flex items-center justify-between p-5 border-b">
-                <h3 class="text-xl font-bold flex items-center"><i class="fas fa-bell text-amber-500 mr-2"></i>Przypomnienia</h3>
-                <div class="flex items-center gap-3">
-                    <button id="nudges-readall-btn" class="hidden text-sm text-blue-600 hover:underline">Oznacz wszystkie</button>
-                    <button id="close-nudges-modal" class="text-gray-400 hover:text-gray-700 text-3xl leading-none" title="Zamknij">&times;</button>
+    <div id="nudges-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-md flex flex-col" style="max-height:85vh">
+            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
+                <h3 class="font-display text-xl font-bold">Przypomnienia</h3>
+                <div class="flex items-center gap-1 flex-shrink-0">
+                    <button id="nudges-readall-btn" class="tap hidden min-h-tap px-3 rounded-lg text-sm font-semibold text-ink-2">Oznacz wszystkie</button>
+                    <button id="close-nudges-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none" title="Zamknij">&times;</button>
                 </div>
             </div>
             <div class="p-5 overflow-y-auto">
@@ -522,138 +605,161 @@
         </div>
     </div>
 
-    <div id="payment-methods-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-40">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col" style="max-height:85vh">
-            <div class="flex items-center justify-between p-5 border-b">
-                <h3 class="text-xl font-bold flex items-center"><i class="fas fa-wallet text-blue-500 mr-2"></i>Twoje sposoby płatności</h3>
-                <button id="close-payment-methods-modal" class="text-gray-400 hover:text-gray-700 text-3xl leading-none" title="Zamknij">&times;</button>
+    <div id="payment-methods-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-lg flex flex-col" style="max-height:85vh">
+            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
+                <h3 class="font-display text-xl font-bold">Jak Ci oddać pieniądze</h3>
+                <button id="close-payment-methods-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
             </div>
             <div class="p-5 overflow-y-auto">
-                <p class="text-sm text-gray-500 mb-4">Widoczne dla znajomych przy Twoich należnościach. Dodaj ile chcesz — konto, telefon, Revolut, PayPal lub własne.</p>
+                <p class="text-sm text-ink-3 mb-4">Widoczne dla znajomych przy Twoich należnościach. Dodaj ile chcesz — konto, telefon, Revolut, PayPal albo własne.</p>
                 <div id="payment-methods-list" class="space-y-2 mb-5"></div>
-                <div class="border-t pt-4">
-                    <p class="text-sm font-semibold text-gray-600 mb-2">Dodaj metodę</p>
+                <div class="border-t border-ink/10 pt-4">
+                    <p class="text-sm font-bold text-ink-3 mb-2">Dodaj metodę</p>
                     <div class="flex flex-col gap-2">
-                        <select id="pm-add-type" class="p-2 border border-gray-300 rounded-lg text-sm"></select>
-                        <input id="pm-add-label" type="text" class="hidden p-2 border border-gray-300 rounded-lg text-sm" placeholder="Nazwa metody (np. Wise)">
-                        <input id="pm-add-value" type="text" class="p-2 border border-gray-300 rounded-lg text-sm" placeholder="Numer / adres / uchwyt">
-                        <button id="pm-add-btn" class="bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700"><i class="fas fa-plus mr-2"></i>Dodaj</button>
+                        <select id="pm-add-type" class="field min-h-tap p-2 text-sm"></select>
+                        <input id="pm-add-label" type="text" class="field min-h-tap hidden p-2 text-sm" placeholder="Nazwa metody (np. Wise)">
+                        <input id="pm-add-value" type="text" class="field min-h-tap p-2 text-sm" placeholder="Numer / adres / uchwyt">
+                        <button id="pm-add-btn" class="btn btn-dark w-full">Dodaj</button>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <div id="delete-confirm-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-30">
-        <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md text-center">
-            <h3 class="text-2xl font-bold mb-4">Na pewno usunąć?</h3>
-            <p class="text-gray-600 mb-8">Tej operacji nie można cofnąć. Wszystkie dane związane z tym rachunkiem zostaną trwale usunięte.</p>
-            <div class="flex justify-center space-x-4">
-                <button id="cancel-delete-bill" class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 font-semibold">Anuluj</button>
-                <button id="confirm-delete-bill" class="px-8 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold">Tak, usuń</button>
+    <!-- OKNA POTWIERDZENIA — kasowanie jest nieodwracalne, więc przycisk potwierdzenia
+         nosi kolor długu: to jedyne miejsce poza pieniędzmi, gdzie ta czerwień się pojawia,
+         i zawsze znaczy „stąd nie ma powrotu". -->
+    <div id="delete-confirm-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md text-center">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-2xl font-bold mb-3">Na pewno usunąć?</h3>
+            <p class="text-ink-2 mb-6">Tej operacji nie można cofnąć. Wszystkie dane tego rachunku znikną na stałe.</p>
+            <div class="flex justify-center gap-2">
+                <button id="cancel-delete-bill" class="tap min-h-tap px-5 rounded-lg font-semibold text-ink-2">Anuluj</button>
+                <button id="confirm-delete-bill" class="btn btn-danger">Tak, usuń</button>
             </div>
         </div>
     </div>
 
-    <div id="takeover-name-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-30">
-        <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md text-center">
-            <h3 class="text-xl font-bold mb-4">To imię jest już zajęte</h3>
-            <p class="text-gray-600 mb-8">Prawdopodobnie używasz aplikacji na innym urządzeniu. Czy chcesz przejąć sesję i kontynuować tutaj?</p>
-            <div class="flex justify-center space-x-4">
-                <button id="cancel-takeover-name" class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 font-semibold">Nie</button>
-                <button id="confirm-takeover-name" class="px-8 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold">Tak, przejmij</button>
+    <div id="takeover-name-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md text-center">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-xl font-bold mb-3">To imię jest już zajęte</h3>
+            <p class="text-ink-2 mb-6">Prawdopodobnie używasz aplikacji na innym urządzeniu. Przejąć sesję i pracować tutaj?</p>
+            <div class="flex justify-center gap-2">
+                <button id="cancel-takeover-name" class="tap min-h-tap px-5 rounded-lg font-semibold text-ink-2">Nie</button>
+                <button id="confirm-takeover-name" class="btn btn-danger">Tak, przejmij</button>
             </div>
         </div>
     </div>
 
-    <div id="photo-lightbox-modal" class="modal fixed inset-0 bg-black bg-opacity-80 items-center justify-center p-4 z-40 cursor-pointer">
+    <div id="photo-lightbox-modal" class="modal fixed inset-0 modal-scrim-strong items-center justify-center p-4 cursor-pointer">
         <div class="relative">
-            <img id="lightbox-image" src="" class="max-w-full max-h-[90vh] rounded-lg">
-            <button id="close-lightbox-btn" class="absolute -top-3 -right-3 bg-white text-black rounded-full w-8 h-8 flex items-center justify-center text-2xl font-bold hover:bg-gray-200 transition-transform transform hover:scale-110">&times;</button>
+            <!-- Adres zdjęcia wstawia showLightbox() w chwili otwarcia; okno do tego czasu
+                 jest ukryte (.modal bez .active), więc pusty src nigdy nie trafia na ekran. -->
+            <img id="lightbox-image" src="" alt="Zdjęcie paragonu" class="max-w-full max-h-[90vh] rounded-lg">
+            <button id="close-lightbox-btn" class="absolute -top-3 -right-3 bg-bg text-ink rounded-full w-11 h-11 flex items-center justify-center text-2xl font-bold">&times;</button>
         </div>
     </div>
 
-    <div id="delete-photo-confirm-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-50">
-        <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md text-center">
-            <h3 class="text-xl font-bold mb-4">Usunąć zdjęcie?</h3>
-            <p class="text-gray-600 mb-8">Czy na pewno chcesz usunąć to zdjęcie?</p>
-            <div class="flex justify-center space-x-4">
-                <button id="cancel-delete-photo" class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 font-semibold">Anuluj</button>
-                <button id="confirm-delete-photo" class="px-8 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-bold">Tak, usuń</button>
+    <div id="delete-photo-confirm-modal" class="modal modal-top fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md text-center">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-xl font-bold mb-3">Usunąć zdjęcie?</h3>
+            <p class="text-ink-2 mb-6">Zdjęcie paragonu zniknie z tego rachunku na stałe.</p>
+            <div class="flex justify-center gap-2">
+                <button id="cancel-delete-photo" class="tap min-h-tap px-5 rounded-lg font-semibold text-ink-2">Anuluj</button>
+                <button id="confirm-delete-photo" class="btn btn-danger">Tak, usuń</button>
             </div>
         </div>
     </div>
 
-    <div id="shared-cost-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-20">
-        <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-lg">
-            <h3 id="item-modal-title" class="text-2xl font-bold mb-6">Dodaj pozycję</h3>
-            <label for="shared-cost-desc" class="font-medium">Nazwa (np. „Pizza", „Wino")</label>
-            <input type="text" id="shared-cost-desc" class="w-full mt-1 mb-4 p-2 border rounded-lg">
+    <div id="shared-cost-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-lg">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 id="item-modal-title" class="font-display text-2xl font-bold mb-4">Dodaj pozycję</h3>
+            <label for="shared-cost-desc" class="block text-sm font-bold text-ink-3">Nazwa</label>
+            <input type="text" id="shared-cost-desc" class="field min-h-tap w-full mt-1.5 mb-4 p-2" placeholder="np. Pizza, Wino">
             <div class="flex gap-3 mb-4">
-                <div class="w-24">
-                    <label for="item-quantity" class="font-medium">Ilość</label>
-                    <input type="number" id="item-quantity" min="1" step="1" value="1" class="w-full mt-1 p-2 border rounded-lg">
+                <div class="w-20 flex-shrink-0">
+                    <label for="item-quantity" class="block text-sm font-bold text-ink-3">Ilość</label>
+                    <input type="number" id="item-quantity" min="1" step="1" value="1" class="field min-h-tap w-full mt-1.5 p-2 text-center">
                 </div>
-                <div class="flex-grow">
-                    <label for="shared-cost-amount" class="font-medium">Cena łączna <span class="text-xs text-gray-400">(jak na paragonie)</span></label>
-                    <div class="flex items-center gap-2">
-                        <input type="text" inputmode="decimal" id="shared-cost-amount" class="w-full mt-1 p-2 border rounded-lg">
-                        <span id="item-amount-currency" class="mt-1 text-gray-500 font-semibold">PLN</span>
+                <div class="flex-grow min-w-0">
+                    <label for="shared-cost-amount" class="block text-sm font-bold text-ink-3">Cena łączna, jak na paragonie</label>
+                    <div class="mt-1.5 flex items-center gap-2">
+                        <input type="text" inputmode="decimal" id="shared-cost-amount" class="field min-h-tap w-full min-w-0 p-2 text-right font-semibold" placeholder="0,00">
+                        <span id="item-amount-currency" class="text-ink-3 font-semibold flex-shrink-0">PLN</span>
                     </div>
                 </div>
             </div>
-            <p class="font-medium mb-2">Kto to wziął? <span class="text-xs text-gray-400 font-normal">(można zostawić puste — każdy dopisze się sam)</span></p>
-            <div id="shared-cost-participants" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto"></div>
-            <div class="flex flex-wrap justify-end gap-3 mt-8">
-                <button id="item-split-btn" class="hidden mr-auto px-4 py-2 text-sm bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200" title="Rozbij na osobne sztuki, żeby każdą wziął kto inny"><i class="fas fa-scissors mr-1"></i>Podziel na sztuki</button>
-                <button id="cancel-shared-cost" class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">Anuluj</button>
-                <button id="save-shared-cost" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Zapisz</button>
+            <p class="text-sm font-bold text-ink-3 mb-2">Kto to wziął — można zostawić puste, każdy dopisze się sam</p>
+            <div id="shared-cost-participants" class="grid grid-cols-2 gap-1 max-h-48 overflow-y-auto"></div>
+            <!-- Kasowanie pozycji mieszka TUTAJ, nie przy linii paragonu. Przy linii
+                 stały dwa przyciski po 36 px obok siebie, więc obszary trafienia
+                 nachodziły na siebie i kasownik łapał stuknięcia w ołówek. Operacja
+                 nieodwracalna należy się i tak o jeden krok dalej niż edycja. -->
+            <div class="flex flex-wrap items-center gap-2 mt-6">
+                <button id="item-split-btn" class="btn btn-quiet hidden w-full" title="Rozbij na osobne sztuki, żeby każdą wziął kto inny">Podziel na sztuki</button>
+                <div class="flex gap-2 w-full">
+                    <button id="cancel-shared-cost" class="btn btn-quiet flex-1">Anuluj</button>
+                    <button id="save-shared-cost" class="btn btn-primary flex-1">Zapisz</button>
+                </div>
+                <button id="item-delete-btn" class="remove-shared-cost-btn tap w-full min-h-tap rounded-full text-sm font-bold text-owe" data-cost-id="">Usuń pozycję</button>
             </div>
         </div>
     </div>
 
-    <div id="receipt-preview-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-30">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl flex flex-col" style="max-height:88vh">
-            <div class="flex items-center justify-between p-5 border-b">
-                <div>
-                    <h3 class="text-xl font-bold flex items-center"><i class="fas fa-wand-magic-sparkles text-purple-600 mr-2"></i>Odczytane z paragonu</h3>
-                    <p class="text-xs text-gray-500 mt-0.5">Sprawdź i popraw — dopiero potem trafi do rachunku.</p>
+    <div id="receipt-preview-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-2xl flex flex-col" style="max-height:88vh">
+            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
+                <div class="min-w-0">
+                    <h3 class="font-display text-xl font-bold">Odczytane z paragonu</h3>
+                    <p class="text-xs text-ink-3 mt-0.5">Sprawdź i popraw — dopiero potem trafi do rachunku.</p>
                 </div>
-                <button id="close-receipt-preview" class="text-gray-400 hover:text-gray-700 text-3xl leading-none" title="Zamknij">&times;</button>
+                <button id="close-receipt-preview" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
             </div>
             <div class="p-5 overflow-y-auto">
-                <div id="receipt-preview-warning" class="hidden mb-3 text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3"></div>
-                <div id="receipt-preview-items" class="space-y-2"></div>
+                <div id="receipt-preview-warning" class="hidden mb-3 text-sm text-owe border border-owe/30 rounded-lg p-3"></div>
+                <div id="receipt-preview-items" class="space-y-1"></div>
                 <div id="receipt-preview-modifiers-wrap" class="hidden mt-5">
-                    <p class="font-semibold text-gray-700 mb-2">Napiwek, serwis, rabat</p>
-                    <div id="receipt-preview-modifiers" class="space-y-2"></div>
+                    <div id="receipt-preview-modifiers" class="space-y-1"></div>
                 </div>
             </div>
-            <div class="p-5 border-t flex items-center justify-between gap-3 flex-wrap">
-                <span id="receipt-preview-summary" class="text-sm text-gray-600"></span>
-                <button id="apply-receipt-btn" class="bg-green-600 text-white font-bold py-2.5 px-5 rounded-lg hover:bg-green-700"><i class="fas fa-check mr-2"></i>Dodaj do rachunku</button>
+            <div class="p-5 border-t border-ink/10 flex items-center justify-between gap-3 flex-wrap">
+                <span id="receipt-preview-summary" class="text-sm text-ink-2"></span>
+                <button id="apply-receipt-btn" class="btn btn-dark">Dodaj do rachunku</button>
             </div>
         </div>
     </div>
 
-    <div id="global-cost-modal" class="modal fixed inset-0 bg-black bg-opacity-50 items-center justify-center p-4 z-20">
-        <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-            <h3 class="text-2xl font-bold mb-6">Dodaj koszt ogólny</h3>
-            <label for="global-cost-type-select" class="font-medium">Rodzaj kosztu</label>
-            <select id="global-cost-type-select" class="w-full mt-1 mb-4 p-2 border rounded-lg">
+    <div id="global-cost-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-2xl font-extrabold tracking-tight mb-1">Dodaj koszt wspólny</h3>
+            <!-- Nazwa „koszt ogólny" nie mówiła nic o tym, jak się dzieli, więc ludzie
+                 musieli zgadywać. Zdanie pod nagłówkiem rozstrzyga to raz. -->
+            <p class="text-ink-2 mb-5">Doliczany do rachunku i dzielony <b class="text-ink">po równo między wszystkich uczestników</b>: napiwek, serwis, opłata za rezerwację.</p>
+
+            <label for="global-cost-type-select" class="block font-bold mb-2">Rodzaj kosztu</label>
+            <select id="global-cost-type-select" class="field mb-4">
                 <option value="Napiwek">Napiwek</option>
                 <option value="Serwis">Serwis</option>
                 <option value="Inne">Inne (wpisz ręcznie)</option>
             </select>
-            <input type="text" id="global-cost-desc-other" class="w-full mb-4 p-2 border rounded-lg hidden" placeholder="Wpisz opis, np. Opłata za rezerwację">
-            <div class="flex items-center space-x-4 mb-4">
-                <label class="flex items-center"><input type="radio" name="global-cost-format" value="fixed" checked class="mr-2">Kwota</label>
-                <label class="flex items-center"><input type="radio" name="global-cost-format" value="percent" class="mr-2">Procent</label>
+            <input type="text" id="global-cost-desc-other" class="field mb-4 hidden" placeholder="Wpisz opis, np. Opłata za rezerwację">
+
+            <p class="font-bold mb-2">Jak liczyć</p>
+            <div class="seg mb-4">
+                <label class="seg-btn cursor-pointer flex items-center gap-2"><input type="radio" name="global-cost-format" value="fixed" checked class="w-4 h-4 accent-ink">Kwota</label>
+                <label class="seg-btn cursor-pointer flex items-center gap-2"><input type="radio" name="global-cost-format" value="percent" class="w-4 h-4 accent-ink">Procent</label>
             </div>
-            <input type="number" id="global-cost-value" class="w-full p-2 border rounded-lg" placeholder="np. 10 lub 15">
-            <div class="flex justify-end space-x-4 mt-8">
-                <button id="cancel-global-cost" class="px-6 py-2 bg-gray-200 rounded-lg hover:bg-gray-300">Anuluj</button>
-                <button id="save-global-cost" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Zapisz</button>
+            <input type="number" inputmode="decimal" id="global-cost-value" class="field" placeholder="np. 10 albo 15">
+
+            <div class="flex gap-2 mt-6">
+                <button id="cancel-global-cost" class="btn btn-quiet flex-1">Anuluj</button>
+                <button id="save-global-cost" class="btn btn-primary flex-1">Zapisz</button>
             </div>
         </div>
     </div>

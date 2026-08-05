@@ -70,6 +70,13 @@ function advancedExactSharesGrosze(bill) {
 
 // Kontrola poprawności: suma DOKŁADNYCH pozycji vs kwota rachunku.
 // status: 'ok' | 'over' | 'under' | 'empty'
+//
+// UWAGA na znaczenie 'under' po wprowadzeniu reguły reszty (patrz calculateAll):
+// niedobór NIE JEST już błędem, tylko kwotą jeszcze nierozpisaną, którą rachunek
+// dzieli po równo. Zostawiamy go jako osobny status, bo interfejs ma o nim mówić
+// („120,00 nierozpisane — po 24,00 na osobę"), ale nie jako ostrzeżenie.
+// Realnym błędem zostaje wyłącznie 'over': pozycje przekraczają kwotę rachunku,
+// czyli ktoś wpisał coś dwa razy albo pomylił się o rząd wielkości.
 function computeControl(enteredSubtotalG, billTotalG) {
   const enteredRoundedG = Math.round(enteredSubtotalG);
   if (billTotalG <= 0) {
@@ -79,7 +86,7 @@ function computeControl(enteredSubtotalG, billTotalG) {
   let status;
   if (Math.abs(diffG) <= TOLERANCE_GROSZE) status = 'ok';
   else if (diffG > 0) status = 'over';   // za dużo — ktoś przeliczył / podwójna pozycja
-  else status = 'under';                 // za mało — ktoś nie wpisał pozycji
+  else status = 'under';                 // reszta do rozdzielenia po równo
   return {
     status,
     diff: fromGrosze(Math.abs(diffG)),
@@ -90,70 +97,72 @@ function computeControl(enteredSubtotalG, billTotalG) {
 
 // --- API publiczne ---
 
-// Rachunek ZAAWANSOWANY (i domyślny). Zwraca udziały ZAOKRĄGLONE W GÓRĘ + kontrolę.
+// JEDEN RACHUNEK, KTÓRY ROŚNIE.
+//
+// Nie ma już podziału na „prosty" i „zaawansowany". Rachunek zaczyna się od samej kwoty
+// i rozrasta się dokładnie tyle, ile trzeba: dopisujesz pozycje, koszty własne i koszty
+// ogólne, a KWOTA JESZCZE NIEROZPISANA DZIELI SIĘ PO RÓWNU między uczestników.
+//
+// Ta reguła zastępuje dawne zachowanie, w którym reszta po cichu zostawała na płatniku.
+// Tamto było ukrytą karą za niedokończone wpisywanie: przy stole nikt nie rozpisuje
+// trzydziestu pozycji, więc płatnik dopłacał za wszystkich, nie wiedząc o tym.
+// Teraz brak pozycji znaczy „to było wspólne", co odpowiada temu, jak ludzie realnie
+// dzielą rachunek: kilka rzeczy imiennie, reszta po równo.
 export const calculateAll = (bill) => {
   const { shares, individualSubtotalG, sharedTotalG, globalTotalG } = advancedExactSharesGrosze(bill);
 
+  const activeCount = shares.filter((s) => isActive(s.participant)).length;
+  const allocatedG = individualSubtotalG + sharedTotalG + globalTotalG;
+  const billTotalG = toGrosze(bill.totalAmount || 0);
+  // Nadwyżka pozycji ponad kwotę rachunku NIE staje się ujemną resztą — to błąd wpisu,
+  // który zgłasza kontrola, a nie powód, żeby komukolwiek odejmować od udziału.
+  const unallocatedG = billTotalG > 0 ? Math.max(0, billTotalG - allocatedG) : 0;
+  const perPersonUnallocatedG = activeCount > 0 ? unallocatedG / activeCount : 0;
+
   const participantTotals = shares.map((s) => {
-    const totalG = s.exactG > 0 ? ceilGrosze(s.exactG) : 0; // W GÓRĘ do grosza
+    const restG = isActive(s.participant) ? perPersonUnallocatedG : 0;
+    const exactG = s.exactG + restG;
+    const totalG = exactG > 0 ? ceilGrosze(exactG) : 0; // W GÓRĘ do grosza
     return {
       participant: s.participant,
       individualAmount: fromGrosze(s.individualG),
       sharedAmount: fromGrosze(s.sharedG),        // dokładne (informacyjnie)
       globalCostsAmount: fromGrosze(s.globalG),   // dokładne (informacyjnie)
+      restAmount: fromGrosze(restG),              // udział w kwocie nierozpisanej
       total: fromGrosze(totalG),                  // ZAOKRĄGLONE W GÓRĘ — kwota do zapłaty
-      exactTotal: fromGrosze(s.exactG),           // dokładny udział (bez zaokrąglenia)
+      exactTotal: fromGrosze(exactG),             // dokładny udział (bez zaokrąglenia)
     };
   });
 
   const controlSum = participantTotals.reduce((sum, pt) => sum + pt.total, 0);
-  const enteredSubtotalG = individualSubtotalG + sharedTotalG + globalTotalG;
-  const control = computeControl(enteredSubtotalG, toGrosze(bill.totalAmount || 0));
-
-  return { participantTotals, controlSum, control };
-};
-
-// Rachunek PROSTY: cała kwota po równo między aktywnych, zaokrąglona W GÓRĘ.
-export const calculateSimple = (bill) => {
-  const participants = Object.values(bill.participants || {});
-  const active = participants.filter(isActive);
-  const numActive = active.length;
-  const billTotalG = toGrosze(bill.totalAmount || 0);
-
-  const exactPerPersonG = numActive > 0 ? billTotalG / numActive : 0;
-  const perPersonG = numActive > 0 ? ceilGrosze(exactPerPersonG) : 0; // W GÓRĘ
-
-  const participantTotals = participants.map((p) => ({
-    participant: p,
-    total: isActive(p) ? fromGrosze(perPersonG) : 0,
-    exactTotal: isActive(p) ? fromGrosze(exactPerPersonG) : 0,
-  }));
-
-  const controlSum = participantTotals.reduce((sum, pt) => sum + pt.total, 0);
-  // Udziały pochodzą wprost z kwoty rachunku — kontrola zawsze OK (albo pusta).
-  const control = {
-    status: billTotalG > 0 ? 'ok' : 'empty',
-    diff: 0,
-    enteredSubtotal: fromGrosze(billTotalG),
-    expectedTotal: fromGrosze(billTotalG),
-  };
+  const control = computeControl(allocatedG, billTotalG);
 
   return {
     participantTotals,
     controlSum,
     control,
-    amountPerPerson: fromGrosze(perPersonG),        // zaokrąglone w górę
-    exactAmountPerPerson: fromGrosze(exactPerPersonG),
+    // Kwota, która nie została rozpisana na nic imiennego i idzie po równo.
+    // Interfejs pokazuje ją wprost, żeby nikt nie musiał się domyślać, skąd wynik.
+    unallocated: fromGrosze(unallocatedG),
+    perPersonUnallocated: fromGrosze(perPersonUnallocatedG),
   };
 };
 
-// Wybór wg typu rachunku (używane m.in. w podsumowaniu na dashboardzie).
-export const calculateAllForBill = (bill) => {
-  if (bill && bill.type === 'simple') {
-    return calculateSimple(bill);
-  }
-  return calculateAll(bill);
+// ZGODNOŚĆ WSTECZ. Rachunek „prosty" przestał być osobnym typem — jest zwykłym
+// rachunkiem bez ani jednej pozycji, więc CAŁA kwota jest nierozpisana i idzie po równu.
+// Reguła z calculateAll daje dokładnie ten sam wynik, dlatego zostaje tu jedno wywołanie
+// i dwa pola, po które sięgają starsze ekrany.
+export const calculateSimple = (bill) => {
+  const result = calculateAll(bill);
+  return {
+    ...result,
+    amountPerPerson: result.participantTotals.find((pt) => isActive(pt.participant))?.total || 0,
+    exactAmountPerPerson: result.perPersonUnallocated,
+  };
 };
+
+// Jedna reguła dla każdego rachunku — typ nie rozgałęzia już obliczeń.
+export const calculateAllForBill = (bill) => calculateAll(bill);
 
 // Agregacja podsumowań grupy z LISTY rachunków — przeliczenie OD ZERA.
 // Zastępuje kruche delty przyrostowe: brak dryfu, odporne na retry / at-least-once.

@@ -162,7 +162,7 @@ describe('gotowość na kompilowany Tailwind (dziś CDN)', () => {
 describe('kontrakt etykiet: ekrany i modale', () => {
   // showScreen() składa id ekranu z nazwy — te id nie pojawią się w getElementById jako literał,
   // więc bez tego testu redesign mógłby je usunąć niezauważenie.
-  const SCREENS = ['loading', 'start', 'join', 'group-dashboard', 'bill', 'simple-bill', 'profile'];
+  const SCREENS = ['loading', 'start', 'join', 'group-dashboard', 'bill', 'profile'];
 
   it('każdy ekran z showScreen() istnieje w index.html', () => {
     const missing = SCREENS.filter((s) => !indexHtml.includes(`id="${s}-screen"`));

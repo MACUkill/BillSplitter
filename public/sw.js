@@ -78,8 +78,10 @@ self.addEventListener('fetch', (event) => {
   // której `fetch` nie umie odczytać (TypeError: Failed to fetch przy pobieraniu zdjęcia).
   // Cache'ujemy wyłącznie własne zasoby i znane CDN-y z bibliotekami.
   const url = new URL(req.url);
+  // Tailwind wypadł z tej listy przy przejściu z CDN na kompilację — arkusz jest teraz
+  // własnym zasobem (same-origin), więc wpis o hoście CDN był już tylko martwym kodem.
   const CACHEABLE_HOSTS = [
-    'cdn.tailwindcss.com', 'cdnjs.cloudflare.com', 'cdn.jsdelivr.net',
+    'cdnjs.cloudflare.com', 'cdn.jsdelivr.net',
     'fonts.googleapis.com', 'fonts.gstatic.com',
   ];
   const sameOrigin = url.origin === self.location.origin;

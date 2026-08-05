@@ -1,8 +1,656 @@
-/* Punkt wejścia stylów. Importowany z main.js, więc Vite wciąga go do buildu
-   i wypuszcza jako zwykły arkusz — bez pobierania czegokolwiek z sieci przy starcie.
+/* Punkt wejścia stylów. Importowany z main.js, więc Vite wciąga go do buildu i wypuszcza
+   jako zwykły arkusz — bez pobierania czegokolwiek z sieci przy starcie.
 
-   `base` to reset (preflight) — dokładnie ten sam, który dokładał skrypt z CDN,
-   więc jego pominięcie zmieniłoby wygląd. */
+   Kroje wbudowane w build (nie z sieci): aplikacja działa offline i przy słabym zasięgu
+   w lokalu, więc font z cudzego serwera jest realnym ryzykiem, a nie detalem.
+   Bricolage Grotesque niesie kwoty i nagłówki — gruby geometryczny grotesk o własnym
+   charakterze, czytelny w wielkiej skali. Archivo prowadzi resztę interfejsu i ma cyfry
+   tabelaryczne, bez których kolumna kwot nie stoi równo. */
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/archivo/wght.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ==========================================================================
+   ŚWIAT: NOWOCZESNA APLIKACJA MOBILNA (kierunek przypięty referencjami)
+   --------------------------------------------------------------------------
+   Białe podłoże, duże miękkie karty, NASYCONY KOLOR NA CAŁYCH BLOKACH zamiast
+   akcentów rozsypanych po szarości. Limonka jest kolorem marki i zawsze niesie
+   czarny tekst — nigdy nie służy jako kolor tekstu na jasnym tle.
+
+   ZASADA, KTÓREJ NIE WOLNO ZŁAMAĆ: kolory ról pieniężnych (winien / dostajesz /
+   informacja) są rozłączne z kolorami tożsamości ludzi ORAZ z kolorem marki.
+   Limonka znaczy „naciśnij to", nigdy „zapłacone".
+   ========================================================================== */
+@layer base {
+  :root {
+    color-scheme: light;
+
+    --bg: 245 246 248;           /* podłoże aplikacji — chłodna biel z tłem */
+    --surface: 255 255 255;      /* karta */
+    --surface-2: 238 240 244;    /* blok cichy, pole wprowadzania, stan pusty */
+    --ink: 14 15 19;             /* tekst zasadniczy */
+    --ink-2: 88 92 104;          /* tekst pomocniczy — 6,9:1 na karcie */
+    --ink-3: 122 128 141;        /* podpisy — 4,6:1 na karcie */
+
+    --brand: 198 240 58;         /* limonka: bloki akcji, karta bilansu */
+    --brand-ink: 14 15 19;       /* tekst NA limonce — 14,8:1 */
+
+    --owe: 226 30 56;            /* winien jesteś — 5,6:1 na białym */
+    --due: 0 138 92;             /* dostajesz — 4,9:1 */
+    --info: 45 74 235;           /* stan i informacja — 6,7:1 */
+
+    --shadow: 14 15 19;
+    --ring: 45 74 235;           /* obwódka skupienia */
+    --scrim-photo: 0 0 0;        /* przyciemnienie pod podglądem zdjęcia */
+  }
+
+  :root[data-theme='dark'],
+  :root.dark {
+    color-scheme: dark;
+
+    --bg: 12 13 17;
+    --surface: 24 26 32;
+    --surface-2: 35 38 46;
+    --ink: 245 246 248;
+    --ink-2: 168 173 185;
+    --ink-3: 130 136 149;
+
+    /* Limonka zostaje ta sama: na ciemnym tle świeci i nadal nosi czarny tekst.
+       To jest ta sama farba w innym świetle, nie inny kolor. */
+    --brand: 198 240 58;
+    --brand-ink: 14 15 19;
+
+    --owe: 255 106 122;          /* rozjaśnione, bo na ciemnym czerwień się zapada */
+    --due: 45 214 152;
+    --info: 122 141 255;
+
+    --shadow: 0 0 0;
+    --ring: 122 141 255;
+  }
+
+  html {
+    /* iOS zoomuje pole, którego tekst jest mniejszy niż 16 px. Cała aplikacja pracuje
+       na telefonie, więc to nie detal typograficzny, tylko usterka wprowadzania. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    font-family: 'Archivo Variable', system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    background-color: rgb(var(--bg));
+    color: rgb(var(--ink));
+    /* Pasek gestów iPhone'a: bez tego dolna nawigacja ląduje pod paskiem systemu. */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Pasek offline jest przyklejony do góry, więc treść musi mu ustąpić miejsca —
+     inaczej zakrywa nagłówek ekranu zamiast go uzupełniać. */
+  body:has(#offline-banner:not(.hidden)) #app-container {
+    padding-top: 3.25rem;
+  }
+
+  button, [role='button'], a.btn {
+    touch-action: manipulation;
+  }
+
+  /* Skupienie widoczne wszędzie, jednym pierścieniem — klawiatura i czytnik ekranu
+     to nie przypadek brzegowy, tylko druga droga przez tę samą aplikację. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--ring));
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* --- KARTA --------------------------------------------------------------
+     Podstawowa jednostka układu. Duży promień i miękki cień; bez obramowania,
+     bo karta odcina się od podłoża jasnością, nie kreską. */
+  .card {
+    background-color: rgb(var(--surface));
+    border-radius: 1.5rem;
+    box-shadow:
+      0 1px 2px rgb(var(--shadow) / 0.04),
+      0 8px 24px rgb(var(--shadow) / 0.06);
+  }
+
+  :root[data-theme='dark'] .card {
+    box-shadow:
+      0 1px 2px rgb(0 0 0 / 0.4),
+      0 8px 24px rgb(0 0 0 / 0.3);
+  }
+
+  /* Blok kolorowy: kolor wypełnia CAŁE pole i niesie własny tekst. Tak działa
+     kolor w referencjach — nie jako obwódka i nie jako 4-pikselowy pasek. */
+  .block-brand {
+    background-color: rgb(var(--brand));
+    color: rgb(var(--brand-ink));
+    border-radius: 1.5rem;
+  }
+
+  .block-quiet {
+    background-color: rgb(var(--surface-2));
+    border-radius: 1.25rem;
+  }
+
+  /* --- KWOTA --------------------------------------------------------------
+     Liczba, po którą ludzie tu przychodzą. Grosze cichsze od złotówek: złotówki
+     czyta się z odległości wyciągniętej ręki, grosze dopiero z bliska. */
+  .amount {
+    font-family: 'Bricolage Grotesque Variable', 'Archivo Variable', system-ui, sans-serif;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  .amount-fraction {
+    font-size: 0.55em;
+    opacity: 0.45;
+    letter-spacing: -0.01em;
+  }
+
+  .amount-currency {
+    font-family: 'Archivo Variable', system-ui, sans-serif;
+    font-size: 0.3em;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    margin-left: 0.35em;
+    opacity: 0.5;
+  }
+
+  /* --- PRZYCISKI ----------------------------------------------------------
+     Trzy odmiany i nic więcej. Wysokość 48 px w każdej. */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 3rem;
+    padding: 0 1.25rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.9375rem;
+    border: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 130ms cubic-bezier(0.2, 0, 0, 1), opacity 130ms ease-out;
+  }
+
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.4; }
+
+  .btn-primary { background-color: rgb(var(--brand)); color: rgb(var(--brand-ink)); }
+  .btn-dark { background-color: rgb(var(--ink)); color: rgb(var(--surface)); }
+  .btn-quiet { background-color: rgb(var(--surface-2)); color: rgb(var(--ink)); }
+  .btn-danger { background-color: rgb(var(--owe)); color: rgb(255 255 255); }
+
+  /* Okrągły przycisk-ikona z podpisem pod spodem — rząd akcji nad treścią,
+     wprost z referencji: cztery koła, cztery słowa, zero opisów. */
+  .action-dot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    flex: 1 1 0;
+    background: none;
+    border: none;
+    color: rgb(var(--ink));
+    font-size: 0.75rem;
+    font-weight: 600;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .action-dot-face {
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgb(var(--surface-2));
+    font-size: 1.0625rem;
+    transition: transform 130ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .action-dot:active .action-dot-face { transform: scale(0.94); }
+
+  /* --- POLA WPROWADZANIA --------------------------------------------------
+     Pole jest cichym blokiem, nie ramką: mniej kresek, więcej powierzchni. */
+  .field {
+    width: 100%;
+    min-height: 3rem;
+    padding: 0.75rem 1rem;
+    background-color: rgb(var(--surface-2));
+    color: rgb(var(--ink));
+    border: 1px solid transparent;
+    border-radius: 0.875rem;
+    font-size: 1rem;  /* 16 px — poniżej iOS zoomuje stronę przy wejściu w pole */
+    outline: none;
+  }
+
+  .field::placeholder { color: rgb(var(--ink-3)); }
+  .field:focus { border-color: rgb(var(--ring)); background-color: rgb(var(--surface)); }
+
+  /* --- PIGUŁKI I PRZEŁĄCZNIKI --------------------------------------------- */
+  .seg {
+    display: inline-flex;
+    padding: 0.25rem;
+    background-color: rgb(var(--surface-2));
+    border-radius: 999px;
+  }
+
+  /* 44 px, nie 36 — pigułka wyglądała lekko, ale w hałasie i w ruchu trafienie
+     w trzydziestosześciopikselowy pasek to loteria. */
+  .seg-btn {
+    min-height: 2.75rem;
+    padding: 0 1rem;
+    border: none;
+    background: none;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: rgb(var(--ink-2));
+    white-space: nowrap;
+  }
+
+  .seg-btn[aria-pressed='true'] {
+    background-color: rgb(var(--surface));
+    color: rgb(var(--ink));
+    box-shadow: 0 1px 2px rgb(var(--shadow) / 0.10);
+  }
+
+  :root[data-theme='dark'] .seg-btn[aria-pressed='true'] {
+    background-color: rgb(var(--ink) / 0.14);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    background-color: rgb(var(--surface-2));
+    color: rgb(var(--ink-2));
+  }
+
+  /* --- ŻYWY PARAGON -------------------------------------------------------
+     ZNAK TEJ APLIKACJI. Rachunek czyta się jak paragon, a zdjęcia ekipy lądują
+     na liniach w chwili, gdy ktoś odklika swoje — na oczach patrzącego.
+     Współbieżność przestaje być obietnicą w opisie i staje się obrazem. */
+  .receipt {
+    background-color: rgb(var(--surface));
+    border-radius: 1.5rem;
+    overflow: hidden;
+  }
+
+  .receipt-line {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.875rem 1rem;
+    background: none;
+    border: none;
+    border-top: 1px solid rgb(var(--ink) / 0.07);
+    text-align: left;
+    color: rgb(var(--ink));
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 130ms ease-out;
+  }
+
+  .receipt-line:first-child { border-top: none; }
+  .receipt-line:active { background-color: rgb(var(--ink) / 0.05); }
+
+  /* Moja pozycja: limonka wypełnia CAŁĄ linię, a moja twarz w stosie dostaje limonkową
+     obwódkę. Bez paska przy krawędzi — kolor marki obejmuje całe pole, tak jak na każdym
+     innym bloku w tym świecie, więc czyta się jako „to pole jest twoje", a nie jako
+     zakładka doklejona z boku. */
+  .receipt-line-mine { background-color: rgb(var(--brand) / 0.22); }
+  .receipt-line-mine .face-mine { box-shadow: 0 0 0 2px rgb(var(--brand)); }
+
+  /* Pod lampą UV ta sama limonka na 22 % krycia daje brudną oliwkę: jasna barwa
+     zmieszana z ciemnym tłem gubi nasycenie. W ciemnym motywie kolor schodzi więc
+     do cienkiej warstwy, a rolę „to jest moje" przejmuje limonkowa kwota i obwódka
+     przy twarzy — czyli światło, a nie plama. */
+  :root[data-theme='dark'] .receipt-line-mine {
+    background-color: rgb(var(--brand) / 0.10);
+  }
+
+  :root[data-theme='dark'] .receipt-line-mine .amount {
+    color: rgb(var(--brand));
+  }
+
+  /* Pozycja, której nikt nie wziął — brak danych, nie błąd pieniężny.
+     Dlatego kropkowana krawędź, a nie czerwień. */
+  .receipt-line-void { background-color: rgb(var(--ink) / 0.03); }
+
+  /* Stos twarzy na linii paragonu. Ujemny odstęp jak w referencjach. */
+  .face-stack { display: flex; align-items: center; }
+  .face-stack > * { margin-left: -0.5rem; }
+  .face-stack > *:first-child { margin-left: 0; }
+
+  .face {
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 999px;
+    object-fit: cover;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: rgb(255 255 255);
+    box-shadow: 0 0 0 2px rgb(var(--surface));
+    flex-shrink: 0;
+  }
+
+  /* Twarz, która właśnie wskoczyła, bo ktoś inny odkliknął swoje. To JEDYNY
+     moment ruchu wywołanego przez cudze działanie — dlatego ma wyglądać
+     na zdarzenie, nie na przejście. */
+  @keyframes face-land {
+    0%   { transform: scale(0.4) translateY(-0.5rem); opacity: 0; }
+    60%  { transform: scale(1.08) translateY(0); opacity: 1; }
+    100% { transform: scale(1) translateY(0); opacity: 1; }
+  }
+
+  .face-landing { animation: face-land 320ms cubic-bezier(0.2, 0, 0, 1) both; }
+
+  /* Kwota przetacza się, gdy zmienił ją ktoś inny w grupie. */
+  @keyframes amount-roll {
+    0%   { transform: translateY(-0.35em); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+
+  .amount-roll { animation: amount-roll 260ms cubic-bezier(0.2, 0, 0, 1) both; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .face-landing, .amount-roll { animation: none; }
+  }
+
+  /* --- ARKUSZ I OKNO ------------------------------------------------------
+     Okna wjeżdżają od dołu jak arkusz w aplikacji mobilnej, bo tam jest kciuk.
+     Przyciemnienie tła jest miękkie i lekko rozmyte: twarde 50% czerni odcina
+     kontekst, a przy rozliczeniu warto widzieć, z czego okno wyrosło. */
+  .modal-scrim {
+    background-color: rgb(var(--shadow) / 0.45);
+    backdrop-filter: blur(3px);
+  }
+
+  .modal-scrim-strong {
+    background-color: rgb(var(--scrim-photo) / 0.88);
+  }
+
+  .sheet {
+    background-color: rgb(var(--surface));
+    border-radius: 1.75rem 1.75rem 0 0;
+    box-shadow: 0 -8px 40px rgb(var(--shadow) / 0.18);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .sheet-grip {
+    width: 2.5rem;
+    height: 0.25rem;
+    border-radius: 999px;
+    background-color: rgb(var(--ink) / 0.18);
+    margin: 0.75rem auto 0;
+  }
+
+  @media (min-width: 640px) {
+    .sheet { border-radius: 1.75rem; }
+  }
+
+  /* --- DOLNA NAWIGACJA ----------------------------------------------------
+     Pływająca ciemna pigułka odsunięta od krawędzi — kciuk pracuje w dolnej
+     trzeciej ekranu, a odsunięcie sprawia, że pasek czyta się jako przedmiot
+     leżący NA aplikacji, nie jako listwa doklejona do dołu okna.
+
+     Dwa kolory, dwa znaczenia i żadnego mieszania: BIAŁA pigułka mówi „tu jesteś",
+     LIMONKOWE koło mówi „naciśnij, żeby dodać rachunek". Gdyby oba były limonkowe,
+     jedyny przycisk akcji w aplikacji zniknąłby wśród zakładek. */
+  .deck {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(0.875rem + env(safe-area-inset-bottom));
+    z-index: 40;
+    transition: transform 220ms cubic-bezier(0.2, 0, 0, 1), opacity 160ms ease-out;
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+    padding: 0.4375rem;
+    border-radius: 999px;
+    background-color: rgb(var(--ink) / 0.94);
+    backdrop-filter: blur(20px) saturate(1.4);
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 0.10) inset,
+      0 12px 36px rgb(var(--shadow) / 0.30);
+    max-width: calc(100vw - 1.5rem);
+  }
+
+  :root[data-theme='dark'] .deck {
+    background-color: rgb(var(--surface-2) / 0.96);
+    box-shadow:
+      0 1px 0 rgb(255 255 255 / 0.06) inset,
+      0 12px 36px rgb(0 0 0 / 0.6);
+  }
+
+  .deck-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4375rem;
+    min-height: 3rem;
+    min-width: 2.75rem;
+    padding: 0 0.5rem;
+    border: none;
+    background: none;
+    border-radius: 999px;
+    color: rgb(255 255 255 / 0.55);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    white-space: nowrap;
+    transition: background-color 180ms cubic-bezier(0.2, 0, 0, 1), color 180ms ease-out;
+  }
+
+  /* Bieżąca zakładka rozwija się w białą pigułkę z podpisem; pozostałe są samą
+     ikoną. Jedna rzecz nazwana, reszta rozpoznawana — pasek nie rośnie ponad ekran
+     nawet przy pięciu pozycjach na wąskim telefonie. */
+  .deck-btn[aria-current='page'] {
+    background-color: rgb(var(--surface));
+    color: rgb(var(--ink));
+    padding: 0 1rem;
+  }
+
+  .deck-btn-label { display: none; }
+  .deck-btn[aria-current='page'] .deck-btn-label { display: inline; }
+
+  /* Koło akcji: jedyny limonkowy element paska, wystaje ponad jego górną krawędź,
+     żeby czytało się jako przycisk leżący na pasku, nie jako piąta zakładka. */
+  /* Gdy otwarte jest okno, nawigacja ZJEŻDŻA POZA EKRAN. Nie chodzi tylko o to, że
+     zasłaniała przyciski — arkusz jest jedną decyzją do domknięcia i pasek do skakania
+     po zakładkach nie ma w tej chwili żadnego sensu. */
+  body:has(.modal.active) .deck {
+    transform: translateX(-50%) translateY(calc(100% + 1.5rem));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .deck-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 3.25rem;
+    height: 3.25rem;
+    margin: -0.75rem 0.25rem 0;
+    border: none;
+    border-radius: 999px;
+    background-color: rgb(var(--brand));
+    color: rgb(var(--brand-ink));
+    font-size: 1.0625rem;
+    box-shadow: 0 6px 18px rgb(var(--brand) / 0.45);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .deck-btn { transition: none; }
+  }
+
+  /* Obszar trafienia większy niż rysunek. Niektóre przyciski MUSZĄ być małe, żeby nie
+     rozpychać wiersza (kasownik w żetonie, ołówek przy pozycji paragonu), ale kciuk
+     i tak potrzebuje 44 px. Niewidoczna nakładka daje pełny cel, nie ruszając układu. */
+  .hit-44 { position: relative; }
+
+  .hit-44::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.75rem;
+    height: 2.75rem;
+    transform: translate(-50%, -50%);
+  }
+
+  /* --- STAN DOTKNIĘCIA ----------------------------------------------------
+     Na telefonie nie ma `hover`. Stan musi istnieć na `:active`. */
+  .tap {
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 130ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  .tap:active { transform: scale(0.97); }
+
+  /* --- RUCH ---------------------------------------------------------------
+     Cały ruch w tej aplikacji jedzie na jednej krzywej (szybki start, długie
+     dojście — tak zachowuje się rzecz o masie) i ma jedną z trzech ról:
+       1. TŁUMACZY POJAWIENIE SIĘ — skąd przyszedł arkusz, skąd ekran.
+       2. TŁUMACZY CUDZE DZIAŁANIE — twarz lądująca na paragonie, przetaczana kwota.
+       3. POTWIERDZA DOTKNIĘCIE — wciśnięcie przycisku.
+     Ozdobnik bez jednej z tych ról jest hałasem i nie wchodzi. Wszystko znika
+     przy `prefers-reduced-motion` — dla części ludzi to nie jest preferencja,
+     tylko warunek korzystania z telefonu bez mdłości. */
+
+  /* Arkusz wjeżdża stamtąd, gdzie jest jego krawędź: od dołu na telefonie,
+     a od szerokości tabletu — gdzie stoi na środku — delikatnym powiększeniem. */
+  @keyframes sheet-rise {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+
+  @keyframes sheet-pop {
+    from { transform: scale(0.96); opacity: 0; }
+    to   { transform: scale(1); opacity: 1; }
+  }
+
+  @keyframes scrim-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .modal.active { animation: scrim-in 180ms ease-out both; }
+  .modal.active .sheet { animation: sheet-rise 300ms cubic-bezier(0.2, 0, 0, 1) both; }
+
+  @media (min-width: 640px) {
+    .modal.active .sheet { animation: sheet-pop 220ms cubic-bezier(0.2, 0, 0, 1) both; }
+  }
+
+  /* Wejście ekranu: treść podnosi się o kilka pikseli. Tyle wystarczy, żeby oko
+     zrozumiało „to jest nowy widok", i za mało, żeby ktokolwiek czekał. */
+  @keyframes screen-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .screen-in { animation: screen-in 260ms cubic-bezier(0.2, 0, 0, 1) both; }
+
+  /* Lista wchodzi kaskadą — pierwsze pozycje wcześniej. Opóźnienie jest krótkie
+     i kończy się na szóstym elemencie: przy dwudziestu rachunkach czekanie na
+     ostatni byłby efekt sam dla siebie. */
+  @keyframes row-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .stagger > * { animation: row-in 280ms cubic-bezier(0.2, 0, 0, 1) both; }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 40ms; }
+  .stagger > *:nth-child(3) { animation-delay: 80ms; }
+  .stagger > *:nth-child(4) { animation-delay: 120ms; }
+  .stagger > *:nth-child(5) { animation-delay: 160ms; }
+  .stagger > *:nth-child(n+6) { animation-delay: 200ms; }
+
+  /* --- POTWIERDZENIA -----------------------------------------------------
+     Druga rola ruchu: powiedzieć, że coś SIĘ UDAŁO. Bez tego zapis wygląda
+     identycznie jak brak reakcji, a przy cudzych pieniądzach to jest różnica
+     między „zapisałem" a „chyba się nie kliknęło". */
+
+  /* Kwota, która właśnie się zmieniła, mruga podświetleniem w kolorze marki.
+     Krótko i bez skoku układu — element nie zmienia rozmiaru. */
+  @keyframes value-flash {
+    0%   { background-color: rgb(var(--brand) / 0); }
+    25%  { background-color: rgb(var(--brand) / 0.35); }
+    100% { background-color: rgb(var(--brand) / 0); }
+  }
+
+  .value-flash {
+    animation: value-flash 700ms ease-out both;
+    border-radius: 0.875rem;
+    box-decoration-break: clone;
+  }
+
+  /* Element dopisany do listy wjeżdża od dołu — pokazuje, GDZIE wylądował,
+     zamiast pojawiać się znikąd. */
+  @keyframes item-added {
+    0%   { opacity: 0; transform: translateY(12px) scale(0.98); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .item-added { animation: item-added 320ms cubic-bezier(0.2, 0, 0, 1) both; }
+
+  /* Znikanie elementu: zapada się do zera wysokości, więc lista domyka lukę
+     zamiast szarpnąć. */
+  @keyframes item-removed {
+    0%   { opacity: 1; transform: translateX(0); }
+    100% { opacity: 0; transform: translateX(-1.5rem); }
+  }
+
+  .item-removed { animation: item-removed 220ms cubic-bezier(0.4, 0, 1, 1) both; }
+
+  /* Toast wjeżdża od dołu i wychodzi tą samą drogą. */
+  @keyframes toast-in {
+    0%   { opacity: 0; transform: translateY(1rem) scale(0.96); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .toast-in { animation: toast-in 260ms cubic-bezier(0.2, 0, 0, 1) both; }
+
+  /* Odznaczenie przy nieudanej akcji: krótkie potrząśnięcie polem. Trzy drgnięcia,
+     mała amplituda — informacja, nie dramat. */
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25%      { transform: translateX(-4px); }
+    50%      { transform: translateX(4px); }
+    75%      { transform: translateX(-2px); }
+  }
+
+  .shake { animation: shake 300ms ease-out both; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .modal.active,
+    .modal.active .sheet,
+    .screen-in,
+    .stagger > *,
+    .value-flash,
+    .item-added,
+    .item-removed,
+    .toast-in,
+    .shake,
+    .deck {
+      animation: none;
+      transition: none;
+    }
+  }
+}

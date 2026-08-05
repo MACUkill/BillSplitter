@@ -4,6 +4,7 @@
         import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
         import { unreadNudgeCount, hasRecentNudge } from './nudges.js';
         import { itemQuantity, itemPickers, itemPickerCount, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
+        import { identityColor, initials, IDENTITY_COLORS } from './identity.js';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
@@ -78,8 +79,63 @@
         let photoToDelete = null; 
         let memberIdToTakeover = null;
         let deferredInstallPrompt = null;
+        // ŻYWY PARAGON: kto był zapisany na której pozycji przy poprzednim renderze.
+        // Różnica między tym a stanem z bazy mówi, czyja twarz WŁAŚNIE wskoczyła —
+        // i tylko ona dostaje animację lądowania. Czyszczone przy wejściu na rachunek.
+        let lastPickersByItem = new Map();
         
         const STORAGE_LIMIT_BYTES = 4.5 * 1024 * 1024 * 1024; // 4.5 GB
+
+        // --- MOTYW: banknot w dzień, ten sam banknot pod lampą UV w nocy ---
+        // Scena użycia to lokal wieczorem, więc ciemny nie jest fanaberią: jasny ekran
+        // w półmroku oślepia i wymusza przymykanie oczu przy kwotach. Domyślnie idziemy
+        // za ustawieniem systemu; ręczny wybór zapamiętujemy na urządzeniu.
+        const THEME_KEY = 'billsplitter_theme';
+        const prefersDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        const storedTheme = () => { try { return localStorage.getItem(THEME_KEY); } catch { return null; } };
+        const activeTheme = () => storedTheme() || (prefersDark() ? 'dark' : 'light');
+        const applyTheme = (theme) => {
+            document.documentElement.dataset.theme = theme;
+            const icon = document.getElementById('theme-toggle-icon');
+            if (icon) icon.className = theme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+        };
+        const toggleTheme = () => {
+            const next = activeTheme() === 'dark' ? 'light' : 'dark';
+            try { localStorage.setItem(THEME_KEY, next); } catch (_) {}
+            applyTheme(next);
+        };
+
+        // Motyw stosujemy od razu przy starcie, jeszcze zanim odpowie Firebase — inaczej
+        // pierwsze sekundy w półmroku to biały ekran w twarz. Dopóki nikt nie wybrał ręcznie,
+        // idziemy za systemem NA ŻYWO: telefon przełącza się o zmierzchu w trakcie kolacji.
+        const setupTheme = () => {
+            applyTheme(activeTheme());
+            const btn = document.getElementById('theme-toggle-btn');
+            if (btn) btn.onclick = toggleTheme;
+            const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+            if (mq && mq.addEventListener) {
+                mq.addEventListener('change', () => { if (!storedTheme()) applyTheme(activeTheme()); });
+            }
+        };
+
+        // Kod pokoju czytany na głos przy stole i przepisywany z cudzego telefonu —
+        // dzielimy go na czwórki, bo tak czyta się numer seryjny na banknocie.
+        const formatSerial = (id) => String(id || '').toUpperCase().replace(/(.{4})(?=.)/g, '$1 ');
+
+        // Kopiowanie ma jedno miejsce, bo zawodzi na trzy sposoby: brak API w starszym
+        // WebView, odmowa uprawnienia i wywołanie spoza gestu użytkownika. Gdy się nie uda,
+        // pokazujemy treść w toaście — użytkownik ma ją przepisać, a nie zostać z niczym.
+        const copyText = (text, okMessage) => {
+            const value = String(text || '');
+            if (!value) return;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(value)
+                    .then(() => showToast(okMessage))
+                    .catch(() => showToast('Do skopiowania: ' + value));
+            } else {
+                showToast('Do skopiowania: ' + value);
+            }
+        };
 
         // --- GŁÓWNA LOGIKA APLIKACJI ---
         function showToast(message, isError = false) {
@@ -89,13 +145,28 @@
             const toast = document.createElement('div');
             toast.id = toastId;
             toast.textContent = message;
-            toast.className = `fixed bottom-5 right-5 p-4 rounded-lg shadow-lg text-white z-50 transition-opacity duration-300 ${isError ? 'bg-red-600' : 'bg-blue-600'}`;
+            // Nad dolną nawigacją, nie pod nią — inaczej komunikat chowa się za paskiem.
+            // Błąd dostaje `role="alert"`, żeby czytnik ekranu przeczytał go od razu;
+            // potwierdzenie idzie łagodniej i nie przerywa czytania.
+            toast.setAttribute('role', isError ? 'alert' : 'status');
+            toast.className = `toast-in fixed bottom-24 left-4 right-4 sm:left-auto sm:right-5 sm:max-w-sm px-4 py-3 rounded-block z-50 font-semibold shadow-lift transition-opacity duration-300 ${isError ? 'bg-owe text-white' : 'bg-ink text-surface'}`;
             document.body.appendChild(toast);
             setTimeout(() => {
                 toast.style.opacity = '0';
-                setTimeout(() => toast.remove(), 4000); 
-            }, 4000);
+                setTimeout(() => toast.remove(), 400);
+            }, 3600);
         }
+
+        // Podświetla element, którego wartość właśnie się zmieniła. Wywoływane po zapisie,
+        // żeby było widać, ŻE się zapisało — bez tego udany zapis wygląda identycznie jak
+        // nieudane kliknięcie. Klasę trzeba zdjąć i nałożyć ponownie, bo inaczej druga
+        // zmiana z rzędu nic nie animuje.
+        const flashValue = (el) => {
+            if (!el) return;
+            el.classList.remove('value-flash');
+            void el.offsetWidth;
+            el.classList.add('value-flash');
+        };
 
         const generateId = () => Math.random().toString(36).substring(2, 10);
         // Parsuje kwotę z przecinkiem/kropką (zasięg modułu — używane m.in. w „Ureguluj").
@@ -158,13 +229,18 @@
 
         const startAppLogic = () => {
             isAuthReady = true;
-            document.getElementById('create-group-btn').disabled = false;
-            document.getElementById('create-group-btn').innerHTML = `<i class="fas fa-users mr-2"></i>Stwórz grupę`;
+            const createBtn = document.getElementById('create-group-btn');
+            createBtn.disabled = false;
+            // Napis mówi, co jest do zrobienia TERAZ: dopóki lista jest pusta, przycisk
+            // prosi o osobę, a nie udaje, że wszystko gotowe.
+            const hasDraft = (document.getElementById('member-names') || {}).value;
+            createBtn.textContent = hasDraft ? 'Załóż grupę' : 'Dodaj choć jedną osobę';
             
             handleUrlChange();
         };
 
         const init = () => {
+            setupTheme();
             showScreen('loading');
             
             window.addEventListener('popstate', handleUrlChange);
@@ -187,6 +263,7 @@
             setupPhotoUploadListeners();
             setupGlobalModalListeners();
             setupPwaInstallButton();
+            setupDeckNav();
             registerServiceWorker();
 
             // Faza 5: wskaźnik offline (Firestore persistentLocalCache i tak kolejkuje zmiany).
@@ -203,12 +280,7 @@
                 const copyBtn = e.target.closest('.copy-account-btn');
                 if (!copyBtn) return;
                 e.stopPropagation();
-                const acc = copyBtn.dataset.account || '';
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(acc).then(() => showToast('Skopiowano!')).catch(() => showToast('Do skopiowania: ' + acc));
-                } else {
-                    showToast('Do skopiowania: ' + acc);
-                }
+                copyText(copyBtn.dataset.account || '', 'Skopiowano!');
             });
 
             // Faza 4: na focusie przewiń pole nad klawiaturę (mobile).
@@ -239,19 +311,19 @@
             const rooms = getMyRooms().sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
             if (rooms.length === 0) { container.innerHTML = ''; return; }
             container.innerHTML = `
-                <h3 class="text-lg font-semibold text-gray-700 mb-3 text-left">Twoje pokoje</h3>
+                <h3 class="font-display text-2xl font-bold mb-3 text-left">Twoje pokoje</h3>
                 <div class="space-y-2">
                     ${rooms.map(r => `
                         <div class="flex items-center gap-2">
-                            <button class="enter-room-btn flex-grow flex items-center justify-between p-3 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 text-left" data-room-id="${r.id}">
-                                <span class="font-semibold text-gray-800">${escapeHtml(r.name)}</span>
-                                <i class="fas fa-arrow-right text-gray-400"></i>
+                            <button class="enter-room-btn card tap flex-grow flex items-center justify-between gap-2 p-3 min-h-tap text-left" data-room-id="${r.id}">
+                                <span class="font-semibold truncate">${escapeHtml(r.name)}</span>
+                                <i class="fas fa-arrow-right text-ink-3 flex-shrink-0"></i>
                             </button>
-                            <button class="forget-room-btn p-3 text-gray-400 hover:text-red-500" data-room-id="${r.id}" title="Usuń z listy (nie kasuje pokoju)"><i class="fas fa-times"></i></button>
+                            <button class="forget-room-btn tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 flex-shrink-0" data-room-id="${r.id}" title="Usuń z listy (nie kasuje pokoju)"><i class="fas fa-times"></i></button>
                         </div>
                     `).join('')}
                 </div>
-                <div class="flex items-center my-6"><div class="flex-grow border-t border-gray-200"></div><span class="px-3 text-sm text-gray-400">lub stwórz nowy pokój</span><div class="flex-grow border-t border-gray-200"></div></div>
+                <div class="flex items-center my-6"><div class="flex-grow border-t border-ink/15"></div><span class="px-3 text-xs font-bold text-ink-3">albo nowy pokój</span><div class="flex-grow border-t border-ink/15"></div></div>
             `;
         };
 
@@ -286,25 +358,17 @@
                         <li><b>Podsumowanie</b> pokazuje Twoje udziały i sumę całej grupy.</li>
                     </ul>`
             },
-            'simple-bill': {
-                title: 'Rachunek prosty',
-                html: `<ul class="list-disc pl-5 space-y-1">
-                        <li>Cała kwota dzieli się po równo między uczestników.</li>
-                        <li>Wpisz kwotę i wybierz, kto zapłacił.</li>
-                        <li>Płatnik potwierdza płatność — to blokuje zmianę płatnika.</li>
-                        <li>Grosze zaokrąglane w górę, żeby płatnik nigdy nie był stratny.</li>
-                        <li>Płatnik może usunąć rachunek — masz kilka sekund na „Cofnij".</li>
-                    </ul>`
-            },
             'bill': {
-                title: 'Rachunek zaawansowany',
-                html: `<p>Dla rachunków z różnymi pozycjami (np. restauracja):</p>
+                title: 'Rachunek',
+                html: `<p><b>Jeden rachunek, który rośnie.</b> Zacznij od samej kwoty — reszta jest opcjonalna i dopisujesz ją wtedy, gdy jest potrzebna.</p>
                     <ul class="list-disc pl-5 space-y-1">
-                        <li><b>Pozycje</b> — przepisz paragon na kafelki, a potem <b>stuknij te, które jadłeś</b>. Cena pozycji dzieli się po równo między wszystkich, którzy ją stuknęli. Kafelek na czerwono = nikt jej jeszcze nie wziął.</li>
+                        <li><b>Kwota nierozpisana dzieli się po równo</b> między uczestników. Sam wpis kwoty wystarcza, żeby rachunek był kompletny.</li>
+                        <li><b>Pozycje z paragonu</b> — zrób zdjęcie i odczytaj je, a potem <b>stuknij linie, które jadłeś</b>. Cena pozycji dzieli się po równo między wszystkich, którzy ją stuknęli, a ich zdjęcia pojawiają się na linii.</li>
                         <li>Pozycję o ilości większej niż 1 możesz <b>podzielić na sztuki</b> (ołówek → „Podziel na sztuki"), gdy każdą sztukę wziął kto inny.</li>
-                        <li><b>Koszty ogólne</b> — np. napiwek/serwis, doliczane do całości i dzielone.</li>
-                        <li><b>Koszty indywidualne</b> — każdy wpisuje to, co zamówił dla siebie.</li>
-                        <li><b>Suma kontrolna</b> sprawdza, czy pozycje zgadzają się z kwotą rachunku (✓ / za dużo / za mało).</li>
+                        <li><b>Koszty wspólne</b> — np. napiwek albo serwis, doliczane do całości i dzielone.</li>
+                        <li><b>Koszty własne</b> — to, co ktoś zamówił wyłącznie dla siebie.</li>
+                        <li><b>Suma pozycji</b> pilnuje, żeby wpisy nie przekroczyły kwoty rachunku. Niedobór nie jest błędem — to właśnie kwota, która idzie po równo.</li>
+                        <li>Grosze zaokrąglane w górę, żeby płatnik nigdy nie był stratny.</li>
                         <li>Wybierz płatnika i potwierdź płatność.</li>
                     </ul>`
             }
@@ -318,17 +382,92 @@
             document.getElementById('help-modal').classList.add('active');
         };
 
+        // --- DOLNA NAWIGACJA — kciuk pracuje w dolnej trzeciej ekranu ---
+        // Pulpit jest JEDNĄ przewijaną stroną, więc nawigacja nie przełącza widoków, tylko
+        // przewija do sekcji. Podświetlenie idzie za tym, co realnie widać: gdyby zostawało
+        // tam, gdzie ktoś ostatnio stuknął, kłamałoby po każdym ręcznym przewinięciu.
+        const DECK_NAV_TARGETS = {
+            'nav-room': 'balance-panel',
+            'nav-settle': 'settlements-section',
+            'nav-bills': 'bills-section',
+        };
+
+        // Po ręcznym stuknięciu w zakładkę obserwator przewijania musi na chwilę zamilknąć.
+        // Bez tego przy krótkiej treści (pusty pokój, jeden rachunek) strona nie ma dokąd
+        // się przewinąć, obserwator natychmiast przywraca poprzednią zakładkę i stuknięcie
+        // wygląda na nieskuteczne — przycisk sprawia wrażenie martwego.
+        let deckNavLockedUntil = 0;
+
+        const setDeckNavCurrent = (btnId) => {
+            document.querySelectorAll('#deck-nav .deck-btn').forEach(btn => {
+                if (btn.id === btnId) btn.setAttribute('aria-current', 'page');
+                else btn.removeAttribute('aria-current');
+            });
+        };
+
+        const setupDeckNav = () => {
+            Object.entries(DECK_NAV_TARGETS).forEach(([btnId, targetId]) => {
+                const btn = document.getElementById(btnId);
+                if (!btn) return;
+                btn.onclick = () => {
+                    if (currentScreenName !== 'group-dashboard') showScreen('group-dashboard');
+                    deckNavLockedUntil = Date.now() + 900;
+                    setDeckNavCurrent(btnId);
+                    const target = document.getElementById(targetId);
+                    if (!target) return;
+                    try { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+                    catch (_) { target.scrollIntoView(); }
+                };
+            });
+            const meBtn = document.getElementById('nav-me');
+            if (meBtn) meBtn.onclick = () => { renderProfile(); renderPushToggle(); showScreen('profile'); };
+
+            if (!('IntersectionObserver' in window)) return;
+            // Pas obserwacji w górnej części ekranu: sekcja staje się „bieżąca", gdy jej
+            // początek wchodzi tam, gdzie czyta się nagłówki, a nie gdy ledwo wystaje z dołu.
+            const observer = new IntersectionObserver((entries) => {
+                if (currentScreenName !== 'group-dashboard') return;
+                if (Date.now() < deckNavLockedUntil) return;
+                entries.forEach(entry => {
+                    if (!entry.isIntersecting) return;
+                    const btnId = Object.keys(DECK_NAV_TARGETS).find(k => DECK_NAV_TARGETS[k] === entry.target.id);
+                    if (btnId) setDeckNavCurrent(btnId);
+                });
+            }, { rootMargin: '-30% 0px -60% 0px' });
+            Object.values(DECK_NAV_TARGETS).forEach(id => {
+                const el = document.getElementById(id);
+                if (el) observer.observe(el);
+            });
+        };
+
         const showScreen = (screenName) => {
-            ['loading', 'start', 'join', 'group-dashboard', 'bill', 'simple-bill', 'profile'].forEach(s => {
+            ['loading', 'start', 'join', 'group-dashboard', 'bill', 'profile'].forEach(s => {
                 const screenEl = document.getElementById(`${s}-screen`);
                 if (screenEl) screenEl.classList.add('hidden');
             });
             const targetScreen = document.getElementById(`${screenName}-screen`);
-            if (targetScreen) targetScreen.classList.remove('hidden');
+            if (targetScreen) {
+                targetScreen.classList.remove('hidden');
+                // Animacja wejścia odpala się przy KAŻDYM przejściu, więc klasę trzeba
+                // zdjąć i nałożyć ponownie — inaczej przeglądarka uzna, że nic się nie
+                // zmieniło, i drugie wejście na ten sam ekran byłoby nieme.
+                targetScreen.classList.remove('screen-in');
+                void targetScreen.offsetWidth;
+                targetScreen.classList.add('screen-in');
+            }
             currentScreenName = screenName;
             // Kontekstowy przycisk pomocy „?" — widoczny tylko na ekranach z treścią.
             const fab = document.getElementById('help-fab');
             if (fab) fab.classList.toggle('hidden', !HELP_CONTENT[screenName]);
+            // Dolna nawigacja żyje tylko tam, gdzie jest po co nawigować. Na ekranie rachunku
+            // schodzi z drogi: liczy się jedna czynność i wolne miejsce pod kciukiem.
+            const deck = document.getElementById('deck-nav');
+            if (deck) {
+                const onDeck = screenName === 'group-dashboard' || screenName === 'profile';
+                deck.classList.toggle('hidden', !onDeck);
+                if (screenName === 'profile') setDeckNavCurrent('nav-me');
+                else if (screenName === 'group-dashboard') setDeckNavCurrent('nav-room');
+            }
             if (screenName === 'start') renderMyRooms();
         };
 
@@ -375,16 +514,17 @@
                 if (!m) return; // Skip if member data is missing for some reason
 
                 const button = document.createElement('button');
-                button.innerHTML = `<span class="flex items-center justify-center">${avatarHtml(m.name, m.id)}<span>${escapeHtml(m.name)}</span></span>`;
-                button.className = "w-full p-3 rounded-lg transition";
+                button.innerHTML = `<span class="flex items-center">${avatarHtml(m.name, m.id)}<span class="truncate font-semibold">${escapeHtml(m.name)}</span></span>`;
+                button.className = "card tap w-full min-h-tap p-3 text-left";
                 if (m.claimedBy) {
-                    button.className += " bg-gray-300 text-gray-500 cursor-pointer hover:bg-gray-400";
+                    // Imię już zajęte: wygaszone, ale nadal klikalne — ktoś, kto stracił dostęp
+                    // po wyczyszczeniu przeglądarki, musi móc odzyskać swoje imię.
+                    button.className += " opacity-50";
                     button.onclick = () => {
                         memberIdToTakeover = m.id;
                         document.getElementById('takeover-name-modal').classList.add('active');
                     };
                 } else {
-                    button.className += " bg-blue-500 text-white hover:bg-blue-600";
                     button.onclick = () => claimName(m.id);
                 }
                 nameList.appendChild(button);
@@ -430,6 +570,14 @@
                 userNameEl.textContent = myMember ? myMember.name : '...';
                 const nameDisplay = document.getElementById('dashboard-user-name-display');
                 if (nameDisplay) nameDisplay.textContent = myMember ? myMember.name : '...';
+                // Numer seryjny pokoju stoi w nagłówku na stałe: to jedyna droga do pokoju,
+                // gdy skrót z ekranu początkowego iPhone'a otworzy aplikację bez adresu grupy.
+                const serialEl = document.getElementById('room-serial');
+                if (serialEl) serialEl.textContent = formatSerial(currentGroupId);
+                // Znak w prawym górnym rogu to TWOJA rozeta, nie ogólna ikonka ludzika —
+                // ten sam znak, którym jesteś podpisany przy każdej pozycji rachunku.
+                const markEl = document.getElementById('dashboard-user-mark');
+                if (markEl) markEl.innerHTML = myMember ? avatarHtml(myMember.name, myMember.id, 'w-8 h-8 text-lg') : '';
                 userNameEl.onclick = async () => {
                     if (!myMember) return;
                     await updateDoc(groupDocRef, {
@@ -465,8 +613,11 @@
                     const picker = document.getElementById('dashboard-color-picker');
                     if (picker) {
                         const current = colorForMember(myMember.id, myMember.name);
+                        // Próbka pokazuje dokładnie to, co ekipa zobaczy przy Twoim imieniu:
+                        // pełne koło w danym kolorze z Twoją literą. Wybrany dostaje pierścień.
+                        const myMark = escapeHtml(initials(myMember.name));
                         picker.innerHTML = PROFILE_COLORS.map(c =>
-                            `<button class="profile-color-swatch w-6 h-6 rounded-full border-2 ${c === current ? 'border-gray-800 scale-110' : 'border-transparent'} transition" style="background-color:${c}" data-color="${c}" title="Ustaw kolor profilu"></button>`
+                            `<button class="profile-color-swatch tap w-12 h-12 rounded-full flex items-center justify-center font-bold text-white text-sm" data-color="${c}" title="Ustaw swój kolor" style="background-color:${c};box-shadow:${c === current ? '0 0 0 3px rgb(var(--surface)), 0 0 0 5px rgb(var(--ink))' : 'none'}">${myMark}</button>`
                         ).join('');
                         picker.querySelectorAll('.profile-color-swatch').forEach(sw => {
                             sw.onclick = async () => {
@@ -479,6 +630,7 @@
                 // Numery kont / metody / imiona / zdjęcia mogły się zmienić — odśwież widoki.
                 renderBillsList();
                 renderSettlements();
+                renderBalancePanel();
                 updateNudgeBadge();
                 savePushToken(); // token mógł powstać zanim wiedzieliśmy, kim jest użytkownik
                 if (currentScreenName === 'profile') renderProfile();
@@ -489,12 +641,14 @@
                 latestBills = snapshot.docs.map(d => ({ id: d.id, data: d.data() }));
                 renderBillsList();
                 renderSettlements();
+                renderBalancePanel();
             });
 
             const settlementsQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`), orderBy('createdAt', 'desc'));
             unsubscribeSettlements = onSnapshot(settlementsQuery, (snapshot) => {
                 latestSettlements = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 renderSettlements();
+                renderBalancePanel();
             });
 
             const nudgesQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`), orderBy('createdAt', 'desc'));
@@ -506,10 +660,12 @@
             });
 
             document.getElementById('copy-group-link-btn').onclick = () => {
-                document.getElementById('group-share-link').select();
-                document.execCommand('copy');
-                showToast('Link do grupy skopiowany!');
+                copyText(document.getElementById('group-share-link').value, 'Link do grupy skopiowany!');
             };
+            // Stuknięcie w numer seryjny kopiuje sam kod pokoju — to jest to, co podaje się
+            // przy stole i przepisuje z cudzego telefonu. Link mieszka niżej, w stopce pokoju.
+            const serialBtn = document.getElementById('room-serial-btn');
+            if (serialBtn) serialBtn.onclick = () => copyText(currentGroupId, 'Kod pokoju skopiowany.');
             document.getElementById('toggle-summary-btn').onclick = () => {
                 document.getElementById('summary-content').classList.toggle('hidden');
                 document.getElementById('summary-arrow-icon').classList.toggle('rotated');
@@ -524,23 +680,23 @@
         
         const getBillSummaryHtml = (bill, myMember, myParticipant) => {
             if (!myParticipant || myParticipant.status === 'not_applicable') {
-                return `<p class="text-sm text-gray-600 font-semibold flex items-center"><i class="fas fa-ban mr-2"></i>Ten rachunek Cię nie dotyczy</p>`;
+                return `<p class="text-ink-3">Nie dotyczy Cię</p>`;
             }
-            
+
             if (!bill.payerId) {
-                return `<p class="text-sm text-gray-500 font-semibold"><i class="fas fa-user-tag mr-2"></i>Wybierz osobę płacącą</p>`;
+                return `<p class="text-info font-semibold">Wskaż, kto płacił</p>`;
             }
             if (bill.payerId && !bill.payerConfirmed) {
                 const payerName = bill.participants[bill.payerId]?.name || 'Płatnik';
-                const text = myMember.id === bill.payerId ? "Potwierdź, że zapłaciłeś/aś" : `Oczekiwanie na potwierdzenie od ${escapeHtml(payerName)}`;
-                return `<p class="text-sm text-yellow-600 font-semibold"><i class="fas fa-hourglass-half mr-2"></i>${text}</p>`;
+                const text = myMember.id === bill.payerId ? "Potwierdź, że zapłaciłeś/aś" : `Czeka na potwierdzenie: ${escapeHtml(payerName)}`;
+                return `<p class="text-info font-semibold">${text}</p>`;
             }
             if (!bill.totalAmount || bill.totalAmount <= 0) {
-                return `<p class="text-sm text-gray-500 font-semibold"><i class="fas fa-calculator mr-2"></i>Uzupełnij kwotę rachunku</p>`;
+                return `<p class="text-info font-semibold">Uzupełnij kwotę</p>`;
             }
 
             if (bill.type === 'advanced' && myParticipant.status === 'incomplete') {
-                return `<p class="text-sm text-orange-500 font-semibold"><i class="fas fa-question-circle mr-2"></i>Uzupełnij swoje koszty</p>`;
+                return `<p class="text-info font-semibold">Uzupełnij swoje koszty</p>`;
             }
 
             const calculations = calculateAllForBill(bill);
@@ -550,31 +706,95 @@
 
             // Model wpłat: lista pokazuje KONSUMPCJĘ (udział), nie rozliczenie. Rozliczenie → sekcja „Rozliczenia".
             if (payer && payer.id === myParticipant.id) {
-                return `<p class="text-sm text-gray-600"><i class="fas fa-wallet mr-2"></i>Wyłożyłeś/aś ${calculations.controlSum.toFixed(2)} ${bill.currency} · Twój udział: ${myTotal.toFixed(2)}</p>`;
+                return `<p class="text-sm text-ink-2">Wyłożyłeś/aś ${calculations.controlSum.toFixed(2).replace('.', ',')} ${bill.currency} · Twój udział: ${myTotal.toFixed(2).replace('.', ',')}</p>`;
             }
-            return `<p class="text-sm text-gray-600"><i class="fas fa-user mr-2"></i>Twój udział: ${myTotal.toFixed(2)} ${bill.currency}${payer ? ` · płaci ${escapeHtml(memberName(bill.payerId))}` : ''}</p>`;
+            return `<p class="text-sm text-ink-2">Twój udział: ${myTotal.toFixed(2).replace('.', ',')} ${bill.currency}${payer ? ` · płaci ${escapeHtml(memberName(bill.payerId))}` : ''}</p>`;
         };
 
-        // --- Faza 4: personalizacja profilu (kolor + awatar z inicjałem) ---
-        const PROFILE_COLORS = ['#ef4444','#f97316','#f59e0b','#eab308','#22c55e','#10b981','#06b6d4','#3b82f6','#6366f1','#8b5cf6','#d946ef','#ec4899'];
-        const hashStr = (s) => { let h = 0; for (let i = 0; i < s.length; i++) { h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0; } return Math.abs(h); };
+        // --- STATUS RACHUNKU: jeden słownik na cały interfejs ---
+        //
+        // Kolor w tej aplikacji znaczy STAN PIENIĘDZY, nigdy tożsamość i nigdy ozdobę.
+        // Cztery tony i nic więcej:
+        //   action — czeka na TWÓJ ruch (błękit stanu; jedyny ton, który barwi całe tło)
+        //   wait   — zrobione po twojej stronie, czeka na kogoś innego (ton cichy)
+        //   owe    — jesteś winien (czerwień)
+        //   due    — wyłożyłeś, pieniądze mają wrócić do ciebie (zieleń)
+        //   none   — nie dotyczy cię (szarość)
+        // Ten sam słownik obsługuje kafelek rachunku i wiersz rozliczenia, więc czerwień
+        // nie może znaczyć w dwóch miejscach dwóch różnych rzeczy.
+        const STATUS_TONES = {
+            action: { chip: 'chip text-info', amount: 'font-bold text-info' },
+            wait:   { chip: 'chip', amount: 'font-bold text-ink-3' },
+            owe:    { chip: 'chip text-owe', amount: 'font-bold text-owe tabular-nums' },
+            due:    { chip: 'chip text-due', amount: 'font-bold text-due tabular-nums' },
+            none:   { chip: 'chip', amount: 'font-bold text-ink-3' },
+        };
+
+        const billStatus = (bill, myMember, myParticipant) => {
+            // `labelHtml`, nie `label`: etykieta bywa złożona z imienia pobranego z bazy
+            // i jest escapowana TU, przy budowie. Nazwa mówi wprost, że dalej jedzie
+            // gotowy fragment znaczników — strażnik w render.safety.test.js czyta nazwy.
+            const make = (tone, labelHtml, amount = '') => ({
+                tone,
+                labelHtml,
+                amount,
+                chipClass: STATUS_TONES[tone].chip,
+                amountClass: STATUS_TONES[tone].amount,
+            });
+
+            if (!myParticipant || myParticipant.status === 'not_applicable') return make('none', 'Nie dotyczy Cię');
+            if (!bill.payerId) return make('action', 'Wskaż, kto płacił');
+            if (!bill.payerConfirmed) {
+                return myMember.id === bill.payerId
+                    ? make('action', 'Potwierdź, że zapłaciłeś/aś')
+                    : make('wait', `Czeka na ${escapeHtml(memberName(bill.payerId))}`);
+            }
+            if (!bill.totalAmount || bill.totalAmount <= 0) return make('action', 'Uzupełnij kwotę');
+            if (bill.type === 'advanced' && myParticipant.status === 'incomplete') return make('action', 'Uzupełnij swoje koszty');
+
+            const calculations = calculateAllForBill(bill);
+            const myCalc = calculations.participantTotals.find(pt => pt.participant.id === myMember.id);
+            const myTotal = myCalc ? myCalc.total : 0;
+            const money = (v) => `${v.toFixed(2).replace('.', ',')} ${bill.currency}`;
+
+            // Wyłożyłeś: pieniądze są na zewnątrz i mają wrócić. Twój własny udział nie jest
+            // długiem, więc pokazujemy to, co realnie czekasz odzyskać.
+            if (bill.payerId === myMember.id) {
+                const outstanding = Math.max(0, calculations.controlSum - myTotal);
+                return make('due', 'Wyłożyłeś/aś', money(outstanding));
+            }
+            return make('owe', `Płaci ${escapeHtml(memberName(bill.payerId))}`, money(myTotal));
+        };
+
+        // --- Tożsamość uczestnika: zdjęcie, a bez zdjęcia kolor z literą ---
+        // Zdjęcie ma pierwszeństwo zawsze: to twarze robią z tego ekranu ludzi, a nie
+        // księgowość. Bez zdjęcia zostaje pełne koło w nasyconym kolorze osoby z białą
+        // literą — czytelne przy dwudziestu ośmiu pikselach i przy dwudziestu pięciu osobach.
+        const PROFILE_COLORS = IDENTITY_COLORS;
         const colorForMember = (memberId, name) => {
             const explicit = ((groupData && groupData.members && groupData.members[memberId]) || {}).color;
-            if (explicit) return explicit;
-            return PROFILE_COLORS[hashStr(memberId || name || '?') % PROFILE_COLORS.length];
+            // Kolory zapisane w poprzednich wersjach pochodzą z innych palet. Honorujemy je
+            // tylko wtedy, gdy należą do obecnej — inaczej jeden odcień rozbija cały ekran.
+            if (explicit && IDENTITY_COLORS.includes(explicit)) return explicit;
+            return identityColor(memberId, name);
         };
         // sizeClass podmienia rozmiar/odstęp (nie dokłada się do domyślnych) — inaczej przy Tailwindzie
         // konkurencyjne klasy w rodzaju w-9 i w-6 rozstrzyga kolejność w arkuszu, nie w atrybucie.
         // Adres zdjęcia i kolor pochodzą z bazy, a do dokumentu grupy pisze każdy, kto ma link.
         // Bez escapowania wystarczyłoby ustawić sobie „zdjęcie" z cudzysłowem w środku, żeby
         // wyjść z atrybutu i wstrzyknąć kod, który wykona się u WSZYSTKICH członków grupy.
-        const avatarHtml = (name, memberId, sizeClass = 'w-9 h-9 text-lg mr-3') => {
+        const avatarHtml = (name, memberId, sizeClass = 'w-10 h-10 text-base mr-3') => {
             const member = (groupData && groupData.members && groupData.members[memberId]) || {};
             if (member.photoURL) {
                 return `<img src="${escapeHtml(member.photoURL)}" alt="" class="rounded-full object-cover flex-shrink-0 ${sizeClass}">`;
             }
-            const initial = escapeHtml(((name || '?').trim().charAt(0) || '?').toUpperCase());
-            return `<div class="rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 ${sizeClass}" style="background-color:${escapeHtml(colorForMember(memberId, name))}">${initial}</div>`;
+            const color = colorForMember(memberId, name);
+            const mark = escapeHtml(initials(name));
+            // Kolor idzie atrybutem stylu, bo to dana z bazy — klasa sklejana ze stringu
+            // wyparowałaby przy kompilacji Tailwinda.
+            return `<span class="rounded-full flex-shrink-0 inline-flex items-center justify-center font-bold text-white ${sizeClass}" style="background-color:${escapeHtml(color)}">
+                <span style="font-size:0.72em">${mark}</span>
+            </span>`;
         };
 
         // --- Faza 4/5-bridge: metody płatności per osoba (wiele: konto, telefon, Revolut, PayPal, własne) ---
@@ -604,17 +824,17 @@
             const list = document.getElementById('payment-methods-list');
             if (!list) return;
             if (paymentEditMethods.length === 0) {
-                list.innerHTML = `<p class="text-sm text-gray-400 italic">Brak metod. Dodaj pierwszą poniżej.</p>`;
+                list.innerHTML = `<p class="text-sm text-ink-3">Brak metod. Dodaj pierwszą poniżej.</p>`;
                 return;
             }
             list.innerHTML = paymentEditMethods.map((m, i) => `
-                <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg">
-                    <i class="${paymentIconClass(m.type)} text-gray-400 w-4 text-center"></i>
+                <div class="card flex items-center gap-2 p-2">
+                    <i class="${paymentIconClass(m.type)} text-ink-3 w-4 text-center"></i>
                     <div class="flex-grow min-w-0">
-                        <p class="text-xs text-gray-500">${escapeHtml(paymentLabel(m))}</p>
-                        <input class="pm-value-edit w-full text-sm p-1 border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none" value="${escapeHtml(m.value)}" data-index="${i}" placeholder="wartość">
+                        <p class="text-sm font-bold text-ink-3">${escapeHtml(paymentLabel(m))}</p>
+                        <input class="pm-value-edit credential w-full text-sm p-1 bg-transparent outline-none" value="${escapeHtml(m.value)}" data-index="${i}" placeholder="wartość">
                     </div>
-                    <button class="pm-remove-btn text-gray-400 hover:text-red-500 px-1" data-index="${i}" title="Usuń"><i class="fas fa-trash"></i></button>
+                    <button class="pm-remove-btn tap w-9 h-9 rounded-lg flex items-center justify-center text-ink-3 flex-shrink-0" data-index="${i}" title="Usuń"><i class="fas fa-trash text-sm"></i></button>
                 </div>
             `).join('');
         };
@@ -639,12 +859,108 @@
         const memberName = (id) => ((groupData && groupData.members && groupData.members[id]) || {}).name || 'Ktoś';
         const fmtMoney = (amountG, currency) => `${fromGrosze(amountG).toFixed(2).replace('.', ',')} ${currency}`;
 
-        const settleRowHtml = (name, id, rightHtml, detailHtml = '') =>
-            `<div class="p-2 bg-white rounded-lg border border-gray-200">
-                <div class="flex items-center justify-between gap-2">
-                    <span class="flex items-center min-w-0">${avatarHtml(name, id)}<span class="truncate font-medium">${escapeHtml(name)}</span></span>
-                    <span class="flex items-center gap-2 flex-shrink-0">${rightHtml}</span>
+        // Nominał: złotówki niosą wagę, grosze schodzą o klasę niżej. Chwyt podpatrzony
+        // w referencjach — przy kolumnie kwot różnica w czytelności jest natychmiastowa.
+        // `withCurrency` wyłączamy tam, gdzie waluta jest już powiedziana raz na całą listę
+        // (kafelki pozycji, rozpiska udziałów) — dwadzieścia razy „PLN" to szum, nie informacja.
+        const denominationHtml = (amountG, currency, toneClass, { withCurrency = true } = {}) => {
+            const sign = amountG < 0 ? '−' : '';
+            const abs = Math.abs(Number(amountG) || 0);
+            const whole = Math.floor(abs / 100).toLocaleString('pl-PL');
+            const fraction = String(abs % 100).padStart(2, '0');
+            const cur = withCurrency ? `<span class="denomination-currency">${escapeHtml(currency)}</span>` : '';
+            return `<span class="denomination denomination-relief ${toneClass}">${sign}${whole}<span class="denomination-fraction">,${fraction}</span>${cur}</span>`;
+        };
+
+        // Moje należności i zobowiązania w jednym miejscu — to jest liczba, po którą
+        // ludzie otwierają aplikację, więc liczymy ją raz i podajemy wszystkim widokom.
+        const myLedgerRows = () => {
+            const my = myMemberNow();
+            if (!my) return { rows: [], myId: null };
+            const bills = latestBills.map(({ id, data }) => ({ ...data, id }));
+            const ledger = buildLedger(bills, latestSettlements);
+            const rows = [];
+            Object.keys(ledger).forEach((cur) => {
+                ledger[cur].net.forEach((t) => {
+                    if (t.from === my.id) rows.push({ currency: cur, other: t.to, amountG: t.amountG, dir: 'owe' });
+                    else if (t.to === my.id) rows.push({ currency: cur, other: t.from, amountG: t.amountG, dir: 'due' });
+                });
+            });
+            return { rows, myId: my.id };
+        };
+
+        const renderBalancePanel = () => {
+            const amountsEl = document.getElementById('balance-amounts');
+            const captionEl = document.getElementById('balance-caption');
+            const actionsEl = document.getElementById('balance-actions');
+            if (!amountsEl || !captionEl || !actionsEl) return;
+
+            const { rows } = myLedgerRows();
+            const byCurrency = {};
+            rows.forEach((r) => {
+                const bucket = byCurrency[r.currency] || (byCurrency[r.currency] = { owe: 0, due: 0 });
+                bucket[r.dir] += r.amountG;
+            });
+            const currencies = Object.keys(byCurrency).sort((a, b) => {
+                const ia = CURRENCY_ORDER.indexOf(a), ib = CURRENCY_ORDER.indexOf(b);
+                return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || (a < b ? -1 : 1);
+            });
+
+            if (currencies.length === 0) {
+                // Stan pusty jest tu stanem SUKCESU, nie brakiem danych — i tak ma wyglądać.
+                amountsEl.innerHTML = `<p class="amount text-5xl">0,00</p>`;
+                captionEl.textContent = 'Wszystko rozliczone. Nikt nikomu nic nie jest winien.';
+                actionsEl.innerHTML = '';
+                return;
+            }
+
+            // Kwota w bloku marki jest CZARNA, a kierunek niesie podpis pod nią. Czerwień
+            // i zieleń na limonce byłyby nieczytelne, a kolor marki nie może znaczyć
+            // „winien" ani „dostajesz" — od tego są wiersze ludzi na białych kartach.
+            amountsEl.innerHTML = currencies.map((cur) => {
+                const net = byCurrency[cur].due - byCurrency[cur].owe;
+                return `<p class="text-6xl md:text-7xl">${denominationHtml(net, cur, 'text-brand-ink')}</p>`;
+            }).join('');
+
+            const oweRows = rows.filter((r) => r.dir === 'owe');
+            const dueRows = rows.filter((r) => r.dir === 'due');
+            const people = (n) => (n === 1 ? '1 osobie' : `${n} osobom`);
+            const peopleFrom = (n) => (n === 1 ? '1 osoby' : `${n} osób`);
+            const parts = [];
+            if (oweRows.length) parts.push(`winien jesteś ${people(oweRows.length)}`);
+            if (dueRows.length) parts.push(`dostajesz od ${peopleFrom(dueRows.length)}`);
+            captionEl.textContent = parts.join(' · ');
+
+            // Akcja pierwszorzędna celuje w największą pozycję — to ona blokuje rozliczenie.
+            const biggestOwe = oweRows.sort((a, b) => b.amountG - a.amountG)[0];
+            const biggestDue = dueRows.sort((a, b) => b.amountG - a.amountG)[0];
+            const buttons = [];
+            if (biggestOwe) {
+                buttons.push(`<button class="balance-settle-btn btn btn-dark" data-to="${escapeHtml(biggestOwe.other)}" data-amount-g="${biggestOwe.amountG}" data-currency="${escapeHtml(biggestOwe.currency)}">Ureguluj ${fmtMoney(biggestOwe.amountG, biggestOwe.currency)}</button>`);
+            }
+            if (biggestDue) {
+                buttons.push(`<button class="balance-nudge-btn btn btn-quiet" data-nudge-to="${escapeHtml(biggestDue.other)}" data-amount-g="${biggestDue.amountG}" data-currency="${escapeHtml(biggestDue.currency)}">Przypomnij: ${escapeHtml(memberName(biggestDue.other))}</button>`);
+            }
+            actionsEl.innerHTML = buttons.join('');
+
+            actionsEl.querySelectorAll('.balance-settle-btn').forEach((btn) => {
+                btn.onclick = () => openSettleModal(btn.dataset.to, Number(btn.dataset.amountG), btn.dataset.currency, 'send');
+            });
+            actionsEl.querySelectorAll('.balance-nudge-btn').forEach((btn) => {
+                btn.onclick = () => sendNudge(btn.dataset.nudgeTo, Number(btn.dataset.amountG), btn.dataset.currency);
+            });
+        };
+
+        // Wiersz osoby: twarz, imię i kwota w jednej linii, akcje pod spodem. Rozbicie na
+        // dwa piętra zamiast upychania czterech rzeczy w rząd — przy imieniu „Bartek" i kwocie
+        // „1 240,00 EUR" wszystko w jednej linii zaczyna się zawijać na wąskim telefonie.
+        const settleRowHtml = (name, id, amountHtml, actionsHtml, detailHtml = '') =>
+            `<div class="card p-4">
+                <div class="flex items-center justify-between gap-3">
+                    <span class="flex items-center min-w-0 gap-3">${avatarHtml(name, id, 'w-11 h-11 text-base')}<span class="truncate font-bold text-lg">${escapeHtml(name)}</span></span>
+                    <span class="flex-shrink-0">${amountHtml}</span>
                 </div>
+                <div class="mt-3 flex items-center gap-2">${actionsHtml}</div>
                 ${detailHtml}
             </div>`;
 
@@ -656,11 +972,12 @@
             const line = (c, neg) => {
                 const isPay = c.kind === 'payment';
                 const label = c.label || (isPay ? 'Wpłata' : 'Rachunek');
-                const icon = isPay ? '<i class="fas fa-hand-holding-usd mr-1 text-green-600"></i>' : '';
-                return `<div class="flex justify-between gap-2 text-xs py-0.5"><span class="truncate text-gray-500">${icon}${escapeHtml(label)}</span><span class="flex-shrink-0 ${neg ? 'text-green-600' : 'text-gray-500'}">${neg ? '−' : ''}${fmtMoney(c.amountG, cur)}</span></div>`;
+                // Wpłata zbija dług, więc idzie kolorem należności i ze znakiem minus —
+                // dwa nośniki, bo sam kolor nie wystarcza przy daltonizmie.
+                return `<div class="flex justify-between gap-2 text-xs py-0.5"><span class="truncate text-ink-3">${escapeHtml(label)}</span><span class="flex-shrink-0 ${neg ? 'text-due' : 'text-ink-3'}">${neg ? '−' : ''}${fmtMoney(c.amountG, cur)}</span></div>`;
             };
-            return `<details class="mt-1.5"><summary class="text-xs text-blue-600 cursor-pointer select-none">szczegóły</summary>
-                <div class="mt-1 pl-2 border-l-2 border-gray-100">${fwd.map(c => line(c, false)).join('')}${rev.map(c => line(c, true)).join('')}</div></details>`;
+            return `<details class="mt-1.5"><summary class="text-xs text-ink-2 cursor-pointer select-none">Za co</summary>
+                <div class="mt-1 pl-2 border-l border-ink/15">${fwd.map(c => line(c, false)).join('')}${rev.map(c => line(c, true)).join('')}</div></details>`;
         };
 
         const renderSettlements = () => {
@@ -669,9 +986,10 @@
             const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
             const myId = myMember ? myMember.id : null;
 
+            // Stan bieżący niesie `aria-pressed`, nie podmiana klas: przełącznik jest
+            // pigułką, którą maluje arkusz, a czytnik ekranu dostaje informację o stanie.
             document.querySelectorAll('.settle-mode-btn').forEach(btn => {
-                const active = btn.dataset.mode === settlementMode;
-                btn.className = `settle-mode-btn px-3 py-1 rounded-full text-sm font-semibold ${active ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`;
+                btn.setAttribute('aria-pressed', String(btn.dataset.mode === settlementMode));
             });
 
             const bills = latestBills.map(({ id, data }) => ({ ...data, id }));
@@ -681,12 +999,16 @@
                 return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || (a < b ? -1 : 1);
             });
 
-            const nothing = `<p class="text-gray-500 text-sm"><i class="fas fa-check-circle mr-2 text-green-600"></i>Brak długów — wszystko rozliczone.</p>`;
+            // Stan pusty jest tu stanem SUKCESU, nie brakiem danych — i tak ma wyglądać.
+            const nothing = `<div class="card p-5 flex items-center gap-3">
+                <span class="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 bg-due/12 text-due"><i class="fas fa-check text-lg"></i></span>
+                <span><span class="block font-bold">Wszystko rozliczone</span><span class="block text-sm text-ink-2">Nikt nikomu nic nie jest winien.</span></span>
+            </div>`;
             if (currencies.length === 0) { container.innerHTML = nothing; return; }
 
             let html = '';
             if (settlementMode === 'min') {
-                html += `<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2 mb-3"><i class="fas fa-info-circle mr-1"></i>Plan „najmniej przelewów" może się zmienić, gdy dojdą nowe rachunki. Do bieżących spłat pewniej jest w trybie „Kto komu ile".</p>`;
+                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3">Plan „najmniej przelewów" zmieni się, gdy dojdą nowe rachunki. Do bieżących spłat pewniejsze jest netto.</p>`;
             }
             currencies.forEach(cur => {
                 const transfers = settlementMode === 'min' ? simplifyDebts(ledger[cur].directed) : ledger[cur].net;
@@ -698,36 +1020,43 @@
                 const detailOf = (t) => settlementMode === 'net' ? debtDetailHtml(ledger[cur].directed, t.from, t.to, cur) : '';
 
                 html += `<div>`;
-                if (currencies.length > 1) html += `<p class="text-xs font-bold text-gray-400 uppercase mb-2">${cur}</p>`;
+                if (currencies.length > 1) html += `<p class="chip mb-2">${cur}</p>`;
 
                 if (mineOwe.length) {
-                    html += `<p class="text-sm font-semibold text-red-600 mb-1">Płacisz:</p><div class="space-y-1.5 mb-3">`;
+                    html += `<p class="text-sm font-bold text-owe mb-2">Płacisz</p><div class="space-y-2 mb-5">`;
                     mineOwe.forEach(t => {
                         html += settleRowHtml(memberName(t.to), t.to,
-                            `<span class="font-bold text-red-600">${fmtMoney(t.amountG, cur)}</span>
-                             <button class="settle-btn bg-green-600 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-green-700" data-to="${t.to}" data-amount-g="${t.amountG}" data-currency="${cur}">Ureguluj</button>`,
+                            `<span class="amount text-2xl text-owe">${fmtMoney(t.amountG, cur)}</span>`,
+                            `<button class="settle-btn btn btn-danger flex-grow" data-to="${t.to}" data-amount-g="${t.amountG}" data-currency="${cur}">Ureguluj</button>`,
                             detailOf(t));
                     });
                     html += `</div>`;
                 }
                 if (mineGet.length) {
-                    html += `<p class="text-sm font-semibold text-green-600 mb-1">Dostajesz:</p><div class="space-y-1.5 mb-3">`;
+                    html += `<p class="text-sm font-bold text-due mb-2">Dostajesz</p><div class="space-y-2 mb-5">`;
                     mineGet.forEach(t => {
                         html += settleRowHtml(memberName(t.from), t.from,
-                            `<span class="font-bold text-green-600">${fmtMoney(t.amountG, cur)}</span>
-                             <button class="nudge-btn bg-amber-500 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-amber-600" data-nudge-to="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}" title="Przypomnij o długu"><i class="fas fa-bell mr-1"></i>Przypomnij</button>
-                             <button class="receive-btn bg-blue-600 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-blue-700" data-from="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}">Otrzymałem</button>`,
+                            `<span class="amount text-2xl text-due">${fmtMoney(t.amountG, cur)}</span>`,
+                            `<button class="receive-btn btn btn-primary flex-grow" data-from="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}">Mam wpłatę</button>
+                             <button class="nudge-btn btn btn-quiet flex-shrink-0" data-nudge-to="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}" title="Przypomnij o długu"><i class="fas fa-bell"></i></button>`,
                             detailOf(t));
                     });
                     html += `</div>`;
                 }
                 if (others.length) {
-                    html += `<p class="text-sm font-semibold text-gray-500 mb-1">Pozostałe w grupie:</p><div class="space-y-1.5">`;
+                    // Cudze długi to informacja, nie zadanie: bez akcji, bez koloru roli,
+                    // mniejszy stopień. Ekran nie może sugerować, że masz tu coś do zrobienia.
+                    html += `<p class="text-sm font-bold text-ink-3 mb-2">Pozostali w grupie</p><div class="space-y-2">`;
                     others.forEach(t => {
-                        const rightHtml = `<span class="font-semibold text-gray-600">${fmtMoney(t.amountG, cur)}</span>`;
-                        const nameHtml = `<span class="flex items-center min-w-0 text-sm text-gray-600"><span class="truncate">${escapeHtml(memberName(t.from))}</span><i class="fas fa-arrow-right mx-2 text-gray-400"></i><span class="truncate">${escapeHtml(memberName(t.to))}</span></span>`;
-                        html += `<div class="p-2 bg-white rounded-lg border border-gray-200">
-                            <div class="flex items-center justify-between gap-2">${nameHtml}${rightHtml}</div>
+                        html += `<div class="block-quiet p-3.5">
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="flex items-center min-w-0 gap-1.5 text-sm">
+                                    ${avatarHtml(memberName(t.from), t.from, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(t.from))}</span>
+                                    <i class="fas fa-arrow-right text-ink-3 text-xs mx-0.5"></i>
+                                    ${avatarHtml(memberName(t.to), t.to, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(t.to))}</span>
+                                </span>
+                                <span class="font-bold text-ink-2 flex-shrink-0">${fmtMoney(t.amountG, cur)}</span>
+                            </div>
                             ${detailOf(t)}
                         </div>`;
                     });
@@ -739,19 +1068,21 @@
             // Historia wpłat (transparentność + undo własnej pomyłki)
             let historyHtml = '';
             if (latestSettlements.length) {
-                historyHtml = `<details class="mt-3"><summary class="text-sm text-blue-600 cursor-pointer select-none">Historia wpłat (${latestSettlements.length})</summary><div class="mt-2 space-y-1">`
+                historyHtml = `<details class="mt-4"><summary class="text-sm text-ink-2 cursor-pointer select-none min-h-tap flex items-center">Rejestr wpłat (${latestSettlements.length})</summary><div class="mt-2 space-y-1.5">`
                     + latestSettlements.map(s => {
                         const canDelete = s.createdBy === currentUser.uid;
                         const canConfirm = !s.confirmed && s.to === myId;
                         const when = (s.createdAt && s.createdAt.toDate) ? s.createdAt.toDate().toLocaleDateString('pl-PL') : '';
+                        // Potwierdzenie to jedyny mechanizm zaufania w rozliczeniach, więc dostaje
+                        // stempel foliowy — najmocniejszy znak, jakim dysponuje ten świat.
                         const badge = s.confirmed
-                            ? `<span class="text-xs text-green-600 whitespace-nowrap"><i class="fas fa-check-circle mr-0.5"></i>potwierdzona</span>`
-                            : `<span class="text-xs text-amber-600 whitespace-nowrap">niepotwierdzona</span>`;
-                        return `<div class="flex items-center justify-between gap-2 text-sm p-2 bg-gray-50 rounded">
-                            <span class="min-w-0 truncate"><b>${escapeHtml(memberName(s.from))}</b> → ${escapeHtml(memberName(s.to))} · ${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}${when ? ` · <span class="text-gray-400">${when}</span>` : ''} · ${badge}</span>
+                            ? `<span class="chip text-due px-1.5 py-0.5 text-[0.6rem] font-bold whitespace-nowrap">Potwierdzona</span>`
+                            : `<span class="text-[0.65rem] text-ink-3 whitespace-nowrap uppercase tracking-wider">Czeka</span>`;
+                        return `<div class="flex items-center justify-between gap-2 text-sm p-3 card">
+                            <span class="min-w-0 truncate"><b>${escapeHtml(memberName(s.from))}</b> → ${escapeHtml(memberName(s.to))} · ${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}${when ? ` · <span class="text-ink-3">${when}</span>` : ''} · ${badge}</span>
                             <span class="flex items-center gap-2 flex-shrink-0">
-                                ${canConfirm ? `<button class="confirm-settle-btn text-blue-600 hover:underline text-xs" data-id="${s.id}">Potwierdź</button>` : ''}
-                                ${canDelete ? `<button class="settle-delete-btn text-gray-400 hover:text-red-500" data-id="${s.id}" title="Usuń wpłatę"><i class="fas fa-trash"></i></button>` : ''}
+                                ${canConfirm ? `<button class="confirm-settle-btn tap min-h-tap px-2 text-info text-xs font-semibold" data-id="${s.id}">Potwierdź</button>` : ''}
+                                ${canDelete ? `<button class="settle-delete-btn tap min-h-tap min-w-tap text-ink-3" data-id="${s.id}" title="Usuń wpłatę"><i class="fas fa-trash"></i></button>` : ''}
                             </span>
                         </div>`;
                     }).join('')
@@ -784,15 +1115,15 @@
                 methodsWrap.classList.remove('hidden');
                 const methods = getPaymentMethods((groupData && groupData.members && groupData.members[otherId]) || null);
                 document.getElementById('settle-methods').innerHTML = methods.length === 0
-                    ? `<p class="text-sm text-gray-400 italic">Odbiorca nie zapisał metod płatności.</p>`
+                    ? `<p class="text-sm text-ink-3">Odbiorca nie zapisał metod płatności.</p>`
                     : methods.map(m => `
-                        <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg">
-                            <i class="${paymentIconClass(m.type)} text-gray-400 w-4 text-center"></i>
+                        <div class="card flex items-center gap-2 p-2">
+                            <i class="${paymentIconClass(m.type)} text-ink-3 w-4 text-center"></i>
                             <div class="flex-grow min-w-0">
-                                <p class="text-xs text-gray-500">${escapeHtml(paymentLabel(m))}</p>
-                                <p class="text-sm break-all">${escapeHtml(m.value)}</p>
+                                <p class="text-sm font-bold text-ink-3">${escapeHtml(paymentLabel(m))}</p>
+                                <p class="text-sm credential">${escapeHtml(m.value)}</p>
                             </div>
-                            <button class="copy-account-btn text-blue-600 hover:underline text-sm flex-shrink-0" data-account="${escapeHtml(m.value)}">kopiuj</button>
+                            <button class="copy-account-btn tap min-h-tap px-3 rounded-lg text-sm font-semibold text-ink flex-shrink-0" data-account="${escapeHtml(m.value)}">Kopiuj</button>
                         </div>`).join('');
             }
             document.getElementById('settle-modal').classList.add('active');
@@ -855,24 +1186,26 @@
             const readAllBtn = document.getElementById('nudges-readall-btn');
             if (readAllBtn) readAllBtn.classList.toggle('hidden', unread === 0);
             if (mine.length === 0) {
-                container.innerHTML = `<p class="text-gray-500 text-sm py-6 text-center"><i class="fas fa-check-circle mr-2 text-green-600"></i>Brak przypomnień.</p>`;
+                container.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">Brak przypomnień.</p>`;
                 return;
             }
             container.innerHTML = mine.map(x => {
                 const isRead = Array.isArray(x.readBy) && x.readBy.includes(uid);
                 const when = (x.createdAt && x.createdAt.toDate) ? x.createdAt.toDate().toLocaleDateString('pl-PL') : '';
                 const amt = x.amountG ? fmtMoney(Number(x.amountG), x.currency || 'PLN') : '';
-                return `<div class="p-3 rounded-lg border ${isRead ? 'border-gray-200 bg-white' : 'border-amber-200 bg-amber-50'}">
+                // Przypomnienie jest sprawą dwóch osób i mówi o MOIM długu — stąd kolor
+                // „winien jesteś" przy nieprzeczytanym, i nic więcej. Treść zostaje rzeczowa.
+                return `<div class="card p-3 ${isRead ? '' : 'border-owe/40'}">
                     <div class="flex items-start justify-between gap-2">
                         <div class="min-w-0">
                             <p class="text-sm"><b>${escapeHtml(memberName(x.from))}</b> przypomina o zaległości${amt ? ` <b>${amt}</b>` : ''}.</p>
-                            <p class="text-xs text-gray-500 mt-0.5">Już zapłaciłeś? Zapisz wpłatę, żeby dług zniknął.${when ? ` · ${when}` : ''}</p>
+                            <p class="text-xs text-ink-3 mt-0.5">Już zapłaciłeś? Zapisz wpłatę, żeby dług zniknął.${when ? ` · ${when}` : ''}</p>
                         </div>
-                        ${isRead ? '' : '<span class="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0 mt-1.5"></span>'}
+                        ${isRead ? '' : '<span class="w-2 h-2 rounded-full bg-owe flex-shrink-0 mt-1.5"></span>'}
                     </div>
                     <div class="flex items-center gap-2 mt-2">
-                        <button class="nudge-settle-btn bg-green-600 text-white text-sm font-semibold px-3 py-1 rounded-lg hover:bg-green-700" data-to="${x.from}" data-amount-g="${x.amountG || 0}" data-currency="${x.currency || 'PLN'}">Ureguluj</button>
-                        ${isRead ? '' : `<button class="nudge-read-btn text-blue-600 hover:underline text-sm" data-id="${x.id}">Oznacz przeczytane</button>`}
+                        <button class="nudge-settle-btn btn btn-danger" data-to="${x.from}" data-amount-g="${x.amountG || 0}" data-currency="${x.currency || 'PLN'}">Ureguluj</button>
+                        ${isRead ? '' : `<button class="nudge-read-btn tap min-h-tap px-3 rounded-lg text-ink-2 text-sm font-semibold" data-id="${x.id}">Oznacz przeczytane</button>`}
                     </div>
                 </div>`;
             }).join('');
@@ -895,10 +1228,10 @@
                 const p = participants[id];
                 const inBill = p && p.status !== 'not_applicable';
                 const isPayer = billData.payerId === id;
-                return `<label class="flex items-center gap-3 p-2 rounded-lg ${isPayer ? 'bg-gray-100' : 'hover:bg-gray-50 cursor-pointer'}">
-                    <input type="checkbox" class="bill-member-cb w-4 h-4" data-id="${id}" ${inBill ? 'checked' : ''} ${isPayer ? 'disabled' : ''}>
+                return `<label class="tap flex items-center gap-2 p-2 min-h-tap rounded-lg ${isPayer ? 'bg-surface-2' : 'cursor-pointer'}">
+                    <input type="checkbox" class="bill-member-cb w-5 h-5 accent-ink" data-id="${id}" ${inBill ? 'checked' : ''} ${isPayer ? 'disabled' : ''}>
                     ${avatarHtml(m.name, id)}
-                    <span class="flex-grow font-medium">${escapeHtml(m.name)}${isPayer ? ' <span class="text-xs text-gray-400">(płatnik)</span>' : ''}</span>
+                    <span class="flex-grow truncate font-medium">${escapeHtml(m.name)}${isPayer ? ' <span class="text-xs text-ink-3">(płatnik)</span>' : ''}</span>
                 </label>`;
             }).join('');
         };
@@ -953,8 +1286,9 @@
                 if (myMember.photoURL) {
                     av.innerHTML = `<img src="${escapeHtml(myMember.photoURL)}" class="w-16 h-16 rounded-full object-cover" alt="">`;
                 } else {
-                    const initial = ((myMember.name || '?').trim().charAt(0) || '?').toUpperCase();
-                    av.innerHTML = `<div class="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-3xl" style="background-color:${escapeHtml(colorForMember(myMember.id, myMember.name))}">${escapeHtml(initial)}</div>`;
+                    // Ten sam znak, co wszędzie indziej, tylko w pełnym rozmiarze: dopiero
+                    // tutaj widać gęstość rozety, po której ekipa rozpoznaje człowieka.
+                    av.innerHTML = avatarHtml(myMember.name, myMember.id, 'w-16 h-16 text-4xl');
                 }
             }
             const removeBtn = document.getElementById('profile-photo-remove-btn');
@@ -966,9 +1300,9 @@
             document.getElementById('profile-spending').innerHTML = order.map(id => {
                 const mm = groupData.members[id]; if (!mm) return '';
                 const s = sp[id] || { onSelf: {}, fronted: {} };
-                return `<div class="flex items-center justify-between gap-2 p-2 bg-gray-50 rounded-lg">
+                return `<div class="card flex items-center justify-between gap-2 p-3">
                     <span class="flex items-center min-w-0">${avatarHtml(mm.name, id)}<span class="truncate font-medium">${escapeHtml(mm.name)}</span></span>
-                    <span class="text-sm text-right"><span class="block text-gray-700">na siebie: <b>${fmtMap(s.onSelf)}</b></span><span class="block text-gray-400 text-xs">wyłożył/a: ${fmtMap(s.fronted)}</span></span>
+                    <span class="text-sm text-right flex-shrink-0"><span class="block text-ink-2">na siebie: <b>${fmtMap(s.onSelf)}</b></span><span class="block text-ink-3 text-xs">wyłożył/a: ${fmtMap(s.fronted)}</span></span>
                 </div>`;
             }).join('');
         };
@@ -1019,8 +1353,7 @@
             if (!myMember) return;
 
             document.querySelectorAll('.bill-filter-btn').forEach(btn => {
-                const active = btn.dataset.filter === currentBillFilter;
-                btn.className = `bill-filter-btn px-3 py-1 rounded-full text-sm font-semibold ${active ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`;
+                btn.setAttribute('aria-pressed', String(btn.dataset.filter === currentBillFilter));
             });
 
             const visible = latestBills.filter(({ data }) => {
@@ -1031,8 +1364,8 @@
             billsList.innerHTML = '';
             if (visible.length === 0) {
                 billsList.innerHTML = latestBills.length === 0
-                    ? '<p class="text-gray-500">Brak rachunków. Dodaj pierwszy!</p>'
-                    : '<p class="text-gray-500">Brak rachunków w tym widoku.</p>';
+                    ? '<p class="block-quiet p-5 text-sm text-ink-2">Pusty pokój. Pierwszy rachunek dodasz przyciskiem na dole ekranu.</p>'
+                    : '<p class="block-quiet p-5 text-sm text-ink-2">Nic w tym widoku.</p>';
                 return;
             }
 
@@ -1042,20 +1375,37 @@
                 const canToggleHide = myParticipant && myParticipant.status !== 'not_applicable';
                 const summaryHtml = getBillSummaryHtml(bill, myMember, myParticipant);
                 const hideBtn = canToggleHide
-                    ? `<button class="hide-bill-btn text-gray-400 hover:text-gray-700 p-2" title="${isHidden ? 'Przywróć' : 'Ukryj'}"><i class="fas ${isHidden ? 'fa-eye' : 'fa-eye-slash'}"></i></button>`
+                    ? `<button class="hide-bill-btn tap min-h-tap min-w-tap text-ink-3" title="${isHidden ? 'Przywróć' : 'Ukryj'}"><i class="fas ${isHidden ? 'fa-eye' : 'fa-eye-slash'}"></i></button>`
                     : '';
 
+                // Data rachunku idzie mikrodrukiem: jest potrzebna do odróżnienia dwóch kolacji
+                // w tym samym miejscu, ale nie konkuruje z nazwą ani z kwotą.
+                const created = bill.createdAt && bill.createdAt.toDate
+                    ? bill.createdAt.toDate().toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })
+                    : '';
+
+                // KOLOR NIESIE STATUS, nie tożsamość. Kolorowanie kafelka kolorem płatnika
+                // zamieniało listę w tęczę, w której nic nie znaczyło nic. Tu odcień pojawia
+                // się WYŁĄCZNIE tam, gdzie jest coś do wiedzenia: co czeka na twój ruch,
+                // ile jesteś winien, co już domknięte. Biały kafelek to stan spokojny.
+                const status = billStatus(bill, myMember, myParticipant);
                 const billEl = document.createElement('div');
-                billEl.className = "bg-gray-100 p-4 rounded-lg flex flex-col sm:flex-row justify-between sm:items-center cursor-pointer hover:bg-gray-200";
+                billEl.className = "card tap p-4 flex items-center gap-3 cursor-pointer";
+                // Tło barwi się tylko przy zadaniu do wykonania — reszta listy zostaje biała,
+                // więc oko trafia w to jedno miejsce bez szukania.
+                if (status.tone === 'action') billEl.style.backgroundColor = 'rgb(var(--info) / 0.09)';
                 billEl.innerHTML = `
-                    <div class="w-full">
-                        <p class="font-semibold text-lg flex items-center">${escapeHtml(bill.billName)}</p>
-                        <p class="text-xs text-gray-500">Utworzono: ${new Date(bill.createdAt?.toDate()).toLocaleString('pl-PL')}</p>
-                        <div class="mt-2">${summaryHtml}</div>
+                    ${bill.payerId ? avatarHtml(memberName(bill.payerId), bill.payerId, 'w-11 h-11 text-base') : ''}
+                    <div class="min-w-0 flex-grow">
+                        <p class="font-bold text-lg truncate leading-tight">${escapeHtml(bill.billName)}</p>
+                        <div class="mt-1 flex items-center gap-2 flex-wrap">
+                            <span class="${status.chipClass}">${status.labelHtml}</span>
+                            <span class="text-sm text-ink-3">${created}</span>
+                        </div>
                     </div>
-                    <div class="flex items-center self-end sm:self-center mt-2 sm:mt-0">
+                    <div class="flex items-center gap-2 flex-shrink-0">
+                        <span class="${status.amountClass}">${status.amount}</span>
                         ${hideBtn}
-                        <i class="fas fa-chevron-right text-gray-400 ml-1"></i>
                     </div>
                 `;
                 billEl.onclick = (e) => {
@@ -1093,6 +1443,9 @@
             currentBillId = billId;
             history.pushState(null, '', `?group=${groupId}&bill=${billId}`);
             if (unsubscribeBill) unsubscribeBill();
+            // Wchodzimy na gotowy paragon, więc nic nie ma prawa animować przy otwarciu —
+            // ruch tłumaczy ZMIANĘ, a pierwszy render żadnej zmiany nie pokazuje.
+            lastPickersByItem = new Map();
             
             if (!groupData) {
                 const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, groupId);
@@ -1109,14 +1462,15 @@
             unsubscribeBill = onSnapshot(billDocRef, (doc) => {
                 billData = doc.data();
                 if (billData) {
+                    // Jeden ekran dla każdego rachunku. Stare rachunki zapisane jako
+                    // „prosty" otwierają się tutaj bez migracji danych: brak pozycji
+                    // znaczy, że cała kwota jest nierozpisana i dzieli się po równo —
+                    // czyli dokładnie to, co dawniej robił osobny ekran.
                     billData.photos = billData.photos || [];
-                    if (billData.type === 'simple') {
-                        withFocusPreserved(renderSimpleBillScreen);
-                        showScreen('simple-bill');
-                    } else {
-                        withFocusPreserved(renderBillScreen);
-                        showScreen('bill');
-                    }
+                    billData.sharedCosts = billData.sharedCosts || [];
+                    billData.globalCosts = billData.globalCosts || [];
+                    withFocusPreserved(renderBillScreen);
+                    showScreen('bill');
                 }
             });
         };
@@ -1152,34 +1506,33 @@
         // Model wpłat: rachunek = KONSUMPCJA. Status = tylko członkostwo/uzupełnienie,
         // BEZ opłacone/nieopłacone (rozliczenie żyje w „Rozliczeniach", nie na rachunku).
         const getStatusHtml = (status, isMe, isPayer, participantId = null, billType = 'advanced') => {
+            // Status mówi o UDZIALE w rachunku, nie o pieniądzach — dlatego chodzi tonami
+            // atramentu, a jedyny kolor („informacja") dostaje stan, który czegoś od
+            // człowieka chce. Czerwień i zieleń zostają zarezerwowane dla długu i należności.
             const statuses = {
-                incomplete: { text: "Nieuzupełnione", icon: "fa-question-circle", color: "text-orange-500", bg: "bg-orange-100" },
-                completed: { text: "Uzupełnione", icon: "fa-user-check", color: "text-blue-600", bg: "bg-blue-100" },
-                not_applicable: { text: "Nie dotyczy", icon: "fa-ban", color: "text-gray-600", bg: "bg-gray-200" },
+                incomplete: { text: "Nieuzupełnione", icon: "fa-question-circle", color: "text-info", bg: "bg-surface-2" },
+                completed: { text: "Uzupełnione", icon: "fa-user-check", color: "text-ink-2", bg: "bg-surface-2" },
+                not_applicable: { text: "Nie dotyczy", icon: "fa-ban", color: "text-ink-3", bg: "bg-surface-2" },
             };
-            const active = { text: "W rachunku", icon: "fa-user", color: "text-gray-600", bg: "bg-gray-100" };
+            const active = { text: "W rachunku", icon: "fa-user", color: "text-ink-2", bg: "bg-surface-2" };
             const current = statuses[status] || active; // legacy unpaid/paid → „w rachunku"
             const isPayerConfirmed = billData.payerConfirmed === true;
 
             if (isPayer) {
                 if (isPayerConfirmed) {
-                    return `<span class="font-semibold text-green-500 flex items-center"><i class="fas fa-user-check mr-2"></i>Płatnik (potwierdzony)</span>`;
+                    return `<span class="text-sm font-semibold text-due">Płatnik · potwierdzony</span>`;
                 }
-                return `<span class="font-semibold text-gray-600 flex items-center"><i class="fas fa-user-tag mr-2"></i>Płatnik</span>`;
+                return `<span class="text-sm font-semibold text-ink-2">Płatnik</span>`;
             }
 
             if (isMe) {
-                const selectClass = billType === 'simple' ? 'simple-status-select' : 'status-select';
-                const options = billType === 'simple'
-                    ? `<option value="unpaid" ${status !== 'not_applicable' ? 'selected' : ''}>W rachunku</option>
-                       <option value="not_applicable" ${status === 'not_applicable' ? 'selected' : ''}>Mnie nie dotyczy</option>`
-                    : `<option value="incomplete" ${status === 'incomplete' ? 'selected' : ''}>Nieuzupełnione</option>
+                const options = `<option value="incomplete" ${status === 'incomplete' ? 'selected' : ''}>Nieuzupełnione</option>
                        <option value="completed" ${status === 'completed' ? 'selected' : ''}>Uzupełnione</option>
                        <option value="not_applicable" ${status === 'not_applicable' ? 'selected' : ''}>Mnie nie dotyczy</option>`;
                 return `
                     <div class="status-select-wrapper ${current.bg}">
                         <i class="fas ${current.icon} ${current.color} mr-2"></i>
-                        <select class="${selectClass} font-semibold ${current.color}" data-participant-id="${participantId}">${options}</select>
+                        <select class="status-select font-semibold ${current.color}" data-participant-id="${participantId}">${options}</select>
                     </div>`;
             }
 
@@ -1230,20 +1583,30 @@
             const header = document.getElementById('items-section-header');
             if (header) {
                 const missing = unassignedItems(billData).length;
+                // Licznik „bez wyboru" jest jedyną czerwienią w tej sekcji: to realny brak
+                // w rozliczeniu, a nie ozdoba. Same kafelki znaczą brak przerywaną krawędzią.
                 header.innerHTML = items.length === 0 ? '' :
-                    `<div class="flex items-center justify-between mb-2">
-                        <p class="font-semibold text-gray-700">Pozycje (${items.length})</p>
-                        ${missing > 0 ? `<p class="text-xs text-red-600 font-semibold"><i class="fas fa-triangle-exclamation mr-1"></i>${missing} bez wyboru</p>` : ''}
+                    `<div class="flex items-center justify-between gap-2 mb-3">
+                        <h3 class="font-display text-xl font-extrabold tracking-tight">Pozycje (${items.length})</h3>
+                        ${missing > 0 ? `<p class="chip text-owe">${missing} bez wyboru</p>` : ''}
                     </div>`;
             }
 
             if (items.length === 0) {
                 list.className = '';
-                list.innerHTML = `<p class="text-sm text-gray-400 italic">Brak pozycji. Dodaj je z paragonu, a każdy stuknie to, co jadł.</p>`;
+                list.innerHTML = `<p class="block-quiet p-5 text-sm text-ink-2">Brak pozycji. Dodaj zdjęcie paragonu niżej i odczytaj je — albo dopisz pozycję ręcznie. Potem każdy stuknie to, co jadł.</p>`;
                 return;
             }
 
-            list.className = 'grid grid-cols-2 sm:grid-cols-3 gap-2';
+            // ŻYWY PARAGON — znak tej aplikacji.
+            //
+            // Pozycje stoją w KOLUMNIE jak na paragonie, nie w siatce kafelków: paragon czyta
+            // się z góry na dół, a przy trzydziestu pozycjach siatka zmusza oko do skakania.
+            // Po prawej każdej linii stoi stos twarzy tych, którzy ją wzięli — i to jest ta
+            // rzecz, której nie ma konkurencja: gdy piętnaście osób odklikuje równocześnie,
+            // widzisz cudze zdjęcia lądujące na liniach na własnym ekranie, w czasie
+            // rzeczywistym. Współbieżność przestaje być obietnicą w opisie i staje się obrazem.
+            list.className = 'receipt card overflow-hidden';
             list.innerHTML = items.map(it => {
                 const pickers = itemPickers(it).filter(pid => billData.participants[pid]);
                 const count = pickers.length;
@@ -1252,32 +1615,52 @@
                 const amountG = toGrosze(it.amount || 0);
                 const perPersonG = count > 0 ? Math.ceil(amountG / count) : 0;
 
-                const tileClass = mine
-                    ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                    : (count === 0 ? 'border-red-300 bg-red-50' : 'border-gray-200 bg-white');
+                const baseLineClass = mine ? 'receipt-line receipt-line-mine' : (count === 0 ? 'receipt-line receipt-line-void' : 'receipt-line');
 
-                const avatars = pickers.slice(0, 4).map(pid => {
+                // Pięć twarzy mieści się bez ścisku na najwęższym telefonie; reszta idzie
+                // licznikiem. Moja twarz dostaje klasę, po której arkusz maluje jej obwódkę.
+                //
+                // Animacja lądowania należy WYŁĄCZNIE cudzym wyborom. Własne stuknięcie jest
+                // odpowiedzią na twój ruch i nie wymaga tłumaczenia; ruch bez powodu to hałas.
+                const seenBefore = lastPickersByItem.get(it.id);
+                // Własne stuknięcie też zasługuje na odpowiedź — nie animacją lądowania
+                // (to jest język cudzych działań), tylko krótkim podświetleniem całej
+                // linii. Potwierdza, że zapis wrócił z bazy, a nie że kliknięcie zginęło.
+                const myPickChanged = seenBefore && myId && seenBefore.has(myId) !== pickers.includes(myId);
+                const faces = pickers.slice(0, 5).map(pid => {
                     const m = billData.participants[pid];
-                    return `<span class="inline-flex -ml-1 first:ml-0 ring-2 ring-white rounded-full">${avatarHtml(m.name, pid, 'w-6 h-6 text-xs')}</span>`;
+                    const landed = seenBefore && !seenBefore.has(pid) && pid !== myId;
+                    const base = pid === myId ? 'face face-mine' : 'face';
+                    return avatarHtml(m.name, pid, landed ? `${base} face-landing` : base);
                 }).join('');
 
-                return `<div class="item-tile relative text-left border-2 ${tileClass} rounded-xl p-3 cursor-pointer transition select-none hover:shadow-md" data-item-id="${it.id}">
-                    <div class="flex items-start justify-between gap-1">
-                        <p class="font-semibold text-sm leading-tight break-words pr-1">${escapeHtml(it.description || 'Pozycja')}${qty > 1 ? ` <span class="text-gray-400 font-normal">×${qty}</span>` : ''}</p>
-                        <span class="flex-shrink-0 flex gap-1.5">
-                            <button class="item-edit-btn text-gray-300 hover:text-blue-600" data-item-id="${it.id}" title="Edytuj pozycję"><i class="fas fa-pen text-xs"></i></button>
-                            <button class="remove-shared-cost-btn text-gray-300 hover:text-red-600" data-cost-id="${it.id}" title="Usuń pozycję"><i class="fas fa-trash text-xs"></i></button>
+                // Klasa składana POZA szablonem: strażnik escapowania czyta wyrażenia
+                // w znacznikach po nazwach, a nazwa klasy z członem „value" wygląda
+                // dla niego jak dana z bazy wstawiona bez neutralizacji.
+                const lineClass = myPickChanged ? `${baseLineClass} value-flash` : baseLineClass;
+                return `<div class="${lineClass} cursor-pointer select-none" data-item-id="${it.id}">
+                    <span class="flex-grow min-w-0">
+                        <span class="block font-bold leading-tight truncate">${escapeHtml(it.description || 'Pozycja')}${qty > 1 ? ` <span class="text-ink-3 font-semibold">×${qty}</span>` : ''}</span>
+                        <span class="mt-1.5 flex items-center gap-2 min-h-[1.75rem]">
+                            ${count > 0
+                                ? `<span class="face-stack">${faces}</span>${count > 5 ? `<span class="text-xs font-bold text-ink-3">+${count - 5}</span>` : ''}
+                                   <span class="text-xs ${mine ? 'font-bold text-ink' : 'text-ink-3'}">${fmtMoney(perPersonG, cur)}/os.</span>`
+                                : `<span class="chip text-ink-3">Stuknij, jeśli to Twoje</span>`}
                         </span>
-                    </div>
-                    <p class="text-lg font-bold mt-1">${fmtMoney(amountG, cur)}</p>
-                    <div class="flex items-center justify-between mt-2 min-h-[1.5rem]">
-                        <span class="flex items-center">${avatars}${count > 4 ? `<span class="text-xs text-gray-500 ml-1">+${count - 4}</span>` : ''}</span>
-                        ${count > 0
-                            ? `<span class="text-xs ${mine ? 'text-blue-700 font-semibold' : 'text-gray-500'}">${fmtMoney(perPersonG, cur)}/os.</span>`
-                            : `<span class="text-xs text-red-600 font-semibold">nikt nie wybrał</span>`}
-                    </div>
+                    </span>
+                    <span class="flex items-center gap-2 flex-shrink-0">
+                        <span class="amount text-xl">${denominationHtml(amountG, cur, 'text-ink', { withCurrency: false })}</span>
+                        <button class="item-edit-btn w-11 h-11 rounded-full flex items-center justify-center text-ink-3 flex-shrink-0" data-item-id="${it.id}" title="Edytuj pozycję" aria-label="Edytuj pozycję"><i class="fas fa-pen text-xs"></i></button>
+                    </span>
                 </div>`;
             }).join('');
+
+            // Zapamiętujemy stan PO wyrenderowaniu, żeby następny zapis z bazy wiedział,
+            // które twarze są nowe. Przy pierwszym wejściu na rachunek mapa jest pusta,
+            // więc nic nie animuje — wchodzisz na gotowy paragon, a nie na fajerwerki.
+            items.forEach(it => {
+                lastPickersByItem.set(it.id, new Set(itemPickers(it)));
+            });
         };
 
         // --- Faza 7B: odczyt paragonu przez AI ---
@@ -1373,21 +1756,21 @@
             const wrap = document.getElementById('receipt-preview-items');
 
             wrap.innerHTML = receiptDraft.items.map((it, i) => `
-                <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg ${it.__use ? '' : 'opacity-50'}">
-                    <input type="checkbox" class="rp-use w-4 h-4 flex-shrink-0" data-i="${i}" ${it.__use ? 'checked' : ''}>
-                    <input type="text" class="rp-name flex-grow min-w-0 p-1 border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none" data-i="${i}" value="${escapeHtml(it.description)}">
-                    <input type="number" min="1" step="1" class="rp-qty w-14 p-1 text-center border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none" data-i="${i}" value="${it.quantity}">
-                    <input type="text" inputmode="decimal" class="rp-amount w-24 p-1 text-right font-semibold border-b border-transparent hover:border-gray-300 focus:border-blue-500 outline-none" data-i="${i}" value="${String(it.amount.toFixed(2)).replace('.', ',')}">
-                    <span class="text-xs text-gray-400 flex-shrink-0">${cur}</span>
+                <div class="flex items-center gap-2 p-2 rounded-lg ${it.__use ? '' : 'opacity-50'}">
+                    <input type="checkbox" class="rp-use w-5 h-5 flex-shrink-0 accent-ink" data-i="${i}" ${it.__use ? 'checked' : ''}>
+                    <input type="text" class="rp-name field flex-grow min-w-0 p-1.5" data-i="${i}" value="${escapeHtml(it.description)}">
+                    <input type="number" min="1" step="1" class="rp-qty field w-14 p-1.5 text-center" data-i="${i}" value="${it.quantity}">
+                    <input type="text" inputmode="decimal" class="rp-amount field w-24 p-1.5 text-right font-semibold" data-i="${i}" value="${String(it.amount.toFixed(2)).replace('.', ',')}">
+                    <span class="text-xs text-ink-3 flex-shrink-0">${cur}</span>
                 </div>`).join('');
 
             const modWrap = document.getElementById('receipt-preview-modifiers-wrap');
             modWrap.classList.toggle('hidden', receiptDraft.modifiers.length === 0);
             document.getElementById('receipt-preview-modifiers').innerHTML = receiptDraft.modifiers.map((m, i) => `
-                <div class="flex items-center gap-2 p-2 border border-gray-200 rounded-lg ${m.__use ? '' : 'opacity-50'}">
-                    <input type="checkbox" class="rp-mod-use w-4 h-4 flex-shrink-0" data-i="${i}" ${m.__use ? 'checked' : ''}>
+                <div class="flex items-center gap-2 p-2 rounded-lg ${m.__use ? '' : 'opacity-50'}">
+                    <input type="checkbox" class="rp-mod-use w-5 h-5 flex-shrink-0 accent-ink" data-i="${i}" ${m.__use ? 'checked' : ''}>
                     <span class="flex-grow min-w-0 truncate">${escapeHtml(m.description)}</span>
-                    <span class="font-semibold ${Number(m.value) < 0 ? 'text-green-600' : 'text-gray-700'}">${m.type === 'percent' ? `${Number(m.value)}%` : fmtMoney(toGrosze(m.value), cur)}</span>
+                    <span class="font-semibold ${Number(m.value) < 0 ? 'text-due' : 'text-ink-2'}">${m.type === 'percent' ? `${Number(m.value)}%` : fmtMoney(toGrosze(m.value), cur)}</span>
                 </div>`).join('');
 
             renderReceiptPreviewSummaryOnly();
@@ -1470,14 +1853,28 @@
             const wrap = document.getElementById('shared-cost-participants');
             wrap.innerHTML = Object.values(billData.participants || {})
                 .filter(p => p.status !== 'not_applicable')
-                .map(p => `<label class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-100 cursor-pointer">
-                    <input type="checkbox" class="shared-participant-checkbox w-4 h-4" value="${p.id}" ${picked.includes(p.id) ? 'checked' : ''}>
-                    ${avatarHtml(p.name, p.id, 'w-7 h-7 text-sm')}<span>${escapeHtml(p.name)}</span>
+                .map(p => `<label class="tap flex items-center gap-2 p-2 min-h-tap rounded-lg cursor-pointer">
+                    <input type="checkbox" class="shared-participant-checkbox w-5 h-5 accent-ink" value="${p.id}" ${picked.includes(p.id) ? 'checked' : ''}>
+                    ${avatarHtml(p.name, p.id, 'w-7 h-7 text-sm mr-1')}<span class="truncate">${escapeHtml(p.name)}</span>
                 </label>`).join('');
 
             // Rozbicie na sztuki ma sens tylko dla istniejącej pozycji o ilości > 1.
             const splitBtn = document.getElementById('item-split-btn');
             splitBtn.classList.toggle('hidden', !(item && itemQuantity(item) > 1));
+
+            // Kasowanie pokazujemy wyłącznie przy pozycji, która już istnieje — przy
+            // dodawaniu nowej nie ma czego usuwać, a przycisk „Usuń" obok pustego
+            // formularza tylko rozprasza.
+            const deleteBtn = document.getElementById('item-delete-btn');
+            deleteBtn.classList.toggle('hidden', !item);
+            deleteBtn.dataset.costId = item ? item.id : '';
+            deleteBtn.onclick = async () => {
+                if (!editingItemId) return;
+                const id = editingItemId;
+                document.getElementById('shared-cost-modal').classList.remove('active');
+                await mutateItems((items) => items.filter(sc => sc.id !== id));
+                showToast('Pozycja usunięta.');
+            };
 
             document.getElementById('shared-cost-modal').classList.add('active');
         };
@@ -1528,6 +1925,28 @@
         // ===================================================
         // ===== EKRAN RACHUNKU ZAAWANSOWANEGO (bill-screen) =====
         // ===================================================
+        // Rozpiska udziału jednej osoby. U siebie pomijamy wiersz „koszt własny" — stoi
+        // wyżej jako pole do wpisania i powtórzony niżej tylko myli. ŁĄCZNIE dostaje
+        // nominał, bo to jedyna liczba z tej rozpiski, którą ktoś realnie czyta.
+        const participantBreakdownHtml = (pt, isMe, paymentInfo = '') => {
+            const cur = billData.currency;
+            // `caption`, nie `label`: strażnik escapowania traktuje `label` jako daną z bazy
+            // (bo w profilu metod płatności nią jest), a tu wchodzą wyłącznie napisy z kodu.
+            const row = (caption, amount) =>
+                `<div class="flex justify-between gap-2"><span class="text-ink-3">${caption}</span><span class="text-ink-2">${amount.toFixed(2).replace('.', ',')}</span></div>`;
+            return `<div class="mt-3 pt-3 border-t border-ink/10 text-sm space-y-0.5">
+                ${isMe ? '' : row('Koszty własne', pt.individualAmount)}
+                ${row('Pozycje', pt.sharedAmount)}
+                ${row('Koszty wspólne', pt.globalCostsAmount)}
+                <div class="flex items-baseline justify-between gap-2 pt-2">
+                    <span class="text-sm font-bold text-ink-3">Łącznie</span>
+                    <span class="text-2xl">${denominationHtml(toGrosze(pt.total), cur, 'text-ink')}</span>
+                </div>
+                <div class="text-right text-xs text-ink-3">${getPlnConversionHtml(pt.total, cur, billData.exchangeRatePLN)}</div>
+                ${paymentInfo}
+            </div>`;
+        };
+
         const renderBillScreen = async () => {
             if (!billData || !groupData) return;
             
@@ -1556,7 +1975,9 @@
             totalAmountInput.disabled = !canEditMainFields;
             
             const payerSelect = document.getElementById('payer-select');
-            payerSelect.innerHTML = '<option value="">Nikt</option>';
+            // „Nikt" brzmiało jak stwierdzenie faktu („nikt nie zapłacił"), a to jest
+            // pole do wypełnienia. Zachęta mówi, co zrobić.
+            payerSelect.innerHTML = '<option value="">Wskaż osobę…</option>';
             Object.values(billData.participants || {}).forEach(p => {
                 const option = document.createElement('option');
                 option.value = p.id;
@@ -1570,21 +1991,23 @@
             const confirmationBanner = document.getElementById('payer-confirmation-banner-advanced');
             if (canConfirm) {
                 confirmationBanner.innerHTML = `
-                    <div class="p-4 mb-4 text-sm text-yellow-800 rounded-lg bg-yellow-50 flex justify-between items-center">
-                        <span><i class="fas fa-exclamation-triangle mr-2"></i>Jesteś wybrany/a jako płatnik. Potwierdź, aby zablokować wybór płatnika.</span>
-                        <button id="confirm-payer-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Potwierdzam</button>
+                    <div class="card p-4 flex flex-wrap justify-between items-center gap-3">
+                        <span class="text-sm text-ink-2">To Ty wyłożyłeś/aś pieniądze za ten rachunek. Potwierdź, żeby zablokować wybór płatnika.</span>
+                        <button id="confirm-payer-btn" class="btn btn-dark flex-shrink-0">Potwierdzam</button>
                     </div>`;
                 document.getElementById('confirm-payer-btn').onclick = async () => {
                      await updateDoc(doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId), { payerConfirmed: true });
                 };
             } else if (isPayerConfirmed) {
                 const payerName = billData.participants[billData.payerId]?.name || '...';
-                const bannerText = isCurrentUserThePayer 
-                    ? `Jako płatnik, wciąż możesz edytować kwotę rachunku.`
-                    : `Główne pola rachunku zostały zablokowane przez <strong>${escapeHtml(payerName)}</strong>.`;
+                const bannerText = isCurrentUserThePayer
+                    ? `Wyłożyłeś/aś pieniądze za ten rachunek — kwotę wciąż możesz poprawić.`
+                    : `Główne pola rachunku zablokował/a <strong>${escapeHtml(payerName)}</strong>.`;
+                // Stempel foliowy znaczy „potwierdzone" — tu potwierdzone jest, kto wyłożył pieniądze.
                 confirmationBanner.innerHTML = `
-                    <div class="p-4 mb-4 text-sm text-green-800 rounded-lg bg-green-50">
-                        <span><i class="fas fa-lock mr-2"></i>${bannerText}</span>
+                    <div class="card p-4 flex items-center gap-3">
+                        <span class="chip text-due text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Płatnik</span>
+                        <span class="text-sm text-ink-2">${bannerText}</span>
                     </div>`;
             } else {
                 confirmationBanner.innerHTML = '';
@@ -1595,19 +2018,33 @@
             const controlSumEl = document.getElementById('control-sum');
             const controlStatusEl = document.getElementById('control-status');
             const control = calculations.control;
-            controlSumEl.textContent = `${control.enteredSubtotal.toFixed(2)} ${billData.currency}`;
-            controlSumEl.className = "mt-1 text-2xl font-bold ";
-            if (controlStatusEl) controlStatusEl.className = "text-sm font-semibold h-5 ";
+            // Suma pozycji zmienia się po każdym dopisaniu i po każdym cudzym ruchu,
+            // więc to ona jest miejscem, w którym potwierdzenie ma sens.
+            const previousSum = controlSumEl.textContent;
+            controlSumEl.textContent = `${control.enteredSubtotal.toFixed(2).replace('.', ',')} ${billData.currency}`;
+            if (previousSum && previousSum !== controlSumEl.textContent) flashValue(controlSumEl);
+            controlSumEl.className = "font-bold text-lg text-right ";
+            // Wyjaśnienie stanu jest zdaniem pomocniczym, nie alarmem: zwykły stopień
+            // i spokojny kolor. Pogrubione czerwone dwie linie krzyczały o czymś, co
+            // w większości wypadków jest normalnym stanem rachunku.
+            if (controlStatusEl) controlStatusEl.className = "text-sm mt-1 text-ink-2 ";
 
-            if (control.status === 'ok') {
-                controlSumEl.classList.add('control-sum-ok');
-                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-ok'); controlStatusEl.textContent = '✓ zgadza się z kwotą rachunku'; }
-            } else if (control.status === 'over') {
+            const diffText = (d) => `${d.toFixed(2).replace('.', ',')} ${billData.currency}`;
+            // NIEDOBÓR NIE JEST BŁĘDEM. Po wprowadzeniu reguły „jeden rachunek, który rośnie"
+            // kwota nierozpisana dzieli się po równo, więc komunikat ma powiedzieć, ile to
+            // wyjdzie na osobę — a nie straszyć, że ktoś czegoś nie wpisał.
+            if (control.status === 'over') {
                 controlSumEl.classList.add('control-sum-bad');
-                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-bad'); controlStatusEl.textContent = `⚠ Nadwyżka ${control.diff.toFixed(2)} ${billData.currency} — ktoś przeliczył lub podwójna pozycja`; }
+                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-bad'); controlStatusEl.textContent = `Nadwyżka ${diffText(control.diff)} — ktoś przeliczył albo pozycja jest podwójna`; }
             } else if (control.status === 'under') {
-                controlSumEl.classList.add('control-sum-bad');
-                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-bad'); controlStatusEl.textContent = `⚠ Brakuje ${control.diff.toFixed(2)} ${billData.currency} — ktoś nie wpisał pozycji`; }
+                if (controlStatusEl) {
+                    controlStatusEl.textContent = calculations.perPersonUnallocated > 0
+                        ? `Nierozpisane ${diffText(calculations.unallocated)}, czyli po ${diffText(calculations.perPersonUnallocated)} na osobę.`
+                        : `Nierozpisane ${diffText(calculations.unallocated)}.`;
+                }
+            } else if (control.status === 'ok') {
+                controlSumEl.classList.add('control-sum-ok');
+                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-ok'); controlStatusEl.textContent = 'Rozpisane co do grosza'; }
             } else if (controlStatusEl) { // empty (kwota nie wpisana)
                 controlStatusEl.textContent = '';
             }
@@ -1646,110 +2083,90 @@
                 // Zostaje sam udział (linia ŁĄCZNIE niżej). Płatnikowi pokazujemy tylko info że wyłożył całość.
                 let paymentInfo = '';
                 if (payer && isPayerConfirmed && isPayer) {
-                    paymentInfo = `<p class="text-sm text-gray-500"><i class="fas fa-wallet mr-2"></i>Wyłożył/a całość: ${Number(billData.totalAmount || 0).toFixed(2)} ${billData.currency}</p>`;
+                    paymentInfo = `<p class="text-sm text-ink-3">Wyłożył/a całość: ${Number(billData.totalAmount || 0).toFixed(2).replace('.', ',')} ${billData.currency}</p>`;
                 }
 
-                const statusDisplayHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'advanced', isCurrentUserThePayer);
+                const statusDisplayHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'advanced');
 
                 let participantHTML;
                 if (isMe) {
                     const isCalculatorActive = p.calculatorActive === true;
                     
                     const yourSumContainerHTML = `
-                        <div id="your-sum-container-${p.id}" class="flex items-center justify-end w-full space-x-2 ${isCalculatorActive ? 'hidden' : ''}">
-                            <button class="calculator-toggle-btn text-blue-600 bg-gray-200 hover:bg-gray-300 transition p-2 rounded-full w-9 h-9 flex items-center justify-center flex-shrink-0" ${isDisabled ? 'disabled' : ''}>
+                        <div id="your-sum-container-${p.id}" class="flex items-center gap-2 w-full ${isCalculatorActive ? 'hidden' : ''}">
+                            <button class="calculator-toggle-btn tap w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 bg-surface-2 text-ink-2" title="Rozbij na kilka kwot" ${isDisabled ? 'disabled' : ''}>
                                 <i class="fas fa-calculator"></i>
                             </button>
-                            <label for="your-sum-input-${p.id}" class="text-gray-600 whitespace-nowrap">Koszt:</label>
+                            <label for="your-sum-input-${p.id}" class="sr-only">Twój koszt własny</label>
                             <input type="text" inputmode="decimal" id="your-sum-input-${p.id}"
-                                class="flex-grow w-full text-right font-semibold p-1 border-b-2 rounded-none bg-transparent border-gray-400 focus:border-blue-500 outline-none"
+                                class="field min-h-tap flex-grow min-w-0 p-2 text-right font-semibold"
                                 value="${p.individualAmount > 0 ? p.individualAmount.toFixed(2).replace('.',',') : ''}"
                                 placeholder="0,00"
                                 ${isDisabled ? 'disabled' : ''}>
-                            <span class="font-semibold">${billData.currency}</span>
+                            <span class="font-semibold text-ink-3 flex-shrink-0">${billData.currency}</span>
                         </div>
                     `;
 
                     const calculatorTotalContainerHTML = `
-                        <div id="calculator-total-container-${p.id}" class="flex items-center justify-end w-full space-x-2 ${isCalculatorActive ? '' : 'hidden'}">
-                             <button class="calculator-toggle-btn text-blue-600 bg-blue-100 hover:bg-blue-200 transition p-2 rounded-full w-9 h-9 flex items-center justify-center flex-shrink-0 active" ${isDisabled ? 'disabled' : ''}>
+                        <div id="calculator-total-container-${p.id}" class="flex items-center gap-2 w-full ${isCalculatorActive ? '' : 'hidden'}">
+                            <button class="calculator-toggle-btn tap w-11 h-11 rounded-lg flex items-center justify-center flex-shrink-0 bg-ink text-surface active" title="Zwiń do jednej kwoty" ${isDisabled ? 'disabled' : ''}>
                                 <i class="fas fa-compress"></i>
                             </button>
-                            <label class="text-gray-600 whitespace-nowrap">Koszt:</label>
-                            <input type="text"
-                                class="flex-grow w-full text-right font-semibold p-1 bg-transparent text-gray-700 cursor-default border-none outline-none"
-                                value="${p.individualAmount > 0 ? p.individualAmount.toFixed(2).replace('.',',') : '00,00'}"
+                            <input type="text" aria-label="Suma kosztów własnych"
+                                class="field min-h-tap flex-grow min-w-0 p-2 text-right font-semibold"
+                                value="${p.individualAmount > 0 ? p.individualAmount.toFixed(2).replace('.',',') : '0,00'}"
                                 disabled>
-                            <span class="font-semibold">${billData.currency}</span>
+                            <span class="font-semibold text-ink-3 flex-shrink-0">${billData.currency}</span>
                         </div>
                     `;
 
                     participantHTML = `
-                    <div class="p-4 rounded-lg bg-blue-50 border-2 border-blue-200" data-participant-id="${p.id}">
-                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
-                            <div class="flex items-center">
+                    <div class="card p-4" data-participant-id="${p.id}">
+                        <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center min-w-0">
                                 ${avatarHtml(p.name, p.id)}
-                                <div class="flex flex-col">
-                                    <div class="flex items-center">
-                                        <span class="text-xl font-semibold">${escapeHtml(p.name)}</span>
-                                    </div>
+                                <div class="flex flex-col min-w-0">
+                                    <span class="text-lg font-semibold truncate">${escapeHtml(p.name)}</span>
                                     ${statusDisplayHtml}
                                 </div>
                             </div>
-                            <div class="mt-4 md:mt-0 w-full md:w-auto">
-                                <div class="flex flex-col items-end">
-                                    ${yourSumContainerHTML}
-                                    ${calculatorTotalContainerHTML}
-                                    <div id="calculator-inputs-container-${p.id}" class="flex flex-col items-end space-y-2 mt-2 w-full ${isCalculatorActive ? '' : 'hidden'}">
-                                        ${(p.individualAmounts && p.individualAmounts.length > 0) ? p.individualAmounts.map((amount, index) => `
-                                            <div class="flex items-center w-full justify-end">
-                                                 <input type="text" inputmode="decimal" class="individual-amount-component w-32 text-right font-semibold p-1 border-b-2 rounded-none bg-transparent border-gray-400 focus:border-blue-500 outline-none" value="${amount > 0 ? String(amount.toFixed(2)).replace('.',',') : ''}" placeholder="0,00" data-index="${index}" id="individual-amount-component-${p.id}-${index}" ${isDisabled ? 'disabled' : ''}>
-                                                 <span class="ml-2 mr-2 font-semibold text-gray-400">${billData.currency}</span>
-                                                 <div class="w-7 h-7 flex items-center justify-center">
-                                                 ${index === p.individualAmounts.length - 1 ? `
-                                                    <button class="add-amount-btn p-1 bg-gray-200 rounded-full w-7 h-7 flex items-center justify-center hover:bg-gray-300 transition" ${isDisabled ? 'disabled' : ''}>
-                                                        <i class="fas fa-plus text-sm"></i>
-                                                    </button>
-                                                 ` : ''}
-                                                 </div>
-                                            </div>
-                                        `).join('') : ''}
+                            <span class="chip text-due text-[0.55rem] font-bold px-2 py-1 flex-shrink-0">Ty</span>
+                        </div>
+
+                        <div class="mt-3">
+                            <p class="text-sm font-bold text-ink-3 mb-1.5">Koszt tylko Twój</p>
+                            ${yourSumContainerHTML}
+                            ${calculatorTotalContainerHTML}
+                            <div id="calculator-inputs-container-${p.id}" class="flex flex-col gap-2 mt-2 w-full ${isCalculatorActive ? '' : 'hidden'}">
+                                ${(p.individualAmounts && p.individualAmounts.length > 0) ? p.individualAmounts.map((amount, index) => `
+                                    <div class="flex items-center gap-2 w-full">
+                                        <input type="text" inputmode="decimal" class="individual-amount-component field min-h-tap flex-grow min-w-0 p-2 text-right font-semibold" value="${amount > 0 ? String(amount.toFixed(2)).replace('.',',') : ''}" placeholder="0,00" data-index="${index}" id="individual-amount-component-${p.id}-${index}" ${isDisabled ? 'disabled' : ''}>
+                                        <span class="font-semibold text-ink-3 flex-shrink-0">${billData.currency}</span>
+                                        <div class="w-11 h-11 flex items-center justify-center flex-shrink-0">
+                                        ${index === p.individualAmounts.length - 1 ? `
+                                            <button class="add-amount-btn tap w-11 h-11 rounded-lg flex items-center justify-center bg-surface-2 text-ink-2" title="Dodaj kolejną kwotę" ${isDisabled ? 'disabled' : ''}>
+                                                <i class="fas fa-plus"></i>
+                                            </button>
+                                        ` : ''}
+                                        </div>
                                     </div>
-                                </div>
+                                `).join('') : ''}
                             </div>
                         </div>
-                        <div class="mt-3 pl-10 text-sm text-gray-600">
-                            <p>Koszty dzielone: <span class="font-medium">${pt.sharedAmount.toFixed(2)} ${billData.currency}</span></p>
-                            <p>Koszty ogólne: <span class="font-medium">${pt.globalCostsAmount.toFixed(2)} ${billData.currency}</span></p>
-                            <div class="mt-2 pt-2 border-t">
-                                <p class="text-base font-bold">ŁĄCZNIE: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency, billData.exchangeRatePLN)}</p>
-                                ${paymentInfo}
-                            </div>
-                        </div>
+
+                        ${participantBreakdownHtml(pt, true, paymentInfo)}
                     </div>`;
                 } else { // Other participants view
                     participantHTML = `
-                    <div class="p-4 rounded-lg bg-gray-50 border border-gray-200">
-                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
-                            <div class="flex items-center">
-                                ${avatarHtml(p.name, p.id)}
-                                <div class="flex flex-col">
-                                    <div class="flex items-center">
-                                        <span class="text-xl font-semibold">${escapeHtml(p.name)}</span>
-                                    </div>
-                                    ${statusDisplayHtml}
-                                </div>
+                    <div class="card p-4">
+                        <div class="flex items-center min-w-0">
+                            ${avatarHtml(p.name, p.id)}
+                            <div class="flex flex-col min-w-0">
+                                <span class="text-lg font-semibold truncate">${escapeHtml(p.name)}</span>
+                                ${statusDisplayHtml}
                             </div>
                         </div>
-                         <div class="mt-3 pl-10 text-sm text-gray-600">
-                            <p>Koszty indywidualne: <span class="font-medium">${pt.individualAmount.toFixed(2)} ${billData.currency}</span></p>
-                            <p>Koszty dzielone: <span class="font-medium">${pt.sharedAmount.toFixed(2)} ${billData.currency}</span></p>
-                            <p>Koszty ogólne: <span class="font-medium">${pt.globalCostsAmount.toFixed(2)} ${billData.currency}</span></p>
-                            <div class="mt-2 pt-2 border-t">
-                                <p class="text-base font-bold">ŁĄCZNIE: ${pt.total.toFixed(2)} ${billData.currency} ${getPlnConversionHtml(pt.total, billData.currency, billData.exchangeRatePLN)}</p>
-                                ${paymentInfo}
-                            </div>
-                        </div>
+                        ${participantBreakdownHtml(pt, false, paymentInfo)}
                     </div>`;
                 }
                 
@@ -1763,14 +2180,19 @@
             renderItemTiles();
 
             document.getElementById('global-costs-list').innerHTML = (billData.globalCosts || []).map(gc => {
-                // Number() zamiast .toFixed() wprost: koszt ogólny wpisany z konsoli jako tekst
+                // Number() zamiast .toFixed() wprost: koszt wspólny wpisany z konsoli jako tekst
                 // wywalał cały render listy (a z nim ekran rachunku).
                 const gcValue = Number(gc.value) || 0;
-                const valueText = gc.type === 'percent' ? `${gcValue}%` : `${gcValue.toFixed(2)} ${escapeHtml(billData.currency)}`;
+                const valueText = gc.type === 'percent' ? `${gcValue}%` : `${gcValue.toFixed(2).replace('.', ',')} ${escapeHtml(billData.currency)}`;
+                // Koszt ogólny dotyczy wszystkich, więc czyta się jak dopisek na banknocie:
+                // pasek mikrodruku po lewej, kwota po prawej, bez własnego koloru.
                 return `
-                    <div class="bg-orange-100 p-3 rounded-lg flex justify-between items-center">
-                        <div><p class="font-semibold">${escapeHtml(gc.description)}: ${valueText}</p></div>
-                        <button class="remove-global-cost-btn text-red-500 hover:text-red-700" data-cost-id="${gc.id}"><i class="fas fa-trash"></i></button>
+                    <div class="card p-3 flex justify-between items-center gap-2">
+                        <p class="font-semibold truncate">${escapeHtml(gc.description)}</p>
+                        <span class="flex items-center gap-3 flex-shrink-0">
+                            <span class="font-semibold text-ink-2">${valueText}</span>
+                            <button class="remove-global-cost-btn tap w-9 h-9 rounded-lg flex items-center justify-center text-ink-3" data-cost-id="${gc.id}" title="Usuń koszt wspólny"><i class="fas fa-trash text-sm"></i></button>
+                        </span>
                     </div>`;
             }).join('');
             
@@ -1923,8 +2345,9 @@
                 };
             }
 
-            // Kafelek: stuknięcie dopisuje/wypisuje MNIE z pozycji (klik w ołówek/kosz nie liczy się jako wybór).
-            document.querySelectorAll('.item-tile').forEach(tile => {
+            // Linia paragonu: stuknięcie dopisuje/wypisuje MNIE z pozycji (klik w ołówek/kosz
+            // nie liczy się jako wybór).
+            document.querySelectorAll('.receipt-line').forEach(tile => {
                 tile.onclick = async (e) => {
                     if (e.target.closest('.item-edit-btn') || e.target.closest('.remove-shared-cost-btn')) return;
                     const my = myMemberNow();
@@ -2017,155 +2440,6 @@
             });
         };
 
-        // ===================================================
-        // ===== EKRAN RACHUNKU PROSTEGO (simple-bill-screen) =====
-        // ===================================================
-        const renderSimpleBillScreen = async () => {
-            if (!billData || !groupData) return;
-
-            if (!exchangeRates || exchangeRates.base !== billData.currency) {
-                await fetchExchangeRates(billData.currency);
-            }
-
-            const myGroupMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
-            const isCurrentUserThePayer = myGroupMember && billData.payerId === myGroupMember.id;
-            const isPayerConfirmed = billData.payerConfirmed === true;
-
-            // FIX: Allow payer to edit main fields even after confirmation.
-            const canEditMainFields = !isPayerConfirmed || isCurrentUserThePayer;
-            const canConfirm = isCurrentUserThePayer && !isPayerConfirmed;
-
-            document.getElementById('simple-bill-name').textContent = billData.billName;
-
-            const totalAmountInput = document.getElementById('simple-bill-total-amount');
-            if (document.activeElement !== totalAmountInput) {
-                totalAmountInput.value = billData.totalAmount > 0 ? billData.totalAmount.toFixed(2) : '';
-            }
-            totalAmountInput.disabled = !canEditMainFields;
-
-            const currencySelect = document.getElementById('simple-bill-currency-select');
-            currencySelect.value = billData.currency;
-            currencySelect.disabled = !canEditMainFields;
-            
-            const payerSelect = document.getElementById('simple-bill-payer-select');
-            payerSelect.innerHTML = '<option value="">Nikt</option>';
-            Object.values(groupData.members || {}).forEach(m => {
-                const option = document.createElement('option');
-                option.value = m.id;
-                option.textContent = m.name;
-                if (billData.payerId === m.id) option.selected = true;
-                payerSelect.appendChild(option);
-            });
-            payerSelect.disabled = isPayerConfirmed;
-
-            const confirmationBanner = document.getElementById('payer-confirmation-banner-simple');
-            if (canConfirm) {
-                confirmationBanner.innerHTML = `
-                    <div class="p-4 mb-4 text-sm text-yellow-800 rounded-lg bg-yellow-50 flex justify-between items-center">
-                        <span><i class="fas fa-exclamation-triangle mr-2"></i>Jesteś wybrany/a jako płatnik. Potwierdź, aby zablokować wybór płatnika.</span>
-                        <button id="confirm-payer-btn-simple" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700">Potwierdzam</button>
-                    </div>`;
-                document.getElementById('confirm-payer-btn-simple').onclick = async () => {
-                     await updateDoc(doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId), { payerConfirmed: true });
-                };
-            } else if (isPayerConfirmed) {
-                const payerName = billData.participants[billData.payerId]?.name || '...';
-                const bannerText = isCurrentUserThePayer 
-                    ? `Jako płatnik, wciąż możesz edytować kwotę rachunku.`
-                    : `Główne pola rachunku zostały zablokowane przez <strong>${escapeHtml(payerName)}</strong>.`;
-                confirmationBanner.innerHTML = `
-                    <div class="p-4 mb-4 text-sm text-green-800 rounded-lg bg-green-50">
-                        <span><i class="fas fa-lock mr-2"></i>${bannerText}</span>
-                    </div>`;
-            } else {
-                confirmationBanner.innerHTML = '';
-            }
-
-            const includedParticipants = Object.values(billData.participants || {}).filter(p => p.status !== 'not_applicable');
-            const participantCount = includedParticipants.length;
-            const simpleCalc = calculateSimple(billData);
-            const amountPerPerson = simpleCalc.amountPerPerson; // zaokrąglone W GÓRĘ (płatnik nie stratny)
-
-            document.getElementById('simple-bill-participant-count').textContent = participantCount === Object.keys(groupData.members).length ? 'wszystkich' : `${participantCount}`;
-            document.getElementById('simple-bill-amount-per-person').textContent = `${amountPerPerson.toFixed(2)} ${billData.currency}`;
-            document.getElementById('simple-pln-conversion-display').innerHTML = getPlnConversionHtml(amountPerPerson, billData.currency, billData.exchangeRatePLN);
-
-            const participantsList = document.getElementById('simple-bill-participants-list');
-            participantsList.innerHTML = '';
-            const payer = billData.participants[billData.payerId];
-
-            const sortedParticipants = Object.values(billData.participants || {}).sort((a, b) => {
-                if (a.id === myGroupMember.id) return -1;
-                if (b.id === myGroupMember.id) return 1;
-                return memberName(a.id).localeCompare(memberName(b.id));
-            });
-
-            sortedParticipants.forEach(p => {
-                const isMe = p.id === myGroupMember.id;
-                const isPayer = p.id === billData.payerId;
-                const pName = p.name || memberName(p.id);
-
-                // Model wpłat: rozliczenie (należność) jest w „Rozliczeniach", nie na rachunku.
-                let paymentInfo = '';
-                if (payer && isPayerConfirmed && isPayer) {
-                    paymentInfo = `<p class="text-sm text-gray-500"><i class="fas fa-wallet mr-2"></i>Wyłożył/a całość: ${Number(billData.totalAmount || 0).toFixed(2)} ${billData.currency}</p>`;
-                }
-
-                const statusHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'simple');
-
-                const participantHTML = `
-                    <div class="p-4 rounded-lg ${isMe ? 'bg-blue-50 border-2 border-blue-200' : 'bg-gray-50 border border-gray-200'}">
-                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
-                            <div class="flex items-center">
-                                ${avatarHtml(pName, p.id)}
-                                <div class="flex flex-col">
-                                    <div class="flex items-center">
-                                        <span class="text-xl font-semibold">${escapeHtml(pName)}</span>
-                                    </div>
-                                    ${paymentInfo || ''}
-                                </div>
-                            </div>
-                            <div class="mt-2 md:mt-0">
-                                 ${statusHtml}
-                            </div>
-                        </div>
-                    </div>`;
-                participantsList.innerHTML += participantHTML;
-            });
-            
-            // FIX: The variable to check if the delete button should be shown is now `isCurrentUserThePayer`
-            document.getElementById('delete-bill-btn-simple').style.display = isCurrentUserThePayer ? 'inline-block' : 'none';
-
-            addSimpleBillEventListeners();
-        };
-
-        const addSimpleBillEventListeners = () => {
-            const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId);
-            document.getElementById('back-to-dashboard-from-simple-btn').onclick = () => {
-                if (unsubscribeBill) unsubscribeBill();
-                navigateToGroup(currentGroupId);
-            };
-            document.getElementById('simple-bill-total-amount').onchange = async (e) => {
-                const newTotal = parseFloat(e.target.value.replace(',','.')) || 0;
-                await updateDoc(billDocRef, { totalAmount: newTotal });
-            };
-            document.getElementById('simple-bill-currency-select').onchange = async (e) => {
-                await updateDoc(billDocRef, await currencyPatch(e.target.value));
-            };
-            document.getElementById('simple-bill-payer-select').onchange = async (e) => {
-                await updateDoc(billDocRef, { 
-                    payerId: e.target.value || null,
-                    payerConfirmed: false
-                });
-            };
-            document.querySelectorAll('.simple-status-select').forEach(select => {
-                select.onchange = async (e) => {
-                    const participantId = e.target.dataset.participantId;
-                    await updateDoc(billDocRef, buildStatusUpdate(billData, participantId, e.target.value));
-                };
-            });
-            document.getElementById('delete-bill-btn-simple').onclick = () => deleteBillWithUndo();
-        };
         
         
         // ===================================================
@@ -2327,15 +2601,77 @@
                 if (forget) { forgetRoom(forget.dataset.roomId); renderMyRooms(); }
             });
 
+            // --- Skład grupy jako żetony ---
+            // Imiona dodaje się pojedynczo i widać je od razu. Ukryte pole `member-names`
+            // zostaje źródłem prawdy przy zapisie, żeby jedna lista miała jednego właściciela.
+            const nameInput = document.getElementById('member-name-input');
+            const addBtn = document.getElementById('add-member-btn');
+            const chipsEl = document.getElementById('member-chips');
+            const hintEl = document.getElementById('member-hint');
+            const hiddenNames = document.getElementById('member-names');
+            const groupNameInput = document.getElementById('group-name');
+            const createBtn = document.getElementById('create-group-btn');
+            let draftMembers = [];
+
+            const syncDraft = () => {
+                hiddenNames.value = draftMembers.join(',');
+                chipsEl.innerHTML = draftMembers.map((name, i) => {
+                    const color = identityColor(`draft-${i}`, name);
+                    // Kasownik żetonu miał 24×18 px — poniżej progu trafienia kciukiem.
+                    // Teraz jest kołem 32 px w żetonie o wysokości 44 px.
+                    return `<span class="chip pl-1 pr-1 py-1 gap-2 h-11">
+                        <span class="w-8 h-8 rounded-full inline-flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style="background-color:${escapeHtml(color)}">${escapeHtml(initials(name))}</span>
+                        <span class="text-sm font-bold text-ink">${escapeHtml(name)}</span>
+                        <button class="draft-member-remove hit-44 w-8 h-8 rounded-full flex items-center justify-center text-ink-3 text-lg leading-none flex-shrink-0" data-index="${i}" title="Usuń ${escapeHtml(name)} z grupy" aria-label="Usuń ${escapeHtml(name)}">&times;</button>
+                    </span>`;
+                }).join('');
+                hintEl.textContent = draftMembers.length === 0
+                    ? 'Zacznij od siebie. Resztę możesz dopisać teraz albo później.'
+                    : (draftMembers.length === 1
+                        ? 'Dopisz resztę ekipy albo zaproś ich linkiem po założeniu grupy.'
+                        : `${draftMembers.length} osoby w grupie.`);
+                if (createBtn && !createBtn.disabled) {
+                    createBtn.textContent = draftMembers.length === 0 ? 'Dodaj choć jedną osobę' : 'Załóż grupę';
+                }
+            };
+
+            const addDraftMember = () => {
+                const name = nameInput.value.trim();
+                if (!name) return;
+                // Dwie osoby o tym samym imieniu w grupie to gwarantowana pomyłka przy
+                // przypisywaniu pozycji — lepiej powiedzieć to teraz niż przy rachunku.
+                if (draftMembers.some(n => n.toLowerCase() === name.toLowerCase())) {
+                    showToast('Taka osoba już jest na liście. Dodaj rozróżnienie, np. nazwisko.', true);
+                    return;
+                }
+                draftMembers.push(name);
+                nameInput.value = '';
+                nameInput.focus();
+                syncDraft();
+            };
+
+            if (addBtn) addBtn.addEventListener('click', addDraftMember);
+            if (nameInput) nameInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); addDraftMember(); }
+            });
+            if (chipsEl) chipsEl.addEventListener('click', (e) => {
+                const btn = e.target.closest('.draft-member-remove');
+                if (!btn) return;
+                draftMembers.splice(Number(btn.dataset.index), 1);
+                syncDraft();
+            });
+            if (groupNameInput) groupNameInput.addEventListener('input', syncDraft);
+            syncDraft();
+
             document.getElementById('create-group-btn').addEventListener('click', async () => {
                 const groupName = document.getElementById('group-name').value.trim();
                 const memberNames = document.getElementById('member-names').value.trim()
                     .split(',').map(name => name.trim()).filter(name => name.length > 0);
 
-                if (!groupName || memberNames.length === 0) {
-                    showToast("Wypełnij wszystkie pola.", true);
-                    return;
-                }
+                // Komunikat mówi, CZEGO brakuje — „wypełnij wszystkie pola" zostawiało
+                // szukanie na użytkowniku.
+                if (!groupName) { showToast('Nazwij grupę — po niej znajdziesz ją później.', true); return; }
+                if (memberNames.length === 0) { showToast('Dodaj choć jedną osobę do grupy.', true); return; }
                 const newGroupId = generateId();
                 const membersMap = {};
                 const memberOrder = []; // Array to store the order of members
@@ -2402,12 +2738,12 @@
             if (existing) existing.remove();
             const toast = document.createElement('div');
             toast.id = toastId;
-            toast.className = 'fixed bottom-5 right-5 p-4 rounded-lg shadow-lg text-white z-50 bg-gray-800 flex items-center gap-4';
+            toast.className = 'fixed bottom-24 left-4 right-4 sm:left-auto sm:right-5 sm:max-w-sm p-3 rounded-lg z-50 bg-ink text-surface flex items-center gap-4';
             const span = document.createElement('span');
             span.textContent = message;
             const btn = document.createElement('button');
             btn.textContent = 'Cofnij';
-            btn.className = 'font-bold underline text-blue-300 hover:text-blue-200 whitespace-nowrap';
+            btn.className = 'tap min-h-tap px-3 rounded-lg font-semibold underline whitespace-nowrap flex-shrink-0';
             btn.onclick = () => { toast.remove(); onUndo(); };
             toast.append(span, btn);
             document.body.appendChild(toast);
@@ -2450,9 +2786,42 @@
         };
 
         const setupGlobalModalListeners = () => {
-            // Kontekstowy help „?"
-            const helpFab = document.getElementById('help-fab');
-            if (helpFab) helpFab.onclick = showHelp;
+            // --- ZAMYKANIE OKNA: jedna zasada dla wszystkich ---
+            //
+            // Wcześniej tylko pięć z trzynastu okien reagowało na kliknięcie w tło, więc
+            // z reszty dało się wyjść wyłącznie znajdując właściwy przycisk. Na telefonie
+            // to jest pułapka: arkusz zajmuje ekran, a droga powrotna zależy od tego,
+            // które okno akurat trafiło.
+            //
+            // Wyjątkiem są okna potwierdzeń nieodwracalnych: tam przypadkowe muśnięcie
+            // tła nie może uchodzić za odpowiedź, więc trzeba wskazać wprost.
+            const CONFIRM_MODALS = new Set(['delete-confirm-modal', 'delete-photo-confirm-modal']);
+            const openModals = () => [...document.querySelectorAll('.modal.active')];
+            const closeTopModal = () => {
+                const top = openModals().pop();
+                if (top && !CONFIRM_MODALS.has(top.id)) top.classList.remove('active');
+            };
+
+            document.addEventListener('click', (e) => {
+                const modal = e.target.closest('.modal');
+                // Kliknięcie MUSI trafić w samo tło — kliknięcie w arkusz nie zamyka okna.
+                if (modal && e.target === modal && !CONFIRM_MODALS.has(modal.id)) {
+                    modal.classList.remove('active');
+                }
+            });
+
+            // Klawisz Escape robi to samo. Na komputerze to odruch, a aplikacja działa
+            // też tam — poza tym daje drogę wyjścia obsłudze z klawiatury.
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && openModals().length) closeTopModal();
+            });
+
+            // Kontekstowy help „?" — jeden przycisk w nagłówku każdego ekranu, który
+            // ma treść pomocy. Delegacja, bo przycisków jest kilka i żyją w różnych
+            // nagłówkach, a wszystkie robią to samo.
+            document.addEventListener('click', (e) => {
+                if (e.target.closest('.help-btn')) showHelp();
+            });
             const helpModal = document.getElementById('help-modal');
             document.getElementById('close-help-modal').onclick = () => helpModal.classList.remove('active');
             helpModal.onclick = (e) => { if (e.target === helpModal) helpModal.classList.remove('active'); };
@@ -2583,9 +2952,7 @@
 
             // Edycja członków rachunku
             const bmBtnA = document.getElementById('edit-members-btn-advanced');
-            const bmBtnS = document.getElementById('edit-members-btn-simple');
             if (bmBtnA) bmBtnA.onclick = openBillMembersModal;
-            if (bmBtnS) bmBtnS.onclick = openBillMembersModal;
             const bmModal = document.getElementById('bill-members-modal');
             document.getElementById('close-bill-members-modal').onclick = () => bmModal.classList.remove('active');
             bmModal.onclick = (e) => { if (e.target === bmModal) bmModal.classList.remove('active'); };
@@ -2660,14 +3027,14 @@
         const addNewBillModalListeners = () => {
             const modal = document.getElementById('new-bill-modal');
             const nameInput = document.getElementById('new-bill-name');
-            const typeButtons = document.querySelectorAll('.bill-type-btn');
             const createBtn = document.getElementById('confirm-create-bill-btn');
             const cancelBtn = document.getElementById('cancel-new-bill');
             const editParticipantsBtn = document.getElementById('edit-participants-btn-modal');
             const participantsChecklist = document.getElementById('participants-checklist-modal');
 
+            // Do założenia rachunku wystarczy nazwa — typ przestał istnieć jako decyzja.
             const checkCreateButtonState = () => {
-                createBtn.disabled = !(newBillState.name.trim() !== '' && newBillState.type);
+                createBtn.disabled = newBillState.name.trim() === '';
             };
             
             const updateParticipantsButton = () => {
@@ -2678,15 +3045,14 @@
 
             document.getElementById('create-new-bill-btn').onclick = () => {
                 if (!groupData) return;
-                newBillState = { name: '', type: null, participantIds: Object.keys(groupData.members || {}) };
+                newBillState = { name: '', type: 'advanced', participantIds: Object.keys(groupData.members || {}) };
                 nameInput.value = '';
-                typeButtons.forEach(btn => btn.classList.remove('selected'));
-                
+
                 participantsChecklist.innerHTML = '';
                 Object.values(groupData.members || {}).forEach(member => {
                     const label = document.createElement('label');
-                    label.className = "flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 cursor-pointer";
-                    label.innerHTML = `<input type="checkbox" class="modal-participant-checkbox" value="${escapeHtml(member.id)}" checked><span>${escapeHtml(member.name)}</span>`;
+                    label.className = "tap flex items-center gap-2 p-2 min-h-tap rounded-lg cursor-pointer";
+                    label.innerHTML = `<input type="checkbox" class="modal-participant-checkbox w-5 h-5 accent-ink" value="${escapeHtml(member.id)}" checked><span class="truncate">${escapeHtml(member.name)}</span>`;
                     participantsChecklist.appendChild(label);
                 });
                 
@@ -2708,15 +3074,6 @@
                 checkCreateButtonState();
             });
 
-            typeButtons.forEach(button => {
-                button.addEventListener('click', () => {
-                    typeButtons.forEach(btn => btn.classList.remove('selected'));
-                    button.classList.add('selected');
-                    newBillState.type = button.dataset.billType;
-                    checkCreateButtonState();
-                });
-            });
-            
             editParticipantsBtn.addEventListener('click', () => {
                 participantsChecklist.classList.toggle('hidden');
             });
@@ -2732,31 +3089,29 @@
                 const allMembersMap = groupData.members || {};
                 const participantsMap = {};
 
+                // Każdy rachunek powstaje w jednym kształcie i rośnie w miarę potrzeb.
+                // Status 'incomplete' znaczy „nie rozpisano jeszcze wszystkiego", a nie
+                // „rachunek zepsuty": kwota nierozpisana i tak dzieli się po równo.
                 Object.values(allMembersMap).forEach(m => {
                     const isIncluded = newBillState.participantIds.includes(m.id);
-                    if (newBillState.type === 'simple') {
-                        participantsMap[m.id] = { id: m.id, name: m.name, status: isIncluded ? 'unpaid' : 'not_applicable' };
-                    } else { // advanced
-                        participantsMap[m.id] = { id: m.id, name: m.name, individualAmount: 0, individualAmounts: [], calculatorActive: false, status: isIncluded ? 'incomplete' : 'not_applicable' };
-                    }
+                    participantsMap[m.id] = { id: m.id, name: m.name, individualAmount: 0, individualAmounts: [], calculatorActive: false, status: isIncluded ? 'incomplete' : 'not_applicable' };
                 });
 
-                const baseBill = { 
-                    billName: newBillState.name, 
-                    type: newBillState.type, 
-                    createdAt: serverTimestamp(), 
-                    currency: 'PLN', 
-                    totalAmount: 0, 
-                    payerId: null, 
+                const baseBill = {
+                    billName: newBillState.name,
+                    // Pole `type` zostaje w dokumencie dla zgodności ze starymi rachunkami
+                    // w bazie, ale nie rozgałęzia już ani obliczeń, ani ekranów.
+                    type: 'advanced',
+                    createdAt: serverTimestamp(),
+                    currency: 'PLN',
+                    totalAmount: 0,
+                    payerId: null,
                     payerConfirmed: false,
-                    participants: participantsMap
+                    participants: participantsMap,
+                    globalCosts: [],
+                    sharedCosts: [],
+                    photos: [],
                 };
-
-                if (newBillState.type === 'advanced') {
-                    baseBill.globalCosts = [];
-                    baseBill.sharedCosts = [];
-                    baseBill.photos = [];
-                }
 
                 const newBillRef = await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`), baseBill);
                 modal.classList.remove('active');
@@ -2803,7 +3158,7 @@
 
                 const img = document.createElement('img');
                 img.src = photo.url;
-                img.className = 'w-24 h-24 object-cover rounded-lg cursor-pointer border-2 border-gray-200';
+                img.className = 'w-24 h-24 object-cover rounded-lg cursor-pointer border border-ink/15';
                 img.onclick = () => showLightbox(photo.url);
 
                 const deleteBtn = document.createElement('button');
