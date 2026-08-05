@@ -60,6 +60,51 @@ Sugerowana kolejność:
 
 ---
 
+## Z `PRODUCT.md` — wiąże redesign, łatwo przeoczyć
+
+Nie przepisuję całego pliku; to są punkty, które realnie zmieniają decyzje projektowe,
+a nie wynikają z niczego innego.
+
+**Znany błąd PWA na iPhonie.** Skrót z ekranu początkowego otwiera ekran startowy zamiast
+pokoju. Dwie przyczyny: `manifest.json` ma `start_url: "/"`, które na iOS 16.4+ wygrywa
+z adresem bieżącej strony, oraz osobny magazyn danych aplikacji ze skrótu — lista pokoi
+zapisana w Safari jest tam niewidoczna. Naprawa warstwowa: **kod pokoju i QR jako pewnik**,
+dynamiczny manifest jako eksperyment do potwierdzenia na telefonie. Ma znaczenie tym
+większe, że planowane jest wydanie natywne.
+
+**Świadomie otwarte ryzyka** (nie do naprawy przypadkiem, ale nie do zapomnienia):
+członek grupy może podmienić cudzy numer konta; po przekroczeniu 4,5 GB aplikacja kasuje
+najstarsze zdjęcia **bez pytania**. Oba dotyczą zaufania, więc każdy nowy ekran ustawień
+powinien się do nich odnieść.
+
+**Waluty.** PLN / EUR / USD, kurs zapisywany w dniu dodania rachunku, waluty **nigdy się
+nie mieszają** w jednym saldzie. Zbiorcze saldo mieszające waluty jest jawnie poza zakresem.
+
+**Przypomnienia mają bramkę: jedno na sześć godzin.** Projektując własne szablony
+wiadomości, trzeba pokazać tę granicę, a nie pozwolić w nią wejść i dostać odmowę.
+
+**Zdjęcia paragonu:** najwyżej pięć na rachunek, także HEIC z iPhone'a, licznik miejsca.
+
+**Rozmiar grupy 12–25 osób jest kryterium projektowym.** Listy, awatary i przypisywanie
+pozycji muszą działać przy tej skali, nie przy czterech osobach.
+
+**Scena marginalna:** współlokatorzy i koszty cykliczne. Długo żyjący pokój ma działać
+przyzwoicie, ale **nie jest kryterium projektowym** — nie projektuj pod niego.
+
+**Dostępność** — brak wymogu formalnego, ale warunki użycia narzucają minimum: obsługa
+jedną ręką, cele dotykowe znoszące stuknięcie w biegu, czytelność przy słabym świetle
+w lokalu, kontrast na telefonie trzymanym pod kątem.
+
+**Czego nie wolno wymyślać:** brak opinii użytkowników, danych o użyciu, materiałów
+prasowych, logo i zdjęć produktowych. Nic z tej listy nie powstaje „na potrzeby makiety".
+
+**Funkcje do zachowania w całości** — pełna lista jest w `PRODUCT.md` w sekcji
+„Capabilities and Constraints". Przejrzyj ją przed przebudową struktury: łatwo zgubić
+„nie dotyczy", ukrywanie rachunków, dzielenie pozycji na sztuki, cofanie usunięcia
+rachunku albo listę „Twoje pokoje".
+
+---
+
 ## Do sprawdzenia na starcie
 
 **Odczyt paragonu przez AI przestał działać** (zgłoszenie właściciela). Kod jest
