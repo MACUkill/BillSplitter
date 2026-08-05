@@ -248,7 +248,7 @@ the verdict, and DESIGN.md
                     <button id="help-fab" class="help-btn tap hidden w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Pomoc: jak to działa?" aria-label="Pomoc">
                         <i class="fas fa-question"></i>
                     </button>
-                    <button id="nudges-bell" class="tap hidden relative w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Przypomnienia">
+                    <button id="nudges-bell" class="tap hidden relative w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Skrzynka: sprawy czekające na Ciebie" aria-label="Skrzynka">
                         <i class="fas fa-bell"></i>
                         <span id="nudges-badge" class="hidden absolute top-0 right-0 min-w-[1.25rem] h-5 px-1 bg-owe text-white text-[0.6875rem] font-bold rounded-full flex items-center justify-center">0</span>
                     </button>
@@ -570,6 +570,9 @@ the verdict, and DESIGN.md
         <div class="deck-side">
             <button id="nav-bills" class="deck-btn tap" aria-label="Rachunki" title="Rachunki">
                 <i class="fas fa-receipt"></i>
+                <!-- Kropka poziomu 2: coś mnie dotyczy, ale nie ma pilności. Bez liczby —
+                     liczba należy się wyłącznie poziomowi 1 (odznaka przy dzwonku). -->
+                <span id="nav-bills-dot" class="deck-dot hidden" aria-hidden="true"></span>
             </button>
             <button id="nav-me" class="deck-btn tap" aria-label="Twój profil" title="Twój profil">
                 <i class="fas fa-user"></i>
@@ -851,11 +854,20 @@ the verdict, and DESIGN.md
 
     <div id="nudges-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet w-full max-w-md flex flex-col" style="max-height:85vh">
-            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
-                <h3 class="font-display text-xl font-bold">Przypomnienia</h3>
-                <div class="flex items-center gap-1 flex-shrink-0">
-                    <button id="nudges-readall-btn" class="tap hidden min-h-tap px-3 rounded-lg text-sm font-semibold text-ink-2">Oznacz wszystkie</button>
-                    <button id="close-nudges-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none" title="Zamknij">&times;</button>
+            <div class="p-5 border-b border-ink/10">
+                <div class="flex items-center justify-between gap-2">
+                    <h3 class="font-display text-xl font-bold">Skrzynka</h3>
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                        <button id="nudges-readall-btn" class="tap hidden min-h-tap px-3 rounded-lg text-sm font-semibold text-ink-2">Oznacz wszystkie</button>
+                        <button id="close-nudges-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none" title="Zamknij">&times;</button>
+                    </div>
+                </div>
+                <!-- Dwa segmenty: „Dla Ciebie" to sprawy, które czekają na mój ruch
+                     (poziom 1 i 2 progu z §10.2). „Wszystko" to rejestr — wchodzi się
+                     tam, kiedy chce się wiedzieć, i nic stamtąd nie zapala sygnału. -->
+                <div class="seg mt-3">
+                    <button data-inbox="you" class="inbox-mode-btn seg-btn" aria-pressed="true">Dla Ciebie</button>
+                    <button data-inbox="all" class="inbox-mode-btn seg-btn" aria-pressed="false">Wszystko</button>
                 </div>
             </div>
             <div class="p-5 overflow-y-auto">

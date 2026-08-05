@@ -796,3 +796,38 @@ startuje teraz z `--project test`. Po zmianie trzeba **zrestartować emulatory**
 3. **Bilans** (§10.1) — twarze ekipy, lista „co czeka na Ciebie".
 4. **Historia zmian** i **szablony przypomnień**.
 5. Odcień „coś czeka na ciebie" do zejścia z 9 % na 6 % (§5).
+
+---
+
+## 13. PARTIA 3 — PRÓG SYGNAŁU I SKRZYNKA (2026-08-06)
+
+Realizacja §10.2. Sam próg jest **czystą funkcją z testami** (`src/nudges.js`:
+`inboxItems`, `badgeCount`, `hasDot`; 7 przypadków w `src/nudges.test.js`), bo to on
+decyduje, czy użytkownik ufa czerwonej kropce, czy przestaje ją widzieć.
+
+| Poziom | Nośnik | Co wchodzi |
+|---|---|---|
+| **1** | odznaka **liczbowa** przy dzwonku | przypomnienie do mnie (nieprzeczytane), cudza wpłata do mnie czekająca na moje potwierdzenie, potwierdzenie mojej wpłaty przez odbiorcę |
+| **2** | **kropka** na zakładce „Rachunki", bez liczby | rachunek czekający na mój ruch (ton `action` z `billStatus`) |
+| **3** | nic | reszta — do obejrzenia w segmencie „Wszystko" |
+
+**Reguły, które kod faktycznie egzekwuje:**
+
+- Liczba wyłącznie dla poziomu 1 (`badgeCount` filtruje po `level === 1`).
+- Kropka gaśnie po wejściu w „Rachunki" i zapala się ponownie dopiero przy rachunku,
+  którego tam jeszcze nie widziałem (`markBillsSeen`, klucz `billsplitter_seen_bills_<pokój>`).
+- Potwierdzenie mojej wpłaty gaśnie po otwarciu skrzynki — nie ma czego „obsłużyć",
+  samo obejrzenie zamyka sprawę (`billsplitter_seen_confirmations_<pokój>`).
+- Nic, co zrobiłem sam, nie wraca do mnie jako sygnał (warunki na `myId` / `myUid`).
+- Stan „widziane" mieszka w `localStorage` per pokój — to sprawa tego telefonu,
+  nie fakt o rachunku.
+
+**Skrzynka** (dzwonek w nagłówku): dwa segmenty. „Dla Ciebie" pokazuje sprawy poziomu 1
+i 2 z akcją przy każdej (Ureguluj, Potwierdzam, Otwórz rachunek). „Wszystko" to rejestr
+złożony z przypomnień i wpłat.
+
+**Świadome ograniczenie:** pełna Aktywność z §10.2 poziom 3 (kto co odkliknął, edycje
+pozycji, zmiany składu) wymaga osobnej kolekcji zdarzeń w Firestore — nie da się jej
+odtworzyć z dzisiejszych danych. Segment „Wszystko" pokazuje więc to, co jest zapisane:
+przypomnienia i wpłaty. Dopisanie kolekcji zdarzeń zostaje jako osobna partia, razem
+z **historią zmian rachunku**, bo to ten sam mechanizm.

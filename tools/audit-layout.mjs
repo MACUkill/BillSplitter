@@ -281,6 +281,18 @@ const run = async () => {
   await new Promise((r) => setTimeout(r, 700));
   await shot('13-rachunki');
 
+  // Skrzynka — arkusz spod dzwonka, oba segmenty.
+  await click('#nav-room');
+  await new Promise((r) => setTimeout(r, 400));
+  await click('#nudges-bell');
+  await new Promise((r) => setTimeout(r, 700));
+  await shot('13a-skrzynka-dla-ciebie');
+  await click('.inbox-mode-btn[data-inbox="all"]');
+  await new Promise((r) => setTimeout(r, 500));
+  await shot('13b-skrzynka-wszystko');
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 400));
+
   // Ustawienia pokoju — arkusz spod nazwy pokoju.
   await click('#nav-room');
   await new Promise((r) => setTimeout(r, 500));

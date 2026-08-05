@@ -462,6 +462,23 @@
     color: rgb(var(--surface));
   }
 
+  /* Znak sprawy w skrzynce: koło w kolorze roli, żeby rodzaj sprawy dało się
+     rozpoznać przed przeczytaniem zdania. Trzy role i ani jednej więcej —
+     te same, co w całej aplikacji. */
+  .inbox-icon {
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+  }
+  .inbox-icon.is-owe { background-color: rgb(var(--owe) / 0.12); color: rgb(var(--owe)); }
+  .inbox-icon.is-due { background-color: rgb(var(--due) / 0.12); color: rgb(var(--due)); }
+  .inbox-icon.is-info { background-color: rgb(var(--info) / 0.12); color: rgb(var(--info)); }
+
   /* Zwinięty wiersz „do rozwinięcia": chevron mówi wprost, że to się otwiera —
      bez niego szary pasek czytał się jak podpis, a nie jak przycisk. Znacznik
      `list-style: none` zdejmuje systemowy trójkącik, który wyglądał inaczej
@@ -713,9 +730,28 @@
   /* Bieżąca zakładka rozwija się w białą pigułkę z podpisem; pozostałe są samą
      ikoną. Jedna rzecz nazwana, reszta rozpoznawana — pasek nie rośnie ponad ekran
      nawet przy pięciu pozycjach na wąskim telefonie. */
+  .deck-btn { position: relative; }
+
   .deck-btn[aria-current='page'] {
     background-color: rgb(var(--surface));
     color: rgb(var(--ink));
+  }
+
+  /* Kropka poziomu 2 — sam fakt, że coś jest, bez liczby i bez czerwieni długu.
+     Kolor informacji, nie kolor pieniędzy: to nie jest zaległość, tylko rachunek
+     czekający na mój ruch. */
+  .deck-dot {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    background-color: rgb(var(--info));
+    box-shadow: 0 0 0 2px rgb(var(--surface-2));
+  }
+  .deck-btn[aria-current='page'] .deck-dot {
+    box-shadow: 0 0 0 2px rgb(var(--surface));
   }
 
   /* W ciemnym motywie pasek sam jest ciemny, więc pigułka z `--surface` zlewała

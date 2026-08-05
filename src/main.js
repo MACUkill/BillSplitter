@@ -2,7 +2,7 @@
         import './tailwind.css';
         // Importy Firebase (npm) + moduł obliczeń
         import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
-        import { unreadNudgeCount, hasRecentNudge } from './nudges.js';
+        import { unreadNudgeCount, hasRecentNudge, inboxItems, badgeCount, hasDot } from './nudges.js';
         import { itemQuantity, itemPickers, itemPickerCount, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
         import { identityColor, initials, IDENTITY_COLORS } from './identity.js';
         import { initializeApp } from "firebase/app";
@@ -475,6 +475,7 @@
                 btn.onclick = () => {
                     if (currentScreenName !== 'group-dashboard') showScreen('group-dashboard');
                     showDeckView(viewId);
+                    if (btnId === 'nav-bills') markBillsSeen();
                 };
             });
             const meBtn = document.getElementById('nav-me');
@@ -1194,19 +1195,86 @@
         const myMemberNow = () => Object.values((groupData && groupData.members) || {})
             .find(m => m.claimedBy === (currentUser && currentUser.uid)) || null;
 
+        // --- PRÓG SYGNAŁU: co zapala odznakę, a co tylko kropkę (docs/UI-UX.md §10.2) ---
+        // Stan „już to widziałem" mieszka na urządzeniu, nie w bazie: to sprawa tego
+        // telefonu, a nie faktu o rachunku. Klucze są per pokój, żeby dwa pokoje nie
+        // gasiły sobie nawzajem sygnałów.
+        const seenKey = (what) => `billsplitter_seen_${what}_${currentGroupId || 'x'}`;
+        const readSeen = (what) => {
+            try { return JSON.parse(localStorage.getItem(seenKey(what)) || '[]'); }
+            catch { return []; }
+        };
+        const writeSeen = (what, ids) => {
+            try { localStorage.setItem(seenKey(what), JSON.stringify(ids.slice(0, 200))); } catch (_) {}
+        };
+
+        // Rachunki czekające na MÓJ ruch — to samo źródło prawdy, co błękit na kafelku
+        // i filtr „Czekają na Ciebie": ton `action` z `billStatus`.
+        const actionBillsForMe = () => {
+            const my = myMemberNow();
+            if (!my) return [];
+            return latestBills
+                .map(({ id, data }) => ({ id, data }))
+                .filter(({ data }) => {
+                    const p = data.participants ? data.participants[my.id] : null;
+                    if (!p || p.status === 'not_applicable') return false;
+                    if ((data.hiddenBy || []).includes(my.id)) return false;
+                    return billStatus(data, my, p).tone === 'action';
+                })
+                .map(({ id, data }) => ({
+                    id,
+                    title: data.billName,
+                    label: billStatus(data, myMemberNow(), data.participants[my.id]).labelHtml,
+                    at: (data.createdAt && data.createdAt.toMillis) ? data.createdAt.toMillis() : 0,
+                }));
+        };
+
+        const currentInbox = () => {
+            const my = myMemberNow();
+            if (!my) return [];
+            const ms = (t) => (t && t.toMillis) ? t.toMillis() : 0;
+            return inboxItems({
+                myId: my.id,
+                myUid: currentUser && currentUser.uid,
+                nudges: latestNudges.map(n => ({ ...n, createdAtMs: ms(n.createdAt) })),
+                settlements: latestSettlements.map(s => ({ ...s, createdAtMs: ms(s.createdAt), confirmedAtMs: ms(s.confirmedAt) })),
+                actionBills: actionBillsForMe(),
+                seenConfirmations: readSeen('confirmations'),
+            });
+        };
+
         const updateNudgeBadge = () => {
             const badge = document.getElementById('nudges-badge');
             const bell = document.getElementById('nudges-bell');
-            if (!badge || !bell) return;
             const my = myMemberNow();
-            bell.classList.toggle('hidden', !my);
-            const count = my ? unreadNudgeCount(latestNudges, my.id, currentUser && currentUser.uid) : 0;
-            if (count > 0) {
+            if (bell) bell.classList.toggle('hidden', !my);
+
+            const items = currentInbox();
+
+            // Odznaka LICZBOWA wyłącznie dla poziomu 1 — to reguła, bez której wracamy
+            // do ślepoty na czerwoną kropkę (§10.2, reguła 1).
+            if (badge) {
+                const count = badgeCount(items);
                 badge.textContent = count > 9 ? '9+' : String(count);
-                badge.classList.remove('hidden');
-            } else {
-                badge.classList.add('hidden');
+                badge.classList.toggle('hidden', count === 0);
             }
+
+            // Kropka na „Rachunkach" gaśnie po wejściu w zakładkę i zapala się dopiero,
+            // gdy pojawi się rachunek, którego jeszcze tam nie widziałem (§10.2, reguła 2).
+            const dot = document.getElementById('nav-bills-dot');
+            if (dot) {
+                const seen = readSeen('bills');
+                const fresh = items.some((x) => x.level === 2 && !seen.includes(x.id));
+                dot.classList.toggle('hidden', !(hasDot(items) && fresh));
+            }
+        };
+
+        // Wejście na zakładkę „Rachunki" gasi kropkę: sprawy zostały obejrzane.
+        const markBillsSeen = () => {
+            const ids = currentInbox().filter((x) => x.level === 2).map((x) => x.id);
+            writeSeen('bills', ids);
+            const dot = document.getElementById('nav-bills-dot');
+            if (dot) dot.classList.add('hidden');
         };
 
         // Wierzyciel przypomina dłużnikowi (toId). Anty-spam: max raz na 6h do tej samej osoby.
@@ -1241,43 +1309,118 @@
         const nudgeRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`, id);
 
         // Inbox dłużnika: przypomnienia skierowane do mnie, z deep-linkiem „Ureguluj".
+        // SKRZYNKA — dwa segmenty. „Dla Ciebie" to sprawy czekające na mój ruch,
+        // „Wszystko" to rejestr, z którego nic nie zapala sygnału.
+        let inboxMode = 'you';
+
+        const inboxRowHtml = ({ icon, tone, title, subtitle, actionsHtml }) => `
+            <div class="card p-3">
+                <div class="flex items-start gap-3">
+                    <span class="inbox-icon ${tone}"><i class="fas ${icon}"></i></span>
+                    <div class="min-w-0 flex-grow">
+                        <p class="text-sm font-semibold">${title}</p>
+                        ${subtitle ? `<p class="text-xs text-ink-3 mt-0.5">${subtitle}</p>` : ''}
+                    </div>
+                </div>
+                ${actionsHtml ? `<div class="flex items-center gap-2 mt-2.5">${actionsHtml}</div>` : ''}
+            </div>`;
+
+        const renderInboxForYou = (container) => {
+            const items = currentInbox();
+            if (items.length === 0) {
+                // Stan pusty skrzynki ma być SPOKOJNY, bez zachęty do działania:
+                // brak spraw jest tu dobrą wiadomością, a nie pustą półką do zapełnienia.
+                container.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">Nic nie czeka na Twój ruch.</p>`;
+                return;
+            }
+            container.innerHTML = items.map((x) => {
+                const amount = x.amountG ? fmtMoney(Number(x.amountG), x.currency || 'PLN') : '';
+                if (x.kind === 'nudge') {
+                    return inboxRowHtml({
+                        icon: 'fa-bell', tone: 'is-owe',
+                        title: `<b>${escapeHtml(memberName(x.from))}</b> przypomina o zaległości${amount ? ` <b>${amount}</b>` : ''}.`,
+                        subtitle: 'Już zapłaciłeś? Zapisz wpłatę, żeby dług zniknął.',
+                        actionsHtml: `<button class="nudge-settle-btn btn btn-danger" data-to="${escapeHtml(x.from)}" data-amount-g="${x.amountG || 0}" data-currency="${escapeHtml(x.currency || 'PLN')}">Ureguluj</button>
+                            <button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Oznacz przeczytane</button>`,
+                    });
+                }
+                if (x.kind === 'confirm-payment') {
+                    return inboxRowHtml({
+                        icon: 'fa-hand-holding-dollar', tone: 'is-due',
+                        title: `<b>${escapeHtml(memberName(x.from))}</b> zgłosił/a wpłatę${amount ? ` <b>${amount}</b>` : ''}.`,
+                        subtitle: 'Czeka na Twoje potwierdzenie — bez niego dług zostaje otwarty.',
+                        actionsHtml: `<button class="inbox-confirm-btn btn btn-primary" data-id="${escapeHtml(x.id)}">Potwierdzam</button>`,
+                    });
+                }
+                if (x.kind === 'payment-confirmed') {
+                    return inboxRowHtml({
+                        icon: 'fa-circle-check', tone: 'is-due',
+                        title: `<b>${escapeHtml(memberName(x.from))}</b> potwierdził/a Twoją wpłatę${amount ? ` <b>${amount}</b>` : ''}.`,
+                        subtitle: 'Sprawa zamknięta.',
+                    });
+                }
+                return inboxRowHtml({
+                    icon: 'fa-receipt', tone: 'is-info',
+                    title: `<b>${escapeHtml(x.title || 'Rachunek')}</b> czeka na Twój ruch.`,
+                    subtitle: x.label || '',
+                    actionsHtml: `<button class="inbox-bill-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Otwórz rachunek</button>`,
+                });
+            }).join('');
+        };
+
+        // „Wszystko" — rejestr zdarzeń, które da się odtworzyć z danych, jakie już mamy:
+        // przypomnienia i wpłaty. Pełna Aktywność (kto co odkliknął, edycje pozycji)
+        // wymaga osobnej kolekcji zdarzeń i jest rozpisana w §10.2 jako oddzielna partia.
+        const renderInboxAll = (container) => {
+            const ms = (t) => (t && t.toMillis) ? t.toMillis() : 0;
+            const events = [
+                ...latestNudges.map((n) => ({
+                    at: ms(n.createdAt), icon: 'fa-bell', tone: 'is-owe',
+                    title: `<b>${escapeHtml(memberName(n.from))}</b> przypomniał/a <b>${escapeHtml(memberName(n.to))}</b> o zaległości${n.amountG ? ` ${fmtMoney(Number(n.amountG), n.currency || 'PLN')}` : ''}.`,
+                })),
+                ...latestSettlements.map((s) => ({
+                    at: ms(s.confirmedAt) || ms(s.createdAt),
+                    icon: s.confirmed ? 'fa-circle-check' : 'fa-clock',
+                    tone: s.confirmed ? 'is-due' : 'is-info',
+                    title: `<b>${escapeHtml(memberName(s.from))}</b> → <b>${escapeHtml(memberName(s.to))}</b>: ${fmtMoney(Number(s.amountG || 0), s.currency || 'PLN')}${s.confirmed ? ' · potwierdzone' : ' · czeka na potwierdzenie'}`,
+                })),
+            ].sort((a, b) => b.at - a.at);
+
+            if (events.length === 0) {
+                container.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">Jeszcze nic się nie wydarzyło.</p>`;
+                return;
+            }
+            container.innerHTML = events.map((e) => inboxRowHtml({
+                icon: e.icon, tone: e.tone, title: e.title,
+                subtitle: e.at ? new Date(e.at).toLocaleString('pl-PL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : '',
+            })).join('');
+        };
+
         const renderNudges = () => {
             const container = document.getElementById('nudges-list');
             if (!container) return;
             const my = myMemberNow();
             const uid = currentUser && currentUser.uid;
-            const mine = my ? latestNudges.filter(x => x.to === my.id) : [];
+            document.querySelectorAll('.inbox-mode-btn').forEach((btn) => {
+                btn.setAttribute('aria-pressed', String(btn.dataset.inbox === inboxMode));
+            });
             const unread = my ? unreadNudgeCount(latestNudges, my.id, uid) : 0;
             const readAllBtn = document.getElementById('nudges-readall-btn');
-            if (readAllBtn) readAllBtn.classList.toggle('hidden', unread === 0);
-            if (mine.length === 0) {
-                container.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">Brak przypomnień.</p>`;
-                return;
-            }
-            container.innerHTML = mine.map(x => {
-                const isRead = Array.isArray(x.readBy) && x.readBy.includes(uid);
-                const when = (x.createdAt && x.createdAt.toDate) ? x.createdAt.toDate().toLocaleDateString('pl-PL') : '';
-                const amt = x.amountG ? fmtMoney(Number(x.amountG), x.currency || 'PLN') : '';
-                // Przypomnienie jest sprawą dwóch osób i mówi o MOIM długu — stąd kolor
-                // „winien jesteś" przy nieprzeczytanym, i nic więcej. Treść zostaje rzeczowa.
-                return `<div class="card p-3 ${isRead ? '' : 'border-owe/40'}">
-                    <div class="flex items-start justify-between gap-2">
-                        <div class="min-w-0">
-                            <p class="text-sm"><b>${escapeHtml(memberName(x.from))}</b> przypomina o zaległości${amt ? ` <b>${amt}</b>` : ''}.</p>
-                            <p class="text-xs text-ink-3 mt-0.5">Już zapłaciłeś? Zapisz wpłatę, żeby dług zniknął.${when ? ` · ${when}` : ''}</p>
-                        </div>
-                        ${isRead ? '' : '<span class="w-2 h-2 rounded-full bg-owe flex-shrink-0 mt-1.5"></span>'}
-                    </div>
-                    <div class="flex items-center gap-2 mt-2">
-                        <button class="nudge-settle-btn btn btn-danger" data-to="${x.from}" data-amount-g="${x.amountG || 0}" data-currency="${x.currency || 'PLN'}">Ureguluj</button>
-                        ${isRead ? '' : `<button class="nudge-read-btn tap min-h-tap px-3 rounded-lg text-ink-2 text-sm font-semibold" data-id="${x.id}">Oznacz przeczytane</button>`}
-                    </div>
-                </div>`;
-            }).join('');
+            if (readAllBtn) readAllBtn.classList.toggle('hidden', unread === 0 || inboxMode !== 'you');
+            if (inboxMode === 'all') { renderInboxAll(container); return; }
+            renderInboxForYou(container);
         };
 
         const openNudgesModal = () => {
+            inboxMode = 'you';
             renderNudges();
+            // Potwierdzenie mojej wpłaty nie ma czego „obsłużyć" — samo obejrzenie
+            // zamyka sprawę, więc gaśnie po otwarciu skrzynki.
+            const confirmations = currentInbox().filter((x) => x.kind === 'payment-confirmed').map((x) => x.id);
+            if (confirmations.length) {
+                writeSeen('confirmations', [...readSeen('confirmations'), ...confirmations]);
+                updateNudgeBadge();
+            }
             document.getElementById('nudges-modal').classList.add('active');
         };
 
@@ -3269,6 +3412,25 @@
                     await updateDoc(nudgeRef(r.dataset.id), { readBy: arrayUnion(currentUser.uid) });
                     return;
                 }
+                // Potwierdzenie cudzej wpłaty prosto ze skrzynki — bez wędrówki
+                // na zakładkę rozliczeń i szukania właściwego wiersza.
+                const c = e.target.closest('.inbox-confirm-btn');
+                if (c) {
+                    const ref = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, c.dataset.id);
+                    await updateDoc(ref, { confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp() });
+                    showToast('Wpłata potwierdzona.');
+                    return;
+                }
+                const b = e.target.closest('.inbox-bill-btn');
+                if (b) {
+                    nudgesModal.classList.remove('active');
+                    joinBill(currentGroupId, b.dataset.id);
+                    return;
+                }
+            });
+
+            document.querySelectorAll('.inbox-mode-btn').forEach((btn) => {
+                btn.onclick = () => { inboxMode = btn.dataset.inbox; renderNudges(); };
             });
 
             // Edycja członków rachunku
