@@ -195,6 +195,20 @@ the verdict, and DESIGN.md
 
                 <div id="my-rooms"></div>
 
+                <!-- WEJŚCIE KODEM — druga droga do pokoju obok linku. Bez niej kod pokoju
+                     był informacją bez zastosowania: dało się go pokazać i skopiować,
+                     ale nie było gdzie go wpisać. To także jedyne wyjście z błędu PWA
+                     na iPhonie, gdzie skrót z ekranu początkowego otwiera aplikację
+                     bez adresu grupy i z pustą listą pokoi. -->
+                <div class="card p-5 mb-3">
+                    <p class="font-bold mb-2">Masz kod pokoju?</p>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="join-code-input" class="field flex-grow min-w-0 serial uppercase" placeholder="np. AB12 CD34" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go">
+                        <button id="join-code-btn" class="btn btn-dark flex-shrink-0">Wejdź</button>
+                    </div>
+                    <p id="join-code-error" class="hidden text-sm text-owe mt-2"></p>
+                </div>
+
                 <div class="card p-5">
                     <label for="group-name" class="block font-bold mb-2">Nazwa grupy</label>
                     <input type="text" id="group-name" class="field" placeholder="np. Wyjazd w Bieszczady" autocomplete="off">

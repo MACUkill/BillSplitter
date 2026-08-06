@@ -199,6 +199,10 @@ const run = async () => {
   await page.goto(URL, { waitUntil: 'networkidle2' });
   await page.waitForSelector('#start-screen:not(.hidden)', { timeout: 15000 });
   await shot('01-start');
+  await type('#join-code-input', 'AB12CD34');
+  await new Promise((r) => setTimeout(r, 300));
+  await shot('01a-start-kod');
+  await page.evaluate(() => { const i = document.getElementById('join-code-input'); if (i) i.value = ''; });
 
   // Zakładanie grupy: nazwa + czterech uczestników przez żetony.
   await type('#group-name', 'Wyjazd w Bieszczady');

@@ -4,8 +4,8 @@
   "description": "Aplikacja do łatwego rozliczania rachunków w grupie znajomych.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f3f4f6",
-  "theme_color": "#2563eb",
+  "background_color": "#0C0D11",
+  "theme_color": "#0C0D11",
   "orientation": "portrait-primary",
   "icons": [
     {
@@ -18,7 +18,7 @@
       "sizes": "32x32",
       "type": "image/png"
     },
-  {
+    {
       "src": "/icons/icon-180x180.png",
       "sizes": "180x180",
       "type": "image/png",
@@ -35,5 +35,6 @@
       "sizes": "512x512",
       "type": "image/png"
     }
-  ]
+  ],
+  "id": "/"
 }

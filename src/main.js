@@ -3453,6 +3453,44 @@
                 if (forget) { forgetRoom(forget.dataset.roomId); renderMyRooms(); }
             });
 
+            // WEJŚCIE KODEM. Kod czyta się z cudzego telefonu albo z kartki, więc
+            // przyjmujemy go tak, jak człowiek go przepisze: ze spacjami, małymi
+            // literami, myślnikami. Sprawdzamy, czy pokój istnieje, ZANIM przełączymy
+            // ekran — inaczej literówka kończy się pustym ekranem bez wyjaśnienia.
+            const joinInput = document.getElementById('join-code-input');
+            const joinBtn = document.getElementById('join-code-btn');
+            const joinError = document.getElementById('join-code-error');
+            const showJoinError = (message) => {
+                if (!joinError) return;
+                joinError.textContent = message;
+                joinError.classList.toggle('hidden', !message);
+            };
+            const enterByCode = async () => {
+                const raw = (joinInput.value || '').trim();
+                const code = raw.replace(/[\s-]/g, '').toUpperCase();
+                if (!code) { showJoinError('Wpisz kod pokoju.'); joinInput.focus(); return; }
+                showJoinError('');
+                joinBtn.disabled = true;
+                try {
+                    const snap = await getDoc(doc(db, `artifacts/${appId}/public/data/groups`, code));
+                    if (!snap.exists()) {
+                        showJoinError('Nie ma pokoju o takim kodzie. Sprawdź, czy nie wkradła się literówka.');
+                        return;
+                    }
+                    history.pushState(null, '', `?group=${code}`);
+                    handleGroupJoin(code);
+                } catch (e) {
+                    console.error(e);
+                    showJoinError('Nie udało się sprawdzić kodu. Sprawdź połączenie i spróbuj ponownie.');
+                } finally {
+                    joinBtn.disabled = false;
+                }
+            };
+            if (joinBtn) joinBtn.onclick = enterByCode;
+            if (joinInput) joinInput.onkeydown = (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); enterByCode(); }
+            };
+
             // --- Skład grupy jako żetony ---
             // Imiona dodaje się pojedynczo i widać je od razu. Ukryte pole `member-names`
             // zostaje źródłem prawdy przy zapisie, żeby jedna lista miała jednego właściciela.
