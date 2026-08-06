@@ -212,6 +212,46 @@ firebase deploy --only functions --project test
 git push origin BillSplitterV2   # samą aplikację wydaje Netlify
 ```
 
+### Dwie gałęzie, dwa projekty — i pułapka przy scalaniu
+
+Plan właściciela (2026-08-06): `main` trzyma **żywą, stabilną V1**, a `BillSplitterV2`
+służy do testów ze znajomymi. Scalenie V2 na `main` dopiero długo po testach.
+
+Stan gałęzi: V2 jest 63 commity przed `main`, `main` nie ma nic, czego V2 nie zna —
+scalenie pójdzie czystym fast-forwardem.
+
+**Pułapka: dane nie idą za kodem.** Gałąź decyduje o KODZIE, a projekt Firebase o DANYCH.
+Dziś to dwa różne światy:
+
+| Gałąź | Adres | Projekt Firebase | Skąd config |
+|---|---|---|---|
+| `main` (V1) | `groupbillsplitter.netlify.app` | `billsplitter-2fdfa` | hardkodowany fallback w `src/main.js` |
+| `BillSplitterV2` | `billsplitterv2--groupbillsplitter.netlify.app` | `billsplitter-push-test` | zmienne `VITE_*` w Netlify (scope BillSplitterV2) |
+
+Pokoje, rachunki i rozliczenia, które znajomi utworzą podczas testów, wylądują
+w `billsplitter-push-test`. Jeśli przy scalaniu produkcja pojedzie na starym projekcie
+(a pojedzie, bo bez zmiennych `VITE_*` build wpada w fallback na `billsplitter-2fdfa`),
+to **wszystko, co ekipa zbudowała w czasie testów, zniknie im z oczu** — dane nie
+przepadną z bazy, ale aplikacja będzie patrzeć w inne miejsce.
+
+**Do rozstrzygnięcia PRZED zebraniem prawdziwych danych** (nie po):
+
+1. Czy `billsplitter-push-test` zostaje docelowym projektem i produkcja dostaje jego
+   zmienne `VITE_*`? Wtedy scalenie nic nie psuje, a nazwa projektu zostaje myląca.
+2. Czy powstaje **świeży projekt** (właściciel to zapowiada) i trzeba przenieść pokoje
+   z testów? Wtedy potrzebny jest eksport/import Firestore i Storage, a znajomi na czas
+   przenosin nie powinni nic dopisywać.
+3. Czy testowe pokoje są **jednorazowe** i po testach ekipa zaczyna od zera? Wtedy trzeba
+   im to powiedzieć zawczasu, a nie po fakcie.
+
+Dopóki decyzja nie zapadnie, traktuj dane w `billsplitter-push-test` jako **nietrwałe**
+i nie obiecuj ekipie, że ich rozliczenia przeżyją przeprowadzkę.
+
+**Reguły są per PROJEKT, nie per gałąź.** Wgranie `firestore.rules` z repo na
+`billsplitter-2fdfa` częściowo zepsuje żywą V1 (kasowanie rachunku tylko przez
+potwierdzonego płatnika, zamrożony `adminId`, zamknięte pola podsumowań). Robić to
+dopiero przy wycofywaniu V1 — nigdy „przy okazji".
+
 ### Czego nie da się sprawdzić z tego środowiska
 
 1. **Push na telefonie** — kod jest (FCM, service worker, VAPID), ale nigdy nie było
