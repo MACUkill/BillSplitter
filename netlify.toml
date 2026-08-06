@@ -3,3 +3,24 @@
 [build]
   command = "npm run build"
   publish = "dist"
+
+# Aplikacja jest jednostronicowa i czyta pokój z zapytania (`?group=…`), więc każdy
+# adres musi trafić w `index.html`. Bez tego wejście linkiem do pokoju po odświeżeniu
+# strony kończy się stroną 404 Netlify — a link do pokoju jest podstawową drogą wejścia.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Service worker i manifest NIE mogą siedzieć w pamięci podręcznej: inaczej po wydaniu
+# nowej wersji telefon znajomego dalej chodzi na starym service workerze i widzi
+# poprzednią aplikację, nie wiedząc dlaczego.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.json"
+  [headers.values]
+    Cache-Control = "no-cache"

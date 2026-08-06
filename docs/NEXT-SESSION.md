@@ -164,56 +164,63 @@ leży w functions/.secret.local i jest na miejscu.
 
 ---
 
-## Wydanie dla znajomych — co musi się zdarzyć
+## Wydanie dla znajomych — stan i co zostało
 
-Aplikacja **nigdy nie była wydana**: do 2026-08-06 chodziła wyłącznie na `localhost`
-i emulatorach. `firebase.json` dostał sekcję `hosting` (katalog `dist`, przepisanie SPA,
-`no-cache` na `sw.js` i `manifest.json`), ale samo wdrożenie jest przed nami.
+**Aplikacja JEST wydana.** Gałąź `BillSplitterV2` idzie jako branch deploy Netlify na
+`billsplitterv2--groupbillsplitter.netlify.app`, spięty z projektem `billsplitter-push-test`
+(Blaze). V1 stoi obok na `main` → `groupbillsplitter.netlify.app` → `billsplitter-2fdfa`.
+Wydanie nowej wersji = **wypchnięcie gałęzi**; Netlify sam buduje (`netlify.toml`).
 
-### Pułapka do rozstrzygnięcia PRZED wdrożeniem
+Dlatego **nie ma sekcji `hosting` w `firebase.json`** — hosting robi Netlify, a
+dublowanie go w Firebase groziłoby dwiema równoległymi wersjami pod różnymi adresami.
+Firebase odpowiada wyłącznie za dane: Firestore, Storage, Functions, Auth, FCM.
 
-`.env.local` wskazuje projekt-piaskownicę `billsplitter-push-test`. Vite wczytuje
-`.env.local` **także przy `npm run build`**, więc build produkcyjny robiony dzisiaj
-łączy się z piaskownicą, a nie z projektem docelowym. Trzeba świadomie wybrać projekt
-dla wersji dla znajomych i założyć `.env.production` z jego danymi — pliki `.env.production`
-mają pierwszeństwo nad `.env.local`, więc rozstrzygają jednoznacznie.
+### Który projekt
 
-### Kolejność wdrożenia
+`billsplitter-push-test` i nie ma powodu tego zmieniać. Ma Blaze, klucz VAPID,
+CORS na buckecie, sekret OpenRoutera w Secret Managerze i limity wydatków. Piaskownicą
+nazywa się historycznie — dla wersji dla znajomych jest to po prostu projekt V2.
 
-```bash
-# 1. Reguły i funkcje (raz na projekt docelowy)
-firebase use <projekt>
-firebase deploy --only firestore:rules,storage,functions
+**Konfiguracja siedmiu zmiennych `VITE_*` żyje w Netlify** (scope: Specific deploy
+contexts → BillSplitterV2), nie w repo. Bez nich build wpada w hardkodowany fallback na
+projekt V1 z `src/main.js` — cicho, bo aplikacja wygląda identycznie. Lokalny
+`.env.local` służy wyłącznie pracy na tej maszynie i nie trafia do gita.
 
-# 2. Sekret modelu dla odczytu paragonu (bez niego parseReceipt zwraca błąd)
-firebase functions:secrets:set OPENROUTER_API_KEY
+### Co trzeba zrobić przed zaproszeniem znajomych
 
-# 3. Build i hosting
-npm run build
-firebase deploy --only hosting
-```
-
-Do sprawdzenia w konsoli projektu docelowego:
-
-- **Authentication → Settings → Authorized domains** musi zawierać domenę hostingu,
-  inaczej logowanie anonimowe pada i użytkownik widzi pusty ekran.
-- **Cloud Messaging → klucz VAPID** musi zgadzać się z `VITE_FCM_VAPID_KEY` w buildzie.
-- **Firestore** w trybie produkcyjnym z wdrożonymi regułami (nie testowym).
+1. **Wgrać reguły na projekt V2** — dziś nie wiadomo, czy `billsplitter-push-test` ma
+   reguły z repo, czy otwarte `if true`. Bez tego dziennik aktywności nie zadziała
+   (kolekcja `events` jest nowa), a dane pokoju są otwarte na oścież:
+   ```bash
+   firebase use test
+   firebase deploy --only firestore:rules,storage
+   ```
+2. **Wdrożyć funkcje**, jeśli odczyt paragonu ma działać na wydanej wersji:
+   ```bash
+   firebase deploy --only functions
+   ```
+3. **Wypchnąć gałąź** — Netlify zbuduje i wyda:
+   ```bash
+   git push origin BillSplitterV2
+   ```
+4. Wejść na wydany adres z telefonu i przejść ścieżkę: link → wybór imienia → rachunek →
+   odklikanie → rozliczenie.
 
 ### Czego nie da się sprawdzić z tego środowiska
 
-Poniższe wymagają wdrożonej aplikacji i prawdziwych telefonów. Żadne z nich nie było
-testowane — emulator nie odpowiada na te pytania:
+1. **Push na telefonie** — kod jest (FCM, service worker, VAPID), ale nigdy nie było
+   testu na fizycznym urządzeniu po redesignie.
+2. **Odczyt paragonu na wydanej wersji** — działa dopiero po wdrożeniu funkcji z sekretem.
+3. **Praca kilku osób naraz** — żywy paragon i salda sprawdzał wyłącznie automat,
+   nigdy dwa telefony równocześnie.
+4. **Morfowanie [+]** — `View Transitions API` działa w Safari od 18; niżej zwykłe
+   pojawienie arkusza (degradacja bez ubytku funkcji).
 
-1. **Push na telefonie** — FCM, service worker, zgoda systemowa. Na iPhonie push działa
-   wyłącznie w aplikacji dodanej do ekranu początkowego (iOS 16.4+).
-2. **Instalacja na iPhonie i lista pokoi** — znany błąd z `PRODUCT.md` stoi: skrót ma
-   osobny magazyn danych, więc „Twoje pokoje" zapisane w Safari są w nim niewidoczne,
-   a `start_url: "/"` otwiera ekran startowy zamiast pokoju. **Obejście jest zbudowane**:
-   wejście linkiem i wejście kodem pokoju (pole na ekranie startowym) plus kod QR
-   w ustawieniach pokoju.
-3. **Odczyt paragonu na produkcji** — działa dopiero po wdrożeniu funkcji z sekretem.
-4. **Praca kilku osób naraz** — żywy paragon i przeliczanie sald były sprawdzane
-   wyłącznie jednym przebiegiem automatu, nigdy dwoma telefonami równocześnie.
-5. **Morfowanie [+]** — `View Transitions API` działa w Safari od 18. Starsze telefony
-   dostają zwykłe pojawienie arkusza; to degradacja bez ubytku funkcji.
+### PWA na iPhonie — co wiadomo
+
+Instalacja **została potwierdzona jako działająca** (test właściciela 2026-08-03, przed
+redesignem). Otwarty zostaje sam błąd `start_url`: skrót otwiera ekran startowy zamiast
+pokoju, a magazyn danych skrótu jest osobny od Safari, więc lista „Twoje pokoje" bywa
+w nim pusta. Warstwa ratunkowa jest zbudowana: **link, kod pokoju i kod QR**
+(`docs/UI-UX.md` §17). Do sprawdzenia po wydaniu, czy po redesignie instalacja nadal
+przechodzi tak samo.
