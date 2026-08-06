@@ -186,25 +186,31 @@ contexts → BillSplitterV2), nie w repo. Bez nich build wpada w hardkodowany fa
 projekt V1 z `src/main.js` — cicho, bo aplikacja wygląda identycznie. Lokalny
 `.env.local` służy wyłącznie pracy na tej maszynie i nie trafia do gita.
 
-### Co trzeba zrobić przed zaproszeniem znajomych
+### Wydanie 2026-08-06 — zrobione
 
-1. **Wgrać reguły na projekt V2** — dziś nie wiadomo, czy `billsplitter-push-test` ma
-   reguły z repo, czy otwarte `if true`. Bez tego dziennik aktywności nie zadziała
-   (kolekcja `events` jest nowa), a dane pokoju są otwarte na oścież:
-   ```bash
-   firebase use test
-   firebase deploy --only firestore:rules,storage
-   ```
-2. **Wdrożyć funkcje**, jeśli odczyt paragonu ma działać na wydanej wersji:
-   ```bash
-   firebase deploy --only functions
-   ```
-3. **Wypchnąć gałąź** — Netlify zbuduje i wyda:
-   ```bash
-   git push origin BillSplitterV2
-   ```
-4. Wejść na wydany adres z telefonu i przejść ścieżkę: link → wybór imienia → rachunek →
-   odklikanie → rozliczenie.
+Gałąź `BillSplitterV2` wypchnięta (19 commitów redesignu), Netlify przebudował.
+Sprawdzone na żywym adresie `billsplitterv2--groupbillsplitter.netlify.app`:
+
+- nowy build jest na serwerze (pole „Masz kod pokoju?" obecne w HTML),
+- **zero adresów CDN** — ikony idą z `/assets/fa-solid-900-*.woff2` (119 kB, HTTP 200),
+- przepisanie SPA działa (dowolna ścieżka → 200), `sw.js` z `Cache-Control: no-cache`,
+- manifest ma kolory nowego świata (`#0C0D11`),
+- bundle celuje w `billsplitter-push-test` (zmienne `VITE_*` z Netlify zadziałały,
+  fallback na projekt V1 pozostał martwą gałęzią).
+
+Na `billsplitter-push-test` wdrożone:
+
+- `firestore.rules` i `storage.rules` z repo — w tym reguły kolekcji `events`
+  (dopisywalna, niezmienna), bez których dziennik aktywności nie działa,
+- funkcje `parseReceipt`, `recalculateGroupSummaryIncrementally`, `sendNudgePush`.
+
+Powtórka po każdej zmianie reguł albo funkcji:
+
+```bash
+firebase deploy --only firestore:rules,storage --project test
+firebase deploy --only functions --project test
+git push origin BillSplitterV2   # samą aplikację wydaje Netlify
+```
 
 ### Czego nie da się sprawdzić z tego środowiska
 
