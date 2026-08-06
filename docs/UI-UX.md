@@ -862,3 +862,37 @@ z `--no-save`, więc po zmianie zależności trzeba go wgrać ponownie:
    To jeden mechanizm i jedna partia.
 3. **Własne szablony przypomnień** z domyślną klasyczną treścią.
 4. Odcień „coś czeka na ciebie" do zejścia z 9 % na 6 % (§5).
+
+---
+
+## 15. PARTIA 5 — BILANS JAKO WEJŚCIE DO POKOJU (2026-08-06)
+
+Realizacja §10.1 w zakresie, który przetrwał późniejsze decyzje właściciela.
+
+| Element | Dlaczego tak |
+|---|---|
+| **Twarze ekipy** pod nominałem | sam nominał nie mówi, kogo dotyczy; przy 12–25 osobach rząd zdjęć odpowiada na „czy wszyscy już są?" szybciej niż lista imion w ustawieniach. Rząd przewija się w poziomie, żeby kwota została bohaterem ekranu |
+| **„Czeka na Ciebie"** | te same sprawy, co w skrzynce (poziom 1 i 2 progu), ale na wejściu do pokoju. Skrzynka jest dla tych, którzy jej szukają; ta sekcja dla tych, którzy po prostu weszli. Znika bez śladu, gdy nic nie czeka |
+| Jedna obsługa wierszy | `wireInboxActions` podpięte do skrzynki i do Bilansu — ta sama sprawa nie może reagować inaczej zależnie od miejsca, w którym ją widzisz |
+
+**Świadomie pominięte z §10.1:** rozwijane „ile kto wyłożył" na Bilansie. Właściciel
+rozstrzygnął 2026-08-06, że rozpiska per osoba znika, a statystyka pokoju zostaje
+w ustawieniach pokoju. Późniejsza decyzja wygrywa z wcześniejszą architekturą — ten
+wiersz w §10.1 jest nieaktualny.
+
+### Stan po pięciu partiach
+
+Zrobione: nawigacja jako miejsca, arkusze zamiast list systemowych, spójne kontrolki,
+rachunki z filtrami i dniami, próg sygnału ze skrzynką, ustawienia pokoju, bilans jako
+wejście.
+
+Zostało:
+
+1. **Kolekcja zdarzeń** w Firestore — pełna Aktywność (poziom 3) i **historia zmian
+   rachunku**. Jeden mechanizm, jedna partia. Do zaprojektowania: kształt dokumentu
+   zdarzenia, kto go pisze, jak długo żyje.
+2. **Własne szablony przypomnień** z domyślną klasyczną treścią (brief §7). Uwaga
+   z `PRODUCT.md`: bramka to dziesięć sekund, więc przy szablonach **nie dokładaj
+   limitów, których nie ma**.
+3. Odcień „coś czeka na ciebie" do zejścia z 9 % na 6 % (§5).
+4. Nazwa produktu i logo — otwarte, nazwa musi być angielska (§2).

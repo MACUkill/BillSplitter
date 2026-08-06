@@ -982,6 +982,8 @@
                 const serial = document.getElementById('balance-empty-serial');
                 if (serial) serial.textContent = formatSerial(currentGroupId);
             }
+            renderBalanceCrew();
+            renderBalanceWaiting();
 
             const { rows } = myLedgerRows();
             const byCurrency = {};
@@ -1407,6 +1409,40 @@
                     actionsHtml: `<button class="inbox-bill-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Otwórz rachunek</button>`,
                 });
             }).join('');
+        };
+
+        // Te same sprawy na Bilansie, czyli na wejściu do pokoju. Skrzynka jest dla
+        // tych, którzy jej szukają — to jest dla tych, którzy po prostu weszli.
+        // Sekcja znika bez śladu, gdy nic nie czeka: pusta lista „Czeka na Ciebie"
+        // byłaby zaproszeniem do szukania problemu, którego nie ma.
+        const renderBalanceWaiting = () => {
+            const wrap = document.getElementById('balance-waiting');
+            const list = document.getElementById('balance-waiting-list');
+            if (!wrap || !list) return;
+            const items = currentInbox();
+            wrap.classList.toggle('hidden', items.length === 0);
+            if (items.length === 0) { list.innerHTML = ''; return; }
+            renderInboxForYou(list);
+        };
+
+        // Twarze ekipy pod nominałem. Sam nominał nie mówi, kogo dotyczy — przy
+        // dwunastu osobach rząd zdjęć jest szybszą odpowiedzią na „czy wszyscy już są?"
+        // niż lista imion w ustawieniach. Rząd przewija się w poziomie, żeby bilans
+        // został bohaterem ekranu.
+        const renderBalanceCrew = () => {
+            const wrap = document.getElementById('balance-crew');
+            if (!wrap || !groupData) return;
+            const order = groupData.memberOrder || Object.keys(groupData.members || {});
+            if (order.length <= 1) { wrap.classList.add('hidden'); wrap.innerHTML = ''; return; }
+            wrap.classList.remove('hidden');
+            wrap.innerHTML = `<div class="crew-row">${order.map((id) => {
+                const m = groupData.members[id];
+                if (!m) return '';
+                return `<span class="crew-face" title="${escapeHtml(m.name)}">
+                    ${avatarHtml(m.name, id, 'w-10 h-10 text-sm')}
+                    <span class="crew-name">${escapeHtml(m.name)}</span>
+                </span>`;
+            }).join('')}</div>`;
         };
 
         // „Wszystko" — rejestr zdarzeń, które da się odtworzyć z danych, jakie już mamy:
@@ -3560,34 +3596,42 @@
                 await Promise.all(toMark.map(x => updateDoc(nudgeRef(x.id), { readBy: arrayUnion(uid) })));
                 showToast('Oznaczono jako przeczytane.');
             };
-            document.getElementById('nudges-list').addEventListener('click', async (e) => {
-                const s = e.target.closest('.nudge-settle-btn');
-                if (s) {
-                    nudgesModal.classList.remove('active');
-                    openSettleModal(s.dataset.to, Number(s.dataset.amountG), s.dataset.currency, 'send');
-                    return;
-                }
-                const r = e.target.closest('.nudge-read-btn');
-                if (r) {
-                    await updateDoc(nudgeRef(r.dataset.id), { readBy: arrayUnion(currentUser.uid) });
-                    return;
-                }
-                // Potwierdzenie cudzej wpłaty prosto ze skrzynki — bez wędrówki
-                // na zakładkę rozliczeń i szukania właściwego wiersza.
-                const c = e.target.closest('.inbox-confirm-btn');
-                if (c) {
-                    const ref = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, c.dataset.id);
-                    await updateDoc(ref, { confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp() });
-                    showToast('Wpłata potwierdzona.');
-                    return;
-                }
-                const b = e.target.closest('.inbox-bill-btn');
-                if (b) {
-                    nudgesModal.classList.remove('active');
-                    joinBill(currentGroupId, b.dataset.id);
-                    return;
-                }
-            });
+            // Wiersze spraw żyją w DWÓCH miejscach: w skrzynce spod dzwonka i w sekcji
+            // „Czeka na Ciebie" na Bilansie. Obsługa jest jedna — inaczej ta sama sprawa
+            // reagowałaby inaczej zależnie od tego, gdzie ją zobaczysz.
+            const wireInboxActions = (container) => {
+                if (!container) return;
+                container.addEventListener('click', async (e) => {
+                    const s = e.target.closest('.nudge-settle-btn');
+                    if (s) {
+                        nudgesModal.classList.remove('active');
+                        openSettleModal(s.dataset.to, Number(s.dataset.amountG), s.dataset.currency, 'send');
+                        return;
+                    }
+                    const r = e.target.closest('.nudge-read-btn');
+                    if (r) {
+                        await updateDoc(nudgeRef(r.dataset.id), { readBy: arrayUnion(currentUser.uid) });
+                        return;
+                    }
+                    // Potwierdzenie cudzej wpłaty prosto z wiersza — bez wędrówki na
+                    // zakładkę rozliczeń i szukania właściwego miejsca w liście.
+                    const c = e.target.closest('.inbox-confirm-btn');
+                    if (c) {
+                        const ref = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, c.dataset.id);
+                        await updateDoc(ref, { confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp() });
+                        showToast('Wpłata potwierdzona.');
+                        return;
+                    }
+                    const b = e.target.closest('.inbox-bill-btn');
+                    if (b) {
+                        nudgesModal.classList.remove('active');
+                        joinBill(currentGroupId, b.dataset.id);
+                        return;
+                    }
+                });
+            };
+            wireInboxActions(document.getElementById('nudges-list'));
+            wireInboxActions(document.getElementById('balance-waiting-list'));
 
             document.querySelectorAll('.inbox-mode-btn').forEach((btn) => {
                 btn.onclick = () => { inboxMode = btn.dataset.inbox; renderNudges(); };
