@@ -10,7 +10,7 @@
         import qrcode from 'qrcode-generator';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
-        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
+        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, writeBatch, getDocs, runTransaction, increment, limit } from "firebase/firestore";
         import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, connectStorageEmulator } from "firebase/storage";
         import { getMessaging, getToken, onMessage, isSupported as isMessagingSupported } from "firebase/messaging";
         import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
@@ -72,6 +72,8 @@
         let unsubscribeBill = null;
         let unsubscribeSettlements = null;
         let unsubscribeNudges = null;
+        let unsubscribeEvents = null;
+        let latestEvents = []; // dziennik aktywności pokoju (append-only)
         let isAuthReady = false;
         let currentScreenName = null;
         // 'min' = najmniej przelewów (domyślny) | 'net' = kto komu ile.
@@ -611,6 +613,7 @@
             if (unsubscribeGroup) unsubscribeGroup();
             if (unsubscribeSettlements) unsubscribeSettlements();
             if (unsubscribeNudges) unsubscribeNudges();
+            if (unsubscribeEvents) unsubscribeEvents();
 
             const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
             
@@ -693,6 +696,28 @@
                 updateNudgeBadge();
                 const modal = document.getElementById('nudges-modal');
                 if (modal && modal.classList.contains('active')) renderNudges();
+            });
+
+            // Dziennik aktywności. Limit 200 wpisów: to jest ślad ostatnich dni pokoju,
+            // a nie archiwum — bez limitu długo żyjący pokój ciągnąłby przy każdym
+            // wejściu wszystko, co się w nim kiedykolwiek wydarzyło.
+            const eventsQuery = query(
+                collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/events`),
+                orderBy('createdAt', 'desc'),
+                limit(200),
+            );
+            unsubscribeEvents = onSnapshot(eventsQuery, (snapshot) => {
+                latestEvents = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                const modal = document.getElementById('nudges-modal');
+                if (modal && modal.classList.contains('active')) renderNudges();
+                renderBillHistory();
+            }, (error) => {
+                // Dziennik jest dodatkiem, nie warunkiem pracy: gdy reguły w emulatorze
+                // są starsze niż `firestore.rules` (typowe zaraz po zmianie), aplikacja
+                // ma działać dalej z pustą historią, a nie sypać błędami w konsoli.
+                latestEvents = [];
+                renderBillHistory();
+                console.warn('[BillSplitter] Dziennik aktywności niedostępny:', error.code || error);
             });
 
             document.getElementById('copy-group-link-btn').onclick = () => {
@@ -1042,7 +1067,7 @@
                 btn.onclick = () => openSettleModal(btn.dataset.to, Number(btn.dataset.amountG), btn.dataset.currency, 'send');
             });
             actionsEl.querySelectorAll('.balance-nudge-btn').forEach((btn) => {
-                btn.onclick = () => sendNudge(btn.dataset.nudgeTo, Number(btn.dataset.amountG), btn.dataset.currency);
+                btn.onclick = () => openNudgeCompose(btn.dataset.nudgeTo, Number(btn.dataset.amountG), btn.dataset.currency);
             });
         };
 
@@ -1321,7 +1346,55 @@
         };
 
         // Wierzyciel przypomina dłużnikowi (toId). Anty-spam: max raz na 6h do tej samej osoby.
-        const sendNudge = async (toId, amountG, currency) => {
+        // --- SZABLONY PRZYPOMNIEŃ ---------------------------------------------------
+        // Domyślna treść jest RZECZOWA i wpisana z góry: produkt nie żartuje przy
+        // kwocie ani przy błędzie. Humor może dołożyć wyłącznie człowiek, wpisując
+        // własną treść — i wtedy jest to jego żart, a nie żart aplikacji.
+        const DEFAULT_NUDGE_MESSAGE = 'Cześć! Przypominam o zwrocie za nasz wspólny rachunek. Dzięki!';
+        const nudgeTemplatesKey = () => 'billsplitter_nudge_templates';
+        const readNudgeTemplates = () => {
+            try { return JSON.parse(localStorage.getItem(nudgeTemplatesKey()) || '[]'); }
+            catch { return []; }
+        };
+        const writeNudgeTemplates = (list) => {
+            // Pięć szablonów wystarczy: dłuższa lista przestaje być wyborem, a staje się
+            // kolejną rzeczą do przewijania w chwili, gdy chce się po prostu wysłać.
+            try { localStorage.setItem(nudgeTemplatesKey(), JSON.stringify(list.slice(0, 5))); } catch (_) {}
+        };
+
+        let nudgeDraft = null; // { toId, amountG, currency }
+
+        const renderNudgeTemplates = () => {
+            const wrap = document.getElementById('nudge-templates');
+            if (!wrap) return;
+            const templates = [DEFAULT_NUDGE_MESSAGE, ...readNudgeTemplates()];
+            wrap.innerHTML = templates.map((t, i) => `
+                <button class="nudge-template-btn filter-pill" data-index="${i}" title="${escapeHtml(t)}">
+                    ${escapeHtml(i === 0 ? 'Klasyczna' : t.slice(0, 24) + (t.length > 24 ? '…' : ''))}
+                </button>`).join('');
+            wrap.querySelectorAll('.nudge-template-btn').forEach((btn) => {
+                btn.onclick = () => {
+                    document.getElementById('nudge-message').value = templates[Number(btn.dataset.index)];
+                };
+            });
+        };
+
+        const openNudgeCompose = (toId, amountG, currency) => {
+            const my = myMemberNow();
+            if (!my) { showToast('Najpierw dołącz do grupy.', true); return; }
+            if (!toId || toId === my.id) return;
+            nudgeDraft = { toId, amountG: Number(amountG) || 0, currency: currency || 'PLN' };
+            document.getElementById('nudge-compose-name').textContent = memberName(toId);
+            document.getElementById('nudge-compose-avatar').innerHTML = avatarHtml(memberName(toId), toId, 'w-12 h-12 text-lg');
+            document.getElementById('nudge-compose-amount').textContent = nudgeDraft.amountG > 0
+                ? `zaległość ${fmtMoney(nudgeDraft.amountG, nudgeDraft.currency)}`
+                : '';
+            document.getElementById('nudge-message').value = DEFAULT_NUDGE_MESSAGE;
+            renderNudgeTemplates();
+            document.getElementById('nudge-compose-modal').classList.add('active');
+        };
+
+        const sendNudge = async (toId, amountG, currency, message = DEFAULT_NUDGE_MESSAGE) => {
             const my = myMemberNow();
             if (!my) { showToast('Najpierw dołącz do grupy.', true); return; }
             if (!toId || toId === my.id) return;
@@ -1342,6 +1415,11 @@
                 to: toId,
                 amountG: Number(amountG) || 0,
                 currency: currency || 'PLN',
+                // Treść pokazujemy WYŁĄCZNIE adresatowi. Interfejs nikomu innemu jej nie
+                // wyświetla; reguły Firestore nie potrafią ukryć pojedynczego pola przed
+                // resztą grupy, więc to jest zasada produktu, a nie gwarancja techniczna
+                // — i tak jest opisana w dokumentacji.
+                message: String(message || '').trim().slice(0, 240) || DEFAULT_NUDGE_MESSAGE,
                 createdAt: serverTimestamp(),
                 createdBy: currentUser.uid,
                 readBy: [],
@@ -1379,9 +1457,14 @@
             container.innerHTML = items.map((x) => {
                 const amount = x.amountG ? fmtMoney(Number(x.amountG), x.currency || 'PLN') : '';
                 if (x.kind === 'nudge') {
+                    // Treść od człowieka idzie jako CYTAT, oddzielona od zdania aplikacji:
+                    // ma być jasne, kto to napisał, zwłaszcza gdy ktoś żartuje.
+                    const quoted = x.message
+                        ? `<span class="block mt-1 text-ink-2 italic">„${escapeHtml(x.message)}"</span>`
+                        : '';
                     return inboxRowHtml({
                         icon: 'fa-bell', tone: 'is-owe',
-                        title: `<b>${escapeHtml(memberName(x.from))}</b> przypomina o zaległości${amount ? ` <b>${amount}</b>` : ''}.`,
+                        title: `<b>${escapeHtml(memberName(x.from))}</b> przypomina o zaległości${amount ? ` <b>${amount}</b>` : ''}.${quoted}`,
                         subtitle: 'Już zapłaciłeś? Zapisz wpłatę, żeby dług zniknął.',
                         actionsHtml: `<button class="nudge-settle-btn btn btn-danger" data-to="${escapeHtml(x.from)}" data-amount-g="${x.amountG || 0}" data-currency="${escapeHtml(x.currency || 'PLN')}">Ureguluj</button>
                             <button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Oznacz przeczytane</button>`,
@@ -1460,6 +1543,12 @@
                     icon: s.confirmed ? 'fa-circle-check' : 'fa-clock',
                     tone: s.confirmed ? 'is-due' : 'is-info',
                     title: `<b>${escapeHtml(memberName(s.from))}</b> → <b>${escapeHtml(memberName(s.to))}</b>: ${fmtMoney(Number(s.amountG || 0), s.currency || 'PLN')}${s.confirmed ? ' · potwierdzone' : ' · czeka na potwierdzenie'}`,
+                })),
+                // Dziennik aktywności: kto zmienił kwotę, kto co odkliknął, kto dopisał
+                // osobę. Zero sygnału (poziom 3), ale ślad zostaje.
+                ...latestEvents.map((ev) => ({
+                    at: ms(ev.createdAt), icon: 'fa-clock-rotate-left', tone: 'is-info',
+                    title: `<b>${escapeHtml(ev.byName || memberName(ev.by))}</b> ${escapeHtml(ev.label || '')}`,
                 })),
             ].sort((a, b) => b.at - a.at);
 
@@ -1546,6 +1635,11 @@
                 await updateDoc(billDocRef, { [`participants.${id}`]: deleteField() });
                 showToast(`Usunięto: ${m.name}`);
             }
+            logEvent({
+                type: 'bill-members',
+                billId: currentBillId,
+                label: `${include ? 'dopisał/a' : 'wypisał/a'} ${m.name} ${include ? 'do' : 'z'} rachunku „${billData.billName}"`,
+            });
         };
 
         // --- Krok 5: ekran „Profil" — wyłącznie tożsamość i ustawienia urządzenia ---
@@ -1612,6 +1706,63 @@
                 };
             });
             modal.classList.add('active');
+        };
+
+        // --- DZIENNIK AKTYWNOŚCI ----------------------------------------------------
+        // Przy grupie 12–25 osób ślad „kto zmienił kwotę" jest mechanizmem zaufania,
+        // nie ozdobą: bez niego jedyną odpowiedzią na „kto to zrobił?" jest cudza pamięć.
+        //
+        // Etykieta powstaje W CHWILI ZAPISU i jest gotowym zdaniem. Dzięki temu odczyt
+        // dziennika nie wymaga rachunku, którego już może nie być — a wpis o usuniętym
+        // rachunku dalej się czyta.
+        //
+        // Zapis jest „najlepszym staraniem": jeśli się nie uda, akcja użytkownika i tak
+        // się wykonała i nie ma powodu jej przerywać komunikatem o dzienniku.
+        const logEvent = async ({ type, label, billId = null }) => {
+            const me = myMemberNow();
+            if (!me || !currentGroupId) return;
+            try {
+                await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/events`), {
+                    type,
+                    label,
+                    billId,
+                    by: me.id,
+                    byName: me.name,
+                    createdBy: currentUser.uid,
+                    createdAt: serverTimestamp(),
+                });
+            } catch (e) {
+                console.warn('[BillSplitter] Nie udało się dopisać zdarzenia:', e);
+            }
+        };
+
+        // Zdarzenie w formie zdania: kto, co, kiedy. Etykieta jest już gotowa (powstała
+        // przy zapisie), więc tutaj dokładamy tylko autora i czas.
+        const eventRowHtml = (ev) => {
+            const when = (ev.createdAt && ev.createdAt.toDate)
+                ? ev.createdAt.toDate().toLocaleString('pl-PL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+                : '';
+            return `<div class="card p-3 flex items-start gap-3">
+                ${avatarHtml(ev.byName || memberName(ev.by), ev.by, 'w-8 h-8 text-xs')}
+                <span class="min-w-0 flex-grow">
+                    <span class="block text-sm"><b>${escapeHtml(ev.byName || memberName(ev.by))}</b> ${escapeHtml(ev.label || '')}</span>
+                    ${when ? `<span class="block text-xs text-ink-3 mt-0.5">${escapeHtml(when)}</span>` : ''}
+                </span>
+            </div>`;
+        };
+
+        // Historia JEDNEGO rachunku — na ekranie tego rachunku, bo tam jest jej kontekst.
+        const renderBillHistory = () => {
+            const wrap = document.getElementById('bill-history-details');
+            const list = document.getElementById('bill-history-list');
+            const label = document.getElementById('bill-history-label');
+            if (!wrap || !list) return;
+            if (!currentBillId) { wrap.classList.add('hidden'); return; }
+            const events = latestEvents.filter((e) => e.billId === currentBillId);
+            wrap.classList.toggle('hidden', events.length === 0);
+            if (events.length === 0) { list.innerHTML = ''; return; }
+            if (label) label.textContent = `Historia zmian · ${events.length} ${plural(events.length, 'wpis', 'wpisy', 'wpisów')}`;
+            list.innerHTML = events.map(eventRowHtml).join('');
         };
 
         // POTWIERDZENIE DECYZJI NIEODWRACALNEJ — jedno okno dla całej aplikacji.
@@ -1710,6 +1861,7 @@
             });
             if (input) input.value = '';
             showToast(`Dodano: ${name}`);
+            logEvent({ type: 'room-member-add', label: `dopisał/a do pokoju: ${name}` });
         };
 
         const groupDocRefById = (groupId) => doc(db, `artifacts/${appId}/public/data/groups`, groupId);
@@ -1977,7 +2129,7 @@
                 billEl.className = "card tap p-4 flex items-center gap-3 cursor-pointer";
                 // Tło barwi się tylko przy zadaniu do wykonania — reszta listy zostaje biała,
                 // więc oko trafia w to jedno miejsce bez szukania.
-                if (status.tone === 'action') billEl.style.backgroundColor = 'rgb(var(--info) / 0.09)';
+                if (status.tone === 'action') billEl.style.backgroundColor = 'rgb(var(--info) / 0.06)';
                 billEl.innerHTML = `
                     ${bill.payerId ? avatarHtml(memberName(bill.payerId), bill.payerId, 'w-11 h-11 text-base') : ''}
                     <div class="min-w-0 flex-grow">
@@ -2464,9 +2616,15 @@
             deleteBtn.onclick = async () => {
                 if (!editingItemId) return;
                 const id = editingItemId;
+                const removed = (billData.sharedCosts || []).find(x => x.id === id);
                 document.getElementById('shared-cost-modal').classList.remove('active');
                 await mutateItems((items) => items.filter(sc => sc.id !== id));
                 showToast('Pozycja usunięta.');
+                logEvent({
+                    type: 'item-remove',
+                    billId: currentBillId,
+                    label: `usunął/ęła pozycję „${removed ? removed.description : '—'}"`,
+                });
             };
 
             document.getElementById('shared-cost-modal').classList.add('active');
@@ -2497,6 +2655,11 @@
             });
             document.getElementById('shared-cost-modal').classList.remove('active');
             showToast(editingItemId ? 'Zapisano pozycję.' : 'Dodano pozycję.');
+            logEvent({
+                type: editingItemId ? 'item-edit' : 'item-add',
+                billId: currentBillId,
+                label: `${editingItemId ? 'poprawił/a' : 'dodał/a'} pozycję „${description}" (${fmtMoney(toGrosze(amount), billData.currency)})`,
+            });
             editingItemId = null;
         };
 
@@ -2787,6 +2950,7 @@
             }
 
             renderItemTiles();
+            renderBillHistory();
 
             document.getElementById('global-costs-list').innerHTML = (billData.globalCosts || []).map(gc => {
                 // Number() zamiast .toFixed() wprost: koszt wspólny wpisany z konsoli jako tekst
@@ -2823,7 +2987,17 @@
                 navigateToGroup(currentGroupId);
             };
             document.getElementById('total-bill-amount').onchange = async (e) => {
-                await updateDoc(billDocRef, { totalAmount: parseLocalFloat(e.target.value) });
+                const before = billData.totalAmount || 0;
+                const after = parseLocalFloat(e.target.value);
+                if (after === before) return;
+                await updateDoc(billDocRef, { totalAmount: after });
+                // Zmiana kwoty rachunku dotyczy cudzych pieniędzy — to pierwszy wpis,
+                // którego ktokolwiek szuka w dzienniku.
+                logEvent({
+                    type: 'bill-amount',
+                    billId: currentBillId,
+                    label: `zmienił/a kwotę rachunku „${billData.billName}" z ${fmtMoney(toGrosze(before), billData.currency)} na ${fmtMoney(toGrosze(after), billData.currency)}`,
+                });
             };
             document.getElementById('currency-select').onclick = () => {
                 openChoiceSheet({
@@ -2879,6 +3053,13 @@
                 }
 
                 await updateDoc(billDocRef, updates);
+                logEvent({
+                    type: 'bill-payer',
+                    billId: currentBillId,
+                    label: newPayerId
+                        ? `wskazał/a płatnika rachunku „${billData.billName}": ${memberName(newPayerId)}`
+                        : `usunął/ęła płatnika z rachunku „${billData.billName}"`,
+                });
             };
 
             document.getElementById('delete-bill-btn-advanced').onclick = () => deleteBillWithUndo();
@@ -2992,7 +3173,16 @@
                     if (!billData.participants[my.id] || billData.participants[my.id].status === 'not_applicable') {
                         showToast('Nie jesteś uczestnikiem tego rachunku.', true); return;
                     }
+                    const before = (billData.sharedCosts || []).find(x => x.id === tile.dataset.itemId);
+                    const wasMine = before ? isPicked(before, my.id) : false;
                     await mutateItems((items) => toggleItemPicker(items, tile.dataset.itemId, my.id));
+                    // Odklikanie pozycji to poziom 3 progu: żadnego sygnału, ale ślad
+                    // w dzienniku zostaje — to jest odpowiedź na „kto wziął tę porcję".
+                    logEvent({
+                        type: 'item-pick',
+                        billId: currentBillId,
+                        label: `${wasMine ? 'zdjął/ęła się z pozycji' : 'odkliknął/ęła pozycję'} „${before ? before.description : '—'}"`,
+                    });
                 };
             });
             document.querySelectorAll('.item-edit-btn').forEach(btn => {
@@ -3543,7 +3733,7 @@
                 const settleRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
 
                 const nb = e.target.closest('.nudge-btn');
-                if (nb) { await sendNudge(nb.dataset.nudgeTo, Number(nb.dataset.amountG), nb.dataset.currency); return; }
+                if (nb) { openNudgeCompose(nb.dataset.nudgeTo, Number(nb.dataset.amountG), nb.dataset.currency); return; }
 
                 const b = e.target.closest('.settle-btn');
                 if (b) { openSettleModal(b.dataset.to, Number(b.dataset.amountG), b.dataset.currency, 'send'); return; }
@@ -3636,6 +3826,28 @@
             document.querySelectorAll('.inbox-mode-btn').forEach((btn) => {
                 btn.onclick = () => { inboxMode = btn.dataset.inbox; renderNudges(); };
             });
+
+            // Kompozytor przypomnienia
+            const nudgeComposeModal = document.getElementById('nudge-compose-modal');
+            const nudgeCancel = document.getElementById('nudge-compose-cancel');
+            if (nudgeCancel) nudgeCancel.onclick = () => nudgeComposeModal.classList.remove('active');
+            const nudgeSend = document.getElementById('nudge-compose-send');
+            if (nudgeSend) nudgeSend.onclick = async () => {
+                if (!nudgeDraft) return;
+                const message = document.getElementById('nudge-message').value;
+                nudgeComposeModal.classList.remove('active');
+                await sendNudge(nudgeDraft.toId, nudgeDraft.amountG, nudgeDraft.currency, message);
+                nudgeDraft = null;
+            };
+            const nudgeSaveTpl = document.getElementById('nudge-save-template');
+            if (nudgeSaveTpl) nudgeSaveTpl.onclick = () => {
+                const text = document.getElementById('nudge-message').value.trim();
+                if (!text || text === DEFAULT_NUDGE_MESSAGE) { showToast('Wpisz własną treść, żeby ją zapisać.', true); return; }
+                const list = readNudgeTemplates().filter((t) => t !== text);
+                writeNudgeTemplates([text, ...list]);
+                renderNudgeTemplates();
+                showToast('Szablon zapisany na tym urządzeniu.');
+            };
 
             // Edycja członków rachunku
             const bmBtnA = document.getElementById('edit-members-btn-advanced');

@@ -35,7 +35,9 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
   nudges.forEach((n) => {
     if (!n || n.to !== myId) return;
     if (Array.isArray(n.readBy) && n.readBy.includes(myUid)) return;
-    items.push({ level: 1, kind: 'nudge', id: n.id, from: n.from, amountG: n.amountG, currency: n.currency, at: n.createdAtMs });
+    // `message` niesie treść napisaną przez człowieka — widzi ją wyłącznie adresat,
+    // a tu i tak jesteśmy już po filtrze „do mnie".
+    items.push({ level: 1, kind: 'nudge', id: n.id, from: n.from, amountG: n.amountG, currency: n.currency, message: n.message, at: n.createdAtMs });
   });
 
   settlements.forEach((s) => {

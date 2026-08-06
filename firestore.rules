@@ -79,6 +79,18 @@ service cloud.firestore {
                       && memberOwner(appId, groupId, resource.data.to) == request.auth.uid;
         allow delete: if request.auth != null && resource.data.createdBy == request.auth.uid;
       }
+
+      // Aktywność: dziennik zdarzeń pokoju (kto zmienił kwotę, kto co odkliknął,
+      // kto dopisał osobę). Przy grupie 12–25 osób to mechanizm zaufania, a nie
+      // ozdoba — więc jest DOPISYWALNY, ale NIEZMIENNY: wpis raz zapisany nie da się
+      // ani poprawić, ani skasować z klienta. Dziennik, który da się wyczyścić,
+      // nie jest dziennikiem.
+      match /events/{eventId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null
+                      && request.resource.data.createdBy == request.auth.uid;
+        allow update, delete: if false;
+      }
     }
 
     // Wszystko inne — zamknięte (domyślny deny, jawnie dla czytelności).

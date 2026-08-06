@@ -896,3 +896,63 @@ Zostało:
    limitów, których nie ma**.
 3. Odcień „coś czeka na ciebie" do zejścia z 9 % na 6 % (§5).
 4. Nazwa produktu i logo — otwarte, nazwa musi być angielska (§2).
+
+---
+
+## 16. PARTIA 6 — DZIENNIK AKTYWNOŚCI I SZABLONY PRZYPOMNIEŃ (2026-08-06)
+
+### Dziennik aktywności (kolekcja `events`)
+
+Nowa podkolekcja pokoju: `groups/{id}/events`. **Append-only** — reguły pozwalają czytać
+i dopisywać, ale `update` i `delete` są zamknięte na głucho, także dla autora wpisu.
+Dziennik, który da się poprawić albo wyczyścić, nie jest dziennikiem.
+
+Etykieta powstaje **w chwili zapisu** i jest gotowym zdaniem („zmienił/a kwotę rachunku
+„Kolacja" z 100,00 PLN na 120,00 PLN"). Dzięki temu odczyt nie wymaga rachunku, którego
+już może nie być — wpis o usuniętym rachunku dalej się czyta.
+
+Zapisywane zdarzenia: zmiana kwoty rachunku, wskazanie płatnika, dodanie / edycja /
+usunięcie pozycji, odklikanie pozycji (kto co wziął), zmiana składu rachunku, dopisanie
+osoby do pokoju.
+
+Zapis jest **najlepszym staraniem**: gdy się nie uda, akcja użytkownika i tak się wykonała
+i nie ma powodu jej przerywać komunikatem o dzienniku. Gdy reguły w emulatorze są starsze
+niż `firestore.rules` (typowe zaraz po zmianie), aplikacja pracuje dalej z pustą historią.
+
+Gdzie widać:
+
+- **Historia zmian** na ekranie rachunku — zwinięta, z licznikiem wpisów. Tam jest jej
+  kontekst.
+- **Skrzynka → Wszystko** — dziennik zmieszany z przypomnieniami i wpłatami, najnowsze
+  pierwsze. Poziom 3 progu: zero sygnału, wchodzisz kiedy chcesz wiedzieć.
+
+Testy reguł (`npm run test:rules`, 32 przypadki) pilnują trzech rzeczy: dopisać można
+tylko w swoim imieniu, wpisu nie da się zmienić ani skasować (także własnego), a czytać
+może każdy z linkiem.
+
+### Szablony przypomnień
+
+Przycisk „Przypomnij" otwiera **kompozytor** zamiast wysyłać od razu:
+
+- Domyślna treść jest **rzeczowa i wpisana z góry**: *„Cześć! Przypominam o zwrocie za
+  nasz wspólny rachunek. Dzięki!"*. Produkt nie żartuje przy kwocie ani przy błędzie —
+  humor może dołożyć wyłącznie człowiek, wpisując własną treść, i wtedy jest to jego żart.
+- Własne szablony (do pięciu) zapisują się **na urządzeniu**, pigułkami nad polem treści.
+- Treść widzi **adresat**, w skrzynce, jako cytat oddzielony od zdania aplikacji.
+- **Bramka pozostaje dziesięć sekund** — przy szablonach nie dokładamy limitów, których
+  nie ma (`PRODUCT.md`).
+
+**Granica techniczna wypowiedziana wprost:** reguły Firestore nie potrafią ukryć
+pojedynczego pola dokumentu przed resztą grupy. „Treść widzi wyłącznie adresat" jest więc
+zasadą interfejsu, nie gwarancją kryptograficzną — ktoś z konsolą i linkiem do pokoju
+odczyta pole `message`. Domknięcie wymagałoby kont i osobnej kolekcji per odbiorca.
+
+### Stan zamknięcia redesignu
+
+Wszystkie punkty zakresu z `docs/NEXT-SESSION.md` są zrobione. Otwarte zostają:
+
+1. **Nazwa produktu i logo** — decyzja właściciela, nazwa musi być angielska (§2).
+2. **Font Awesome** — ikony do wymiany na własny zestaw (§6), jedyne zgłoszenie detektora
+   poza znanym `broken-image`.
+3. **Konta zamiast tożsamości przypiętej do urządzenia** — domknęłoby też ryzyko podmiany
+   cudzego numeru konta i granicę prywatności treści przypomnień.

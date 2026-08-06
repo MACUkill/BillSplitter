@@ -552,6 +552,18 @@ the verdict, and DESIGN.md
                 </div>
             </details>
 
+            <!-- HISTORIA ZMIAN — ślad, kto zmienił kwotę albo pozycję. Przy grupie
+                 12–25 osób to mechanizm zaufania: bez niego jedyną odpowiedzią na
+                 „kto to zrobił?" jest cudza pamięć. Zwinięta, bo to dowód do wglądu,
+                 a nie treść, którą czyta się przy każdym wejściu. -->
+            <details id="bill-history-details" class="mb-3 mt-6 hidden">
+                <summary class="settle-others-summary">
+                    <i class="fas fa-chevron-down settle-others-chevron" aria-hidden="true"></i>
+                    <span id="bill-history-label">Historia zmian</span>
+                </summary>
+                <div id="bill-history-list" class="mt-3 space-y-2"></div>
+            </details>
+
             <div class="text-center mb-4 mt-8">
                 <button id="delete-bill-btn-advanced" class="tap min-h-tap px-4 rounded-full text-sm font-bold text-ink-3">
                     Usuń rachunek
@@ -652,6 +664,42 @@ the verdict, and DESIGN.md
             <h3 id="choice-title" class="font-display text-2xl font-bold mb-4"></h3>
             <div id="choice-options" class="space-y-2 overflow-y-auto"></div>
             <button id="close-choice-modal" class="btn btn-dark w-full mt-5 flex-shrink-0">Zamknij</button>
+        </div>
+    </div>
+
+    <!-- PRZYPOMNIENIE O ZWROCIE — kompozytor wiadomości. Domyślna treść jest rzeczowa
+         i wpisana z góry; humor może dołożyć wyłącznie człowiek, i nigdy przy kwocie.
+         Treść widzi adresat, nie cała grupa. -->
+    <div id="nudge-compose-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md flex flex-col" style="max-height:85vh">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 class="font-display text-2xl font-bold mb-1">Przypomnij o zwrocie</h3>
+            <div class="flex items-center gap-3 mt-3 mb-4">
+                <span id="nudge-compose-avatar" class="flex-shrink-0"></span>
+                <p class="text-sm text-ink-2 min-w-0">
+                    Do <b id="nudge-compose-name" class="text-ink">…</b><br>
+                    <span id="nudge-compose-amount" class="text-ink-3"></span>
+                </p>
+            </div>
+
+            <div class="overflow-y-auto">
+                <p class="text-sm font-bold text-ink-3 mb-2">Twoje szablony</p>
+                <div id="nudge-templates" class="filter-pills mb-3"></div>
+
+                <label for="nudge-message" class="block text-sm font-bold text-ink-3 mb-1.5">Treść wiadomości</label>
+                <textarea id="nudge-message" class="field w-full p-3" rows="3" maxlength="240"></textarea>
+                <p class="text-xs text-ink-3 mt-1.5">Zobaczy ją tylko adresat. Kwota i tak jedzie osobno — w treści nie musisz jej powtarzać.</p>
+
+                <button id="nudge-save-template" class="settings-row tap mt-3">
+                    <span class="truncate">Zapisz tę treść jako szablon</span>
+                    <span class="settings-row-value"><i class="fas fa-bookmark text-sm"></i></span>
+                </button>
+            </div>
+
+            <div class="flex gap-2 mt-4 flex-shrink-0">
+                <button id="nudge-compose-cancel" class="btn btn-quiet flex-1">Anuluj</button>
+                <button id="nudge-compose-send" class="btn btn-primary flex-1">Wyślij</button>
+            </div>
         </div>
     </div>
 
