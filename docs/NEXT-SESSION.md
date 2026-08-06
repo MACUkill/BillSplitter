@@ -220,32 +220,23 @@ służy do testów ze znajomymi. Scalenie V2 na `main` dopiero długo po testach
 Stan gałęzi: V2 jest 63 commity przed `main`, `main` nie ma nic, czego V2 nie zna —
 scalenie pójdzie czystym fast-forwardem.
 
-**Pułapka: dane nie idą za kodem.** Gałąź decyduje o KODZIE, a projekt Firebase o DANYCH.
-Dziś to dwa różne światy:
+**Migracja danych: ROZSTRZYGNIĘTE — nie robimy jej wcale.** Właściciel zdecydował
+2026-08-06: stare pokoje, rachunki i rozliczenia są **do wyrzucenia**. Po testach V2
+przejmuje wszystko, a V1 przestaje istnieć jako wersja, o którą się dbamy. Nie planuj
+eksportu Firestore, nie pisz skryptów przenoszących, nie proponuj okna „przenosin".
 
-| Gałąź | Adres | Projekt Firebase | Skąd config |
-|---|---|---|---|
-| `main` (V1) | `groupbillsplitter.netlify.app` | `billsplitter-2fdfa` | hardkodowany fallback w `src/main.js` |
-| `BillSplitterV2` | `billsplitterv2--groupbillsplitter.netlify.app` | `billsplitter-push-test` | zmienne `VITE_*` w Netlify (scope BillSplitterV2) |
+Konsekwencja praktyczna, wygodna: testy ze znajomymi mogą iść od razu, bez żadnej decyzji
+z góry. Dane w `billsplitter-push-test` są jawnie nietrwałe — gdy przyjdzie cutover,
+ekipa po prostu zaczyna od nowa i wolno im to powiedzieć wprost.
 
-Pokoje, rachunki i rozliczenia, które znajomi utworzą podczas testów, wylądują
-w `billsplitter-push-test`. Jeśli przy scalaniu produkcja pojedzie na starym projekcie
-(a pojedzie, bo bez zmiennych `VITE_*` build wpada w fallback na `billsplitter-2fdfa`),
-to **wszystko, co ekipa zbudowała w czasie testów, zniknie im z oczu** — dane nie
-przepadną z bazy, ale aplikacja będzie patrzeć w inne miejsce.
+**Scalenie V2 na `main` robi WYŁĄCZNIE właściciel, ręcznie i w dalekiej przyszłości.**
+To nie jest zadanie do wykonania przez asystenta, nawet gdy testy wypadną dobrze i nawet
+gdy wszystko jest zielone. Pracujemy na `BillSplitterV2`; `main` zostaje nietknięty.
 
-**Do rozstrzygnięcia PRZED zebraniem prawdziwych danych** (nie po):
-
-1. Czy `billsplitter-push-test` zostaje docelowym projektem i produkcja dostaje jego
-   zmienne `VITE_*`? Wtedy scalenie nic nie psuje, a nazwa projektu zostaje myląca.
-2. Czy powstaje **świeży projekt** (właściciel to zapowiada) i trzeba przenieść pokoje
-   z testów? Wtedy potrzebny jest eksport/import Firestore i Storage, a znajomi na czas
-   przenosin nie powinni nic dopisywać.
-3. Czy testowe pokoje są **jednorazowe** i po testach ekipa zaczyna od zera? Wtedy trzeba
-   im to powiedzieć zawczasu, a nie po fakcie.
-
-Dopóki decyzja nie zapadnie, traktuj dane w `billsplitter-push-test` jako **nietrwałe**
-i nie obiecuj ekipie, że ich rozliczenia przeżyją przeprowadzkę.
+Jedyne, co przy cutoverze naprawdę trzeba zrobić po stronie konfiguracji: **kontekst
+produkcyjny Netlify musi dostać zmienne `VITE_*` projektu docelowego**. Bez nich build
+wpada w hardkodowany fallback na `billsplitter-2fdfa` — cicho, bo aplikacja wygląda
+identycznie.
 
 **Reguły są per PROJEKT, nie per gałąź.** Wgranie `firestore.rules` z repo na
 `billsplitter-2fdfa` częściowo zepsuje żywą V1 (kasowanie rachunku tylko przez
