@@ -299,6 +299,12 @@ const run = async () => {
   await click('#room-settings-btn');
   await new Promise((r) => setTimeout(r, 700));
   await shot('14-ustawienia-pokoju');
+  await click('#room-qr-toggle');
+  await new Promise((r) => setTimeout(r, 600));
+  await shot('14a-ustawienia-pokoju-qr');
+  await page.evaluate(() => { const b = document.querySelector('#room-settings-modal .overflow-y-auto'); if (b) b.scrollTop = b.scrollHeight; });
+  await new Promise((r) => setTimeout(r, 500));
+  await shot('14b-ustawienia-pokoju-dol');
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 500));
 

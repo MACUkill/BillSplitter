@@ -5,6 +5,9 @@
         import { unreadNudgeCount, hasRecentNudge, inboxItems, badgeCount, hasDot } from './nudges.js';
         import { itemQuantity, itemPickers, itemPickerCount, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
         import { identityColor, initials, IDENTITY_COLORS } from './identity.js';
+        // Kod QR rysowany lokalnie, w buildzie. Biblioteka bez zależności i bez sieci:
+        // aplikacja pracuje offline, więc obrazek z cudzego serwera nie wchodzi w grę.
+        import qrcode from 'qrcode-generator';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, writeBatch, getDocs, runTransaction, increment } from "firebase/firestore";
@@ -217,7 +220,7 @@
 
         const formatSummary = (summaryObject) => {
             if (!summaryObject || Object.keys(summaryObject).length === 0) {
-                return '0.00 PLN';
+                return '0,00 PLN';
             }
 
             const currencyOrder = ['PLN', 'EUR', 'USD'];
@@ -230,7 +233,7 @@
                     if (indexB === -1) return -1;
                     return indexA - indexB;
                 })
-                .map(([currency, amount]) => `${amount.toFixed(2)} ${currency}`)
+                .map(([currency, amount]) => `${amount.toFixed(2).replace(".", ",")} ${currency}`)
                 .join(' + ');
         };
 
@@ -703,11 +706,49 @@
             // Ustawienia pokoju otwierają się spod NAZWY pokoju — stoją przy rzeczy,
             // której dotyczą. Zwijana sekcja „Pokój" na pulpicie zniknęła bez zamiennika.
             const roomSettingsBtn = document.getElementById('room-settings-btn');
-            if (roomSettingsBtn) roomSettingsBtn.onclick = () => document.getElementById('room-settings-modal').classList.add('active');
+            if (roomSettingsBtn) roomSettingsBtn.onclick = () => openRoomSettings();
             const roomSettingsCopySerial = document.getElementById('room-settings-copy-serial-btn');
             if (roomSettingsCopySerial) roomSettingsCopySerial.onclick = () => copyText(currentGroupId, 'Kod pokoju skopiowany.');
             const closeRoomSettings = document.getElementById('close-room-settings-btn');
             if (closeRoomSettings) closeRoomSettings.onclick = () => document.getElementById('room-settings-modal').classList.remove('active');
+
+            // Kod QR rysowany lokalnie — aplikacja pracuje offline, więc obrazek
+            // z cudzego serwera nie wchodzi w grę.
+            const qrToggle = document.getElementById('room-qr-toggle');
+            if (qrToggle) qrToggle.onclick = () => {
+                const wrap = document.getElementById('room-qr-wrap');
+                const willShow = wrap.classList.contains('hidden');
+                wrap.classList.toggle('hidden', !willShow);
+                qrToggle.querySelector('span').textContent = willShow ? 'Ukryj kod QR' : 'Pokaż kod QR';
+                if (willShow) renderRoomQr();
+            };
+
+            const addMemberInput = document.getElementById('room-add-member-input');
+            const addMemberBtn = document.getElementById('room-add-member-btn');
+            if (addMemberBtn) addMemberBtn.onclick = () => addMemberToRoom(addMemberInput.value);
+            if (addMemberInput) addMemberInput.onkeydown = (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); addMemberToRoom(addMemberInput.value); }
+            };
+
+            const roomCurrencyBtn = document.getElementById('room-currency-btn');
+            if (roomCurrencyBtn) roomCurrencyBtn.onclick = () => {
+                openChoiceSheet({
+                    title: 'Waluta domyślna pokoju',
+                    current: (groupData && groupData.defaultCurrency) || 'PLN',
+                    options: [
+                        { value: 'PLN', label: 'PLN', hint: 'złoty polski' },
+                        { value: 'EUR', label: 'EUR', hint: 'euro' },
+                        { value: 'USD', label: 'USD', hint: 'dolar amerykański' },
+                    ],
+                    onPick: async (value) => {
+                        await updateDoc(groupDocRef, { defaultCurrency: value });
+                        showToast('Nowe rachunki będą w ' + value + '.');
+                    },
+                });
+            };
+
+            const leaveBtn = document.getElementById('leave-room-btn');
+            if (leaveBtn) leaveBtn.onclick = () => leaveRoom();
 
             document.querySelectorAll('.bill-filter-btn').forEach(btn => {
                 btn.onclick = () => { currentBillFilter = btn.dataset.filter; renderBillsList(); };
@@ -1535,6 +1576,125 @@
                 };
             });
             modal.classList.add('active');
+        };
+
+        // POTWIERDZENIE DECYZJI NIEODWRACALNEJ — jedno okno dla całej aplikacji.
+        // Osobne okno na każdą taką decyzję kończyło się trzema wyglądami tego samego
+        // pytania i trzema różnymi drogami wyjścia.
+        const openConfirm = ({ title, body, confirmLabel = 'Potwierdzam', onConfirm }) => {
+            const modal = document.getElementById('confirm-modal');
+            if (!modal) return;
+            document.getElementById('confirm-title').textContent = title;
+            document.getElementById('confirm-body').textContent = body;
+            const ok = document.getElementById('confirm-ok-btn');
+            const cancel = document.getElementById('confirm-cancel-btn');
+            ok.textContent = confirmLabel;
+            ok.onclick = async () => {
+                modal.classList.remove('active');
+                await onConfirm();
+            };
+            cancel.onclick = () => modal.classList.remove('active');
+            modal.classList.add('active');
+        };
+
+        // --- USTAWIENIA POKOJU (docs/UI-UX.md §10.3) --------------------------------
+        const openRoomSettings = () => {
+            renderRoomMembers();
+            const curLabel = document.getElementById('room-currency-label');
+            if (curLabel) curLabel.textContent = (groupData && groupData.defaultCurrency) || 'PLN';
+            // Kod QR startuje zwinięty: to skrót dla jednej sytuacji przy stole,
+            // a nie rzecz, którą trzeba oglądać przy każdym wejściu w ustawienia.
+            const qrWrap = document.getElementById('room-qr-wrap');
+            if (qrWrap) qrWrap.classList.add('hidden');
+            const qrToggle = document.getElementById('room-qr-toggle');
+            if (qrToggle) qrToggle.querySelector('span').textContent = 'Pokaż kod QR';
+            document.getElementById('room-settings-modal').classList.add('active');
+        };
+
+        const renderRoomQr = () => {
+            const box = document.getElementById('room-qr');
+            if (!box) return;
+            const link = document.getElementById('group-share-link').value;
+            if (!link) { box.innerHTML = ''; return; }
+            // Typ 0 = automatyczny dobór wersji, korekcja „M": czytelny nawet gdy ktoś
+            // skanuje z ekranu pod kątem, w słabym świetle lokalu.
+            const qr = qrcode(0, 'M');
+            qr.addData(link);
+            qr.make();
+            box.innerHTML = qr.createSvgTag({ cellSize: 5, margin: 0, scalable: true });
+            const svg = box.querySelector('svg');
+            if (svg) { svg.style.width = '11rem'; svg.style.height = '11rem'; svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'Kod QR z linkiem do pokoju'); }
+        };
+
+        const renderRoomMembers = () => {
+            const list = document.getElementById('room-members-list');
+            const count = document.getElementById('room-members-count');
+            if (!list || !groupData) return;
+            const order = groupData.memberOrder || Object.keys(groupData.members || {});
+            const me = myMemberNow();
+            if (count) count.textContent = `${order.length} ${plural(order.length, 'osoba', 'osoby', 'osób')}`;
+            list.innerHTML = order.map((id) => {
+                const m = groupData.members[id];
+                if (!m) return '';
+                const isMe = me && me.id === id;
+                const methods = getPaymentMethods(m).length;
+                // „Wolne" znaczy: imię nikim nie zajęte, więc ktoś może je przejąć,
+                // wchodząc do pokoju kodem. To jest informacja o dostępie, nie ozdoba.
+                const note = isMe ? 'to Ty' : (m.claimedBy ? '' : 'wolne — nikt jeszcze nie zajął');
+                const pay = methods > 0
+                    ? `${methods} ${plural(methods, 'sposób płatności', 'sposoby płatności', 'sposobów płatności')}`
+                    : 'brak sposobu płatności';
+                return `<div class="person-row" aria-pressed="false" role="group">
+                    ${avatarHtml(m.name, id)}
+                    <span class="flex-grow min-w-0">
+                        <span class="block font-medium truncate">${escapeHtml(m.name)}${note ? ` <span class="text-xs text-ink-3">· ${escapeHtml(note)}</span>` : ''}</span>
+                        <span class="block text-xs text-ink-3 truncate">${escapeHtml(pay)}</span>
+                    </span>
+                </div>`;
+            }).join('');
+        };
+
+        // Dopisanie osoby do pokoju, który już żyje: przy grupie 12–25 osób ktoś zawsze
+        // dosiada się po pierwszym rachunku, a wcześniej jedyną drogą było założenie
+        // pokoju od nowa.
+        const addMemberToRoom = async (rawName) => {
+            const name = String(rawName || '').trim();
+            const input = document.getElementById('room-add-member-input');
+            if (!name) { showToast('Wpisz imię.', true); if (input) input.focus(); return; }
+            if (!groupData) return;
+            const taken = Object.values(groupData.members || {}).some(
+                (m) => m.name.trim().toLowerCase() === name.toLowerCase(),
+            );
+            if (taken) { showToast('Ktoś w pokoju ma już to imię.', true); return; }
+            const id = `m${Date.now()}${Math.floor(Math.random() * 1000)}`;
+            const order = groupData.memberOrder || Object.keys(groupData.members || {});
+            await updateDoc(groupDocRefById(currentGroupId), {
+                [`members.${id}`]: { id, name, claimedBy: null },
+                memberOrder: [...order, id],
+            });
+            if (input) input.value = '';
+            showToast(`Dodano: ${name}`);
+        };
+
+        const groupDocRefById = (groupId) => doc(db, `artifacts/${appId}/public/data/groups`, groupId);
+
+        // Opuszczenie pokoju zwalnia MOJE imię i kasuje skrót z tego urządzenia.
+        // Rachunki zostają: dług nie znika dlatego, że ktoś wyszedł z aplikacji.
+        const leaveRoom = async () => {
+            const me = myMemberNow();
+            if (!me) return;
+            openConfirm({
+                title: 'Opuścić pokój?',
+                body: 'Twoje imię zostanie zwolnione, a pokój zniknie z listy na tym urządzeniu. Rachunki i rozliczenia zostają.',
+                confirmLabel: 'Opuść pokój',
+                onConfirm: async () => {
+                    await updateDoc(groupDocRefById(currentGroupId), { [`members.${me.id}.claimedBy`]: null });
+                    forgetRoom(currentGroupId);
+                    document.getElementById('room-settings-modal').classList.remove('active');
+                    showToast('Pokój opuszczony.');
+                    window.location.href = window.location.origin + window.location.pathname;
+                },
+            });
         };
 
         // KOLOR ZNAKU — jedno pole z bieżącym kolorem, paleta dopiero po stuknięciu.
@@ -3261,7 +3421,7 @@
             //
             // Wyjątkiem są okna potwierdzeń nieodwracalnych: tam przypadkowe muśnięcie
             // tła nie może uchodzić za odpowiedź, więc trzeba wskazać wprost.
-            const CONFIRM_MODALS = new Set(['delete-confirm-modal', 'delete-photo-confirm-modal']);
+            const CONFIRM_MODALS = new Set(['delete-confirm-modal', 'delete-photo-confirm-modal', 'confirm-modal']);
             const openModals = () => [...document.querySelectorAll('.modal.active')];
             const closeTopModal = () => {
                 const top = openModals().pop();
@@ -3632,7 +3792,9 @@
                     // w bazie, ale nie rozgałęzia już ani obliczeń, ani ekranów.
                     type: 'advanced',
                     createdAt: serverTimestamp(),
-                    currency: 'PLN',
+                    // Waluta domyślna pokoju (ustawienia pokoju). Rachunek i tak można
+                    // przestawić osobno — kurs zapisuje się w dniu dodania.
+                    currency: (groupData && groupData.defaultCurrency) || 'PLN',
                     totalAmount: 0,
                     payerId: null,
                     payerConfirmed: false,

@@ -740,6 +740,44 @@ the verdict, and DESIGN.md
                         <input type="text" id="group-share-link" class="field flex-grow min-w-0" readonly>
                         <button id="copy-group-link-btn" class="btn btn-dark flex-shrink-0">Kopiuj</button>
                     </div>
+                    <!-- KOD QR — przy stole to najszybsza droga do pokoju: cudzy telefon
+                         celuje aparatem i jest w środku, bez przepisywania kodu ani
+                         wysyłania linku przez komunikator. Rysowany lokalnie, bez sieci. -->
+                    <button id="room-qr-toggle" class="settings-row tap mt-3">
+                        <span class="truncate">Pokaż kod QR</span>
+                        <span class="settings-row-value"><i class="fas fa-qrcode text-sm"></i></span>
+                    </button>
+                    <div id="room-qr-wrap" class="hidden mt-3 flex flex-col items-center gap-2">
+                        <div id="room-qr" class="bg-white p-3 rounded-block"></div>
+                        <p class="text-xs text-ink-3 text-center">Wyceluj aparatem w kod, żeby wejść do pokoju.</p>
+                    </div>
+                </div>
+
+                <!-- SKŁAD GRUPY. Ryzyko podmiany cudzego numeru konta jest świadomie
+                     otwarte (PRODUCT.md), więc interfejs ma je POKAZAĆ, a nie przemilczeć:
+                     przy pieniądzach niewypowiedziane ryzyko jest gorsze od widocznego. -->
+                <div class="card p-5">
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-sm font-bold text-ink-3">Skład grupy</p>
+                        <span id="room-members-count" class="chip text-xs"></span>
+                    </div>
+                    <div id="room-members-list" class="mt-3 space-y-2"></div>
+                    <div class="mt-3 flex items-center gap-2">
+                        <input type="text" id="room-add-member-input" class="field flex-grow min-w-0" placeholder="Imię nowej osoby" autocomplete="off" enterkeyhint="done">
+                        <button id="room-add-member-btn" class="btn btn-dark flex-shrink-0">Dodaj</button>
+                    </div>
+                    <p class="text-xs text-ink-3 mt-3">Numer konta i inne sposoby płatności może zmienić <b class="text-ink-2">każda osoba w pokoju</b>, nie tylko właściciel. Zanim wyślesz przelew na nowy numer, upewnij się u odbiorcy poza aplikacją.</p>
+                </div>
+
+                <!-- Waluta domyślna: dotyczy NOWYCH rachunków. Istniejące zostają przy
+                     swojej, bo kurs zapisuje się w dniu dodania rachunku. -->
+                <div class="card p-5">
+                    <p class="text-sm font-bold text-ink-3">Waluta domyślna</p>
+                    <p class="mt-1 text-sm text-ink-2">Nowe rachunki startują w tej walucie. Rachunki już dodane zostają przy swojej.</p>
+                    <button id="room-currency-btn" class="field choice-field w-full mt-2">
+                        <span id="room-currency-label">PLN</span>
+                        <i class="fas fa-chevron-down choice-field-chevron"></i>
+                    </button>
                 </div>
 
                 <div class="card p-5 grid grid-cols-2 gap-5">
@@ -755,6 +793,14 @@ the verdict, and DESIGN.md
                         <p class="text-sm font-bold text-ink-3">Miejsce na zdjęcia</p>
                         <p id="storage-usage" class="mt-1 text-sm text-ink-2">--</p>
                     </div>
+                </div>
+
+                <!-- Wyjście z pokoju stoi NA KOŃCU i mówi wprost, co się dzieje: pokój
+                     zostaje, rachunki zostają, znika tylko przypisanie tego urządzenia. -->
+                <div class="card p-5">
+                    <p class="text-sm font-bold text-ink-3">Opuść pokój</p>
+                    <p class="mt-1 text-sm text-ink-2">Zwalniasz swoje imię i usuwasz pokój z listy na tym urządzeniu. Rachunki i rozliczenia zostają — wrócisz kodem pokoju i wybierzesz imię ponownie.</p>
+                    <button id="leave-room-btn" class="btn btn-quiet w-full mt-3 text-owe">Opuść pokój</button>
                 </div>
             </div>
 
@@ -901,6 +947,21 @@ the verdict, and DESIGN.md
     <!-- OKNA POTWIERDZENIA — kasowanie jest nieodwracalne, więc przycisk potwierdzenia
          nosi kolor długu: to jedyne miejsce poza pieniędzmi, gdzie ta czerwień się pojawia,
          i zawsze znaczy „stąd nie ma powrotu". -->
+    <!-- POTWIERDZENIE — jedno okno dla każdej decyzji nieodwracalnej. Treść wstawia
+         `openConfirm`. Kliknięcie w tło NIE zamyka (patrz CONFIRM_MODALS): przy takiej
+         decyzji przypadkowe muśnięcie ekranu nie może uchodzić za odpowiedź. -->
+    <div id="confirm-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md text-center">
+            <div class="sheet-grip" aria-hidden="true"></div>
+            <h3 id="confirm-title" class="font-display text-2xl font-bold mb-3"></h3>
+            <p id="confirm-body" class="text-ink-2 mb-6"></p>
+            <div class="flex justify-center gap-2">
+                <button id="confirm-cancel-btn" class="btn btn-quiet">Anuluj</button>
+                <button id="confirm-ok-btn" class="btn btn-danger">Potwierdzam</button>
+            </div>
+        </div>
+    </div>
+
     <div id="delete-confirm-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md text-center">
             <div class="sheet-grip" aria-hidden="true"></div>

@@ -831,3 +831,34 @@ pozycji, zmiany składu) wymaga osobnej kolekcji zdarzeń w Firestore — nie da
 odtworzyć z dzisiejszych danych. Segment „Wszystko" pokazuje więc to, co jest zapisane:
 przypomnienia i wpłaty. Dopisanie kolekcji zdarzeń zostaje jako osobna partia, razem
 z **historią zmian rachunku**, bo to ten sam mechanizm.
+
+---
+
+## 14. PARTIA 4 — USTAWIENIA POKOJU (2026-08-06)
+
+Realizacja §10.3. Wszystko żyje w arkuszu spod nazwy pokoju.
+
+| Rzecz | Jak działa |
+|---|---|
+| **Kod QR** | rysowany lokalnie (`qrcode-generator`, bez sieci — aplikacja pracuje offline), zwinięty do stuknięcia, korekcja „M" |
+| **Skład grupy** | lista osób ze zdjęciem, „to Ty", „wolne — nikt jeszcze nie zajął" i liczbą sposobów płatności; dopisanie osoby do żyjącego pokoju |
+| **Ryzyko podmiany numeru konta** | wypowiedziane wprost pod składem: każda osoba w pokoju może zmienić cudzy numer, więc przed przelewem na nowy numer trzeba potwierdzić to poza aplikacją |
+| **Waluta domyślna** | pole pokoju `defaultCurrency`, którego używa nowy rachunek; istniejące rachunki zostają przy swojej (kurs zapisuje się w dniu dodania) |
+| **Opuszczenie pokoju** | zwalnia moje imię (`claimedBy: null`) i kasuje skrót z tego urządzenia; rachunki i rozliczenia zostają |
+
+**Przy okazji:** jedno okno potwierdzenia dla całej aplikacji (`openConfirm`,
+`#confirm-modal`) — decyzja nieodwracalna nie zamyka się kliknięciem w tło.
+Sumy pokoju piszą się przecinkiem, jak wszystkie inne kwoty.
+
+**Nowa zależność:** `qrcode-generator` (bez zależności własnych, ~10 kB w buildzie).
+Uwaga przy pracy: `npm install` czegokolwiek usuwa puppeteera zainstalowanego
+z `--no-save`, więc po zmianie zależności trzeba go wgrać ponownie:
+`npm i --no-save puppeteer`.
+
+### Co zostało z architektury
+
+1. **Bilans** (§10.1) — twarze ekipy, lista „co czeka na Ciebie", rozwijane „ile kto wyłożył".
+2. **Kolekcja zdarzeń** — pełna Aktywność (poziom 3 progu) i **historia zmian rachunku**.
+   To jeden mechanizm i jedna partia.
+3. **Własne szablony przypomnień** z domyślną klasyczną treścią.
+4. Odcień „coś czeka na ciebie" do zejścia z 9 % na 6 % (§5).
