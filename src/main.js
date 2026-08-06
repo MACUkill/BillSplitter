@@ -3467,18 +3467,28 @@
             };
             const enterByCode = async () => {
                 const raw = (joinInput.value || '').trim();
-                const code = raw.replace(/[\s-]/g, '').toUpperCase();
-                if (!code) { showJoinError('Wpisz kod pokoju.'); joinInput.focus(); return; }
+                const stripped = raw.replace(/[\s-]/g, '');
+                if (!stripped) { showJoinError('Wpisz kod pokoju.'); joinInput.focus(); return; }
+                // Identyfikator pokoju powstaje z `Math.random().toString(36)`, więc jest
+                // MAŁYMI literami — a `formatSerial` pokazuje go wielkimi, bo tak czyta się
+                // numer z cudzego telefonu. Kod przepisany z ekranu trzeba więc sprowadzić
+                // do małych liter, inaczej wyszukanie zawsze pudłuje. Wariant „jak wpisano"
+                // zostaje jako druga próba, gdyby kiedyś doszedł inny sposób nadawania kodów.
+                const candidates = [...new Set([stripped.toLowerCase(), stripped])];
                 showJoinError('');
                 joinBtn.disabled = true;
                 try {
-                    const snap = await getDoc(doc(db, `artifacts/${appId}/public/data/groups`, code));
-                    if (!snap.exists()) {
+                    let found = null;
+                    for (const code of candidates) {
+                        const snap = await getDoc(doc(db, `artifacts/${appId}/public/data/groups`, code));
+                        if (snap.exists()) { found = code; break; }
+                    }
+                    if (!found) {
                         showJoinError('Nie ma pokoju o takim kodzie. Sprawdź, czy nie wkradła się literówka.');
                         return;
                     }
-                    history.pushState(null, '', `?group=${code}`);
-                    handleGroupJoin(code);
+                    history.pushState(null, '', `?group=${found}`);
+                    handleGroupJoin(found);
                 } catch (e) {
                     console.error(e);
                     showJoinError('Nie udało się sprawdzić kodu. Sprawdź połączenie i spróbuj ponownie.');
