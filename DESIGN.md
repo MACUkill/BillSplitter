@@ -205,6 +205,13 @@ kwota i obwódka przy twarzy — światło, nie plama.
 Oba kroje siedzą w buildzie (`@fontsource-variable`), nie w sieci: aplikacja pracuje
 offline i przy słabym zasięgu w lokalu.
 
+**Ta sama zasada obowiązuje ikony i każdą inną bibliotekę front-endu.** Font Awesome
+(rodzina `solid`) wchodzi przez `src/tailwind.css` z paczki npm, kod QR rysuje się
+lokalnie, konwersja HEIC dogrywa się dynamicznie z buildu. W `index.html` **nie ma prawa
+pojawić się `<script src="https://…">` ani `<link href="https://…">`** — przy zablokowanym
+CDN znikała cała ikonografia, a to jest scena użycia tej aplikacji: obce wifi, słaby
+zasięg, wieczór w lokalu.
+
 ### Hierarchy
 
 - **Display** (800, 3–4,5 rem): nominał bilansu, kwota rachunku.
