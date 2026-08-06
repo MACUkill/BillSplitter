@@ -1,6 +1,6 @@
 # Brief na następną sesję — pełny redesign
 
-Napisane 2026-08-05 na koniec sesji, w której powstał nowy świat wizualny.
+Napisane 2026-08-05, zaktualizowane 2026-08-06 po sześciu partiach redesignu.
 **Zacznij od tego pliku.** Potem `docs/UI-UX.md`, `DESIGN.md`, `PRODUCT.md`.
 
 ---
@@ -14,36 +14,40 @@ Napisane 2026-08-05 na koniec sesji, w której powstał nowy świat wizualny.
 - **Znak własny** — żywy paragon, zbudowany i działa.
 - **Reguła „jeden rachunek, który rośnie"** — w `calculateAll`, z testami.
 - **Narzędzia audytowe** — `tools/audit-layout.mjs`, `tools/audit-buttons.mjs`.
-- **Sieć asekuracyjna** — 157 testów, kontrakt selektorów, strażnik escapowania.
+- **Sieć asekuracyjna** — 164 testy jednostkowe + 32 testy reguł Firestore, kontrakt selektorów, strażnik escapowania, próg sygnału.
 
 ### ZAKRES — stan na 2026-08-06
 
-Lista właściciela z 2026-08-05, ze statusem po partiach 1, 1b i 1c.
-Wykonanie opisane w `docs/UI-UX.md` §11, decyzje w §10.
+Lista właściciela z 2026-08-05, ze statusem po wszystkich partiach.
+Wykonanie opisane w `docs/UI-UX.md` §11–§16, decyzje w §10.
 
 | # | Punkt | Stan |
 |---|---|---|
 | 1 | **Responsywność** — telefon, tablet, desktop | **zrobione**: kontrakt w `DESIGN.md`, audyt chodzi na 360/390/834/1280, siatka 2× od 768 px |
-| 2 | **Powiadomienia w interfejsie** — kropki, odznaki, skrzynka | **do zrobienia** (partia 2, §10.2) |
-| 3 | **Struktura ustawień** — profil / grupa / aplikacja | **zrobione co do podziału**; brakuje zawartości ustawień pokoju (skład, QR, waluta, opuszczenie) |
+| 2 | **Powiadomienia w interfejsie** — kropki, odznaki, skrzynka | **zrobione** (partia 3, §13): próg z testami, odznaka tylko dla poziomu 1, kropka dla poziomu 2, skrzynka z dwoma segmentami |
+| 3 | **Struktura ustawień** — profil / grupa / aplikacja | **zrobione** (partie 1 i 4, §14): profil, aplikacja i pełne ustawienia pokoju ze składem, QR, walutą i opuszczeniem |
 | 4 | **Rozliczenia jako osobne miejsce** | **zrobione** — zakładka „Kto komu ile" |
-| 5 | **Rachunki z filtrowaniem** | **do zrobienia** (partia 2, §10.4): pigułki `Czekają na Ciebie` / `Moje`, nagłówki dat, licznik |
-| 6 | **Historia zmian** | **do zrobienia** (partia 3) |
-| 7 | **Własne szablony przypomnień** | **do zrobienia** (partia 3) |
+| 5 | **Rachunki z filtrowaniem** | **zrobione** (partia 2, §12): pigułki, nagłówki dni, licznik nad listą, stany puste z powodem |
+| 6 | **Historia zmian** | **zrobione** (partia 6, §16): kolekcja events append-only, historia na ekranie rachunku i w Skrzynce |
+| 7 | **Własne szablony przypomnień** | **zrobione** (partia 6, §16): kompozytor z domyślną rzeczową treścią, do pięciu szablonów na urządzeniu |
 | 8 | **Morfowanie [+] w arkusz** | **zrobione** (View Transitions API) |
 | 9 | **Nawigacja na każdym ekranie, zakładki jako miejsca** | **zrobione** (partia 1) |
 
-**Kolejność następnych partii** (rekomendacja przyjęta 2026-08-06):
+**Zakres redesignu jest domknięty.** Sześć partii, każda zamknięta audytem i testami;
+wykonanie opisane w `docs/UI-UX.md` §11–§16.
 
-1. **Partia 2 — Rachunki** (§10.4): filtry pigułkami, nagłówki dat, licznik nad listą.
-   Najczęściej używana lista w aplikacji, a dziś ma dwa filtry i płaską listę.
-2. **Partia 3 — Powiadomienia i skrzynka** (§10.2): trzy poziomy, kropki na zakładkach,
-   odznaka liczbowa wyłącznie dla poziomu 1, skrzynka spod dzwonka.
-3. **Partia 4 — Ustawienia pokoju** (§10.3): skład grupy (z odniesieniem do ryzyka
-   podmiany cudzego numeru konta), kod QR, waluta domyślna, opuszczenie pokoju.
-4. **Partia 5 — Bilans** (§10.1): twarze ekipy, lista „co czeka na Ciebie".
-5. **Partia 6 — Historia zmian** i **szablony przypomnień**.
-10. **Research — traktuj jako obowiązkowy, nie opcjonalny.** Właściciel powiedział
+**Co zostaje otwarte:**
+
+1. **Nazwa produktu i logo** — decyzja właściciela. Nazwa musi być angielska
+   (`docs/UI-UX.md` §2).
+2. **Font Awesome** — ikony do wymiany na własny zestaw (§6). Jedyne zgłoszenie detektora
+   poza znanym `broken-image`.
+3. **Konta zamiast tożsamości przypiętej do urządzenia** — domknęłoby ryzyko podmiany
+   cudzego numeru konta ORAZ granicę prywatności treści przypomnień (reguły Firestore
+   nie ukryją pojedynczego pola przed resztą grupy).
+4. **Zdjęcia po przekroczeniu 4,5 GB** — świadomie odłożone do wersji monetyzacyjnej.
+
+**Research — obowiązkowy, nie opcjonalny.** Właściciel powiedział
     wprost 2026-08-05: *„nie jestem bogiem co wie wszystko; stworzyłem aplikację, która
     ma solidne podstawy, ale trzeba ją obrać w świetne szaty"*. Czyli: fundament
     produktowy jest jego i jest dobry, a **warstwa doświadczenia należy do ciebie
