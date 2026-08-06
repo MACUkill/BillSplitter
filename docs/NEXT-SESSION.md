@@ -155,3 +155,59 @@ leży w functions/.secret.local i jest na miejscu.
 - **Bez emulatorów aplikacja pokazuje pusty ekran** — logowanie anonimowe pada.
 - **Nie zmieniaj stylu resztek po starym świecie — kasuj je.** Paski mikrodruku
   przetrwały wymianę świata, bo dostały nowy styl zamiast usunięcia.
+
+---
+
+## Wydanie dla znajomych — co musi się zdarzyć
+
+Aplikacja **nigdy nie była wydana**: do 2026-08-06 chodziła wyłącznie na `localhost`
+i emulatorach. `firebase.json` dostał sekcję `hosting` (katalog `dist`, przepisanie SPA,
+`no-cache` na `sw.js` i `manifest.json`), ale samo wdrożenie jest przed nami.
+
+### Pułapka do rozstrzygnięcia PRZED wdrożeniem
+
+`.env.local` wskazuje projekt-piaskownicę `billsplitter-push-test`. Vite wczytuje
+`.env.local` **także przy `npm run build`**, więc build produkcyjny robiony dzisiaj
+łączy się z piaskownicą, a nie z projektem docelowym. Trzeba świadomie wybrać projekt
+dla wersji dla znajomych i założyć `.env.production` z jego danymi — pliki `.env.production`
+mają pierwszeństwo nad `.env.local`, więc rozstrzygają jednoznacznie.
+
+### Kolejność wdrożenia
+
+```bash
+# 1. Reguły i funkcje (raz na projekt docelowy)
+firebase use <projekt>
+firebase deploy --only firestore:rules,storage,functions
+
+# 2. Sekret modelu dla odczytu paragonu (bez niego parseReceipt zwraca błąd)
+firebase functions:secrets:set OPENROUTER_API_KEY
+
+# 3. Build i hosting
+npm run build
+firebase deploy --only hosting
+```
+
+Do sprawdzenia w konsoli projektu docelowego:
+
+- **Authentication → Settings → Authorized domains** musi zawierać domenę hostingu,
+  inaczej logowanie anonimowe pada i użytkownik widzi pusty ekran.
+- **Cloud Messaging → klucz VAPID** musi zgadzać się z `VITE_FCM_VAPID_KEY` w buildzie.
+- **Firestore** w trybie produkcyjnym z wdrożonymi regułami (nie testowym).
+
+### Czego nie da się sprawdzić z tego środowiska
+
+Poniższe wymagają wdrożonej aplikacji i prawdziwych telefonów. Żadne z nich nie było
+testowane — emulator nie odpowiada na te pytania:
+
+1. **Push na telefonie** — FCM, service worker, zgoda systemowa. Na iPhonie push działa
+   wyłącznie w aplikacji dodanej do ekranu początkowego (iOS 16.4+).
+2. **Instalacja na iPhonie i lista pokoi** — znany błąd z `PRODUCT.md` stoi: skrót ma
+   osobny magazyn danych, więc „Twoje pokoje" zapisane w Safari są w nim niewidoczne,
+   a `start_url: "/"` otwiera ekran startowy zamiast pokoju. **Obejście jest zbudowane**:
+   wejście linkiem i wejście kodem pokoju (pole na ekranie startowym) plus kod QR
+   w ustawieniach pokoju.
+3. **Odczyt paragonu na produkcji** — działa dopiero po wdrożeniu funkcji z sekretem.
+4. **Praca kilku osób naraz** — żywy paragon i przeliczanie sald były sprawdzane
+   wyłącznie jednym przebiegiem automatu, nigdy dwoma telefonami równocześnie.
+5. **Morfowanie [+]** — `View Transitions API` działa w Safari od 18. Starsze telefony
+   dostają zwykłe pojawienie arkusza; to degradacja bez ubytku funkcji.

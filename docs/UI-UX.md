@@ -956,3 +956,29 @@ Wszystkie punkty zakresu z `docs/NEXT-SESSION.md` są zrobione. Otwarte zostają
    poza znanym `broken-image`.
 3. **Konta zamiast tożsamości przypiętej do urządzenia** — domknęłoby też ryzyko podmiany
    cudzego numeru konta i granicę prywatności treści przypomnień.
+
+---
+
+## 17. DOŁĄCZANIE DO POKOJU — dwie drogi (2026-08-06)
+
+Wymóg właściciela: ma działać jak Tricount — **bez logowania**, link wystarcza.
+
+| Droga | Jak działa | Gdzie w kodzie |
+|---|---|---|
+| **Link** | `?group=<id>` prowadzi na ekran wyboru imienia; wybór przypina sesję urządzenia do imienia (`claimedBy`) | `handleGroupJoin` |
+| **Kod pokoju** | pole „Masz kod pokoju?" na ekranie startowym; sprawdza istnienie pokoju PRZED przełączeniem ekranu i mówi wprost, gdy kodu nie ma | `enterByCode` w `setupStartScreenListeners` |
+| **Kod QR** | koduje ten sam link; skan aparatem wchodzi do pokoju | `renderRoomQr` w ustawieniach pokoju |
+
+**Pułapka wielkości liter (naprawiona 2026-08-06):** identyfikator pokoju powstaje
+z `Math.random().toString(36)`, więc jest **małymi literami**, a `formatSerial` pokazuje
+go **wielkimi**, bo tak czyta się numer z cudzego telefonu. Wpisany kod trzeba sprowadzić
+do małych liter — bez tego wyszukanie pudłuje zawsze, przy każdym kodzie. Gdyby kiedyś
+doszedł inny sposób nadawania kodów, `enterByCode` próbuje też wariantu „jak wpisano".
+
+**Tożsamość zostaje na urządzeniu** (`claimedBy` w dokumencie grupy + lista pokoi
+w `localStorage`). Konsekwencje, świadomie przyjęte do wersji dla znajomych:
+
+- wyczyszczenie danych przeglądarki = utrata listy pokoi; wraca się linkiem albo kodem,
+- ten sam człowiek na drugim urządzeniu przejmuje imię (jest okno „to imię jest zajęte"),
+- wgląd we wszystkie swoje pokoje z dowolnego urządzenia wymaga **kont** — planowane
+  dopiero przy monetyzacji, zgodnie z decyzją właściciela z 2026-08-06.
