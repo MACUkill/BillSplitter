@@ -149,6 +149,12 @@ w Safari jest tam niewidoczna. Naprawa warstwowa: kod pokoju i QR jako pewnik,
 dynamiczny manifest z `start_url` bieżącego pokoju jako eksperyment do potwierdzenia
 na telefonie.
 
+**Stan 2026-08-06:** warstwa „pewnik" jest **zbudowana** — kod pokoju widać w nagłówku
+i w ustawieniach pokoju, kod QR rysuje się lokalnie, a ekran startowy ma pole
+„Masz kod pokoju?" (`docs/UI-UX.md` §17). Sam błąd nie zniknął: skrót nadal otwiera
+ekran startowy, bo `start_url` zostaje `"/"`. Eksperyment z dynamicznym manifestem
+czeka na test na żywym iPhonie — dopóki go nie ma, nie wiemy, czy iOS go uszanuje.
+
 ## Brand Commitments
 
 - Nazwa **BillSplitter** zostaje na czas redesignu. Właściciel uważa ją za zajętą i

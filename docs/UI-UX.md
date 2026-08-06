@@ -25,7 +25,8 @@ npm run emulators    # Firebase Emulator Suite (w dev aplikacja idzie na emulato
                      # billsplitter-push-test, a emulator funkcji routuje po
                      # identyfikatorze projektu W ADRESIE: przy rozjeździe parseReceipt
                      # wraca 404 (w przeglądarce widoczne jako błąd CORS).
-npm test             # 157 testów
+npm test             # 164 testy jednostkowe
+npm run test:rules   # 32 testy reguł Firestore (wymaga emulatorów)
 npm run build
 ```
 
@@ -66,7 +67,8 @@ node <ścieżka-do-wtyczki>/scripts/detect.mjs --json index.html src/tailwind.cs
 
 Czyta `DESIGN.md` i zgłasza każdą wartość spoza systemu. Dwa wpisy są znane i świadome:
 `broken-image` (podgląd zdjęcia paragonu z pustym `src`, wypełnianym przy otwarciu)
-oraz `design-system-font: Font Awesome` (prawdziwy dług, patrz §6).
+oraz `design-system-font: Font Awesome 7 Free` (prawdziwy dług, patrz §6 — ikony
+są już w buildzie, ale mają zostać zastąpione własnym zestawem).
 
 ---
 
@@ -167,8 +169,7 @@ Wskazane przez właściciela, jeszcze nienaprawione:
 - [x] **Zwijana sekcja „Pokój"** — skasowana, treść w arkuszu spod nazwy pokoju (partia 1).
 - [x] **Dublowanie wejść** — awatar w nagłówku usunięty, wejście do profilu tylko z paska.
 - [x] Stan pusty na Bilansie: „Pokój jest pusty" + kod pokoju (partia 1).
-- [ ] Odcień „coś czeka na ciebie" (błękit 9 %) ciągnie oko mocniej niż limonkowy
-      bilans. Zejść do 6 %.
+- [x] Odcień „coś czeka na ciebie" zszedł z 9 % na 6 % (partia 6).
 - [x] Pole kwoty pokazuje `480,00` — `type="text"` z klawiaturą numeryczną (partia 1b).
 - [x] Nazwa pokoju: stopień niżej poniżej 640 px, żeby mieściła się bez wielokropka.
 
@@ -281,12 +282,16 @@ Z `PRODUCT.md`, sekcja „Rozstrzygnięcia zakresu":
 - [ ] **Zdjęcia ludzi w ścieżce wejścia** — referencje stoją na twarzach; bez tego
       wszędzie widać kolorowe koła z literami. Największa różnica do poziomu referencji.
 - [ ] **Udziały nierówne** (wagi/procenty) — „ktoś płaci za dwoje".
-- [ ] **Dziennik zmian** — kto zmienił kwotę albo pozycję.
-- [ ] **Krótki kod pokoju i kod QR** — dziś w nagłówku stoi identyfikator dokumentu
-      Firestore, nie do podyktowania przy stole.
+- [x] **Dziennik zmian** — zrobione (partia 6, §16): kolekcja `events` append-only.
+- [x] **Kod pokoju i kod QR** — zrobione (partie 4 i „wydanie", §14 i §17): kod
+      w nagłówku i w ustawieniach, QR rysowany lokalnie, pole wejścia kodem na ekranie
+      startowym. Kod nadal jest identyfikatorem dokumentu — skrócenie go do formy
+      „czterech znaków do podyktowania" zostaje otwarte.
 - [ ] **Arkusz płatności ZBP/EPC** — wymaga testu na żywym telefonie właściciela.
-- [ ] **Własny zestaw ikon w buildzie** zamiast Font Awesome z CDN.
-- [ ] **Własne szablony przypomnień zapisywane w pokoju** — grupa buduje swój zestaw
+- [~] **Własny zestaw ikon** — Font Awesome zszedł z CDN do buildu (§18), więc offline
+      już nie boli. Zastąpienie go własnym zestawem zostaje otwarte.
+- [~] **Własne szablony przypomnień** — zrobione na urządzeniu (partia 6, §16).
+      OTWARTE zostaje zapisywanie ich **w pokoju**, żeby grupa budowała wspólny zestaw
       tekstów, zamiast dostawać gotowe żarty od aplikacji. To jest mechanizm głosu
       produktu z `PRODUCT.md`, nie ozdoba: **humor pojawia się wyłącznie tam, gdzie
       autorem jest człowiek** — nigdy przy kwocie, nigdy w komunikacie błędu, nigdy
@@ -959,7 +964,7 @@ Wszystkie punkty zakresu z `docs/NEXT-SESSION.md` są zrobione. Otwarte zostają
 
 ---
 
-## 17. DOŁĄCZANIE DO POKOJU — dwie drogi (2026-08-06)
+## 17. DOŁĄCZANIE DO POKOJU — trzy drogi (2026-08-06)
 
 Wymóg właściciela: ma działać jak Tricount — **bez logowania**, link wystarcza.
 

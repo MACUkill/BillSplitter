@@ -15,6 +15,12 @@ Napisane 2026-08-05, zaktualizowane 2026-08-06 po sześciu partiach redesignu.
 - **Reguła „jeden rachunek, który rośnie"** — w `calculateAll`, z testami.
 - **Narzędzia audytowe** — `tools/audit-layout.mjs`, `tools/audit-buttons.mjs`.
 - **Sieć asekuracyjna** — 164 testy jednostkowe + 32 testy reguł Firestore, kontrakt selektorów, strażnik escapowania, próg sygnału.
+- **Komponenty wspólne** — `person-row` (wybór osób), `settings-row` (wiersz ustawienia),
+  `choice-field` + `openChoiceSheet` (wybór jednokrotny, **zakaz `select`**), `filter-pill`,
+  `openConfirm` (jedno okno decyzji nieodwracalnej), `inboxRowHtml` (sprawa w skrzynce).
+  Kontrakt w `DESIGN.md` → „Wybór z listy" i „Dolna nawigacja".
+- **Zero zależności od cudzych serwerów w buildzie** — kroje, ikony, QR i konwersja HEIC
+  idą z paczek npm (§18). Nie dokładaj `<script src="https://…">`.
 
 ### ZAKRES — stan na 2026-08-06
 
