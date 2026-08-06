@@ -16,11 +16,11 @@
     <!-- Tailwind nie przychodzi już z sieci — jest kompilowany do arkusza w buildzie
          (src/tailwind.css → import w main.js). Dzięki temu produkcja nie zależy od cudzego
          serwera, a przeglądarka nie generuje styli w locie przy każdym wejściu.
-         Tą samą drogą idą teraz kroje pisma (Bricolage Grotesque + Archivo z pakietów npm):
-         aplikacja pracuje przy słabym zasięgu w lokalu, więc font z cudzego serwera
-         byłby realnym ryzykiem, a nie detalem. -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
+         Tą samą drogą idą teraz kroje pisma (Bricolage Grotesque + Archivo z pakietów npm),
+         IKONY (Font Awesome solid, import w src/tailwind.css) i konwersja HEIC
+         (heic2any, wczytywana dopiero przy zdjęciu z iPhone'a): aplikacja pracuje przy
+         słabym zasięgu w lokalu, więc cokolwiek z cudzego serwera jest realnym ryzykiem,
+         a nie detalem. W buildzie nie ma ANI JEDNEGO adresu zewnętrznego. -->
     <style>
         /* JEDNA SKALA WARSTW. Wcześniej każde okno miało własne z-20/z-30/z-40 wpisane
            w markup, więc pływająca nawigacja (z-40) zasłaniała przycisk „Stwórz rachunek"
@@ -86,7 +86,10 @@
         .status-select:active { transform: scale(0.97); }
         .status-select-wrapper::after {
             content: '\f078';
-            font-family: 'Font Awesome 6 Free';
+            /* Nazwa rodziny idzie za wersją pakietu (dziś 7). Wcześniej stało tu
+               „Font Awesome 6 Free" z czasów wczytywania z CDN — po wciągnięciu ikon
+               do buildu ta nazwa przestała istnieć i chevron znikał bez śladu. */
+            font-family: 'Font Awesome 7 Free';
             font-weight: 900;
             font-size: 0.6875rem;
             position: absolute;

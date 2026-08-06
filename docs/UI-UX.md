@@ -982,3 +982,52 @@ w `localStorage`). Konsekwencje, świadomie przyjęte do wersji dla znajomych:
 - ten sam człowiek na drugim urządzeniu przejmuje imię (jest okno „to imię jest zajęte"),
 - wgląd we wszystkie swoje pokoje z dowolnego urządzenia wymaga **kont** — planowane
   dopiero przy monetyzacji, zgodnie z decyzją właściciela z 2026-08-06.
+
+---
+
+## 18. ZGODNOŚĆ PRZEGLĄDAREK I KONIEC ZALEŻNOŚCI OD SIECI (2026-08-06)
+
+### Dwie rzeczy przychodziły z cudzych serwerów — już nie
+
+Build wysyłany znajomym ciągnął **Font Awesome z cdnjs** i **heic2any z jsdelivr**.
+Przy zablokowanym CDN (firmowe wifi, blokada reklam) albo słabym zasięgu w lokalu
+znikała **cała ikonografia** — pasek nawigacji, chevrony, aparat, statusy — a zdjęcie
+z iPhone'a nie wchodziło bez zrozumiałego komunikatu. Aplikacja, która deklaruje pracę
+offline, nie może zależeć od cudzego serwera przy pierwszym otwarciu.
+
+- **Ikony** wchodzą do buildu przez `src/tailwind.css` (`fontawesome.css` + `solid.css`).
+  Bierzemy wyłącznie rodzinę `solid`, bo tylko jej używamy — 65 wystąpień `fas`, zero
+  ikon marek. Koszt: 119 kB woff2.
+- **heic2any** wczytuje się **dynamicznie**, dopiero przy wybraniu pliku HEIC
+  (`loadHeic2Any`). Waży 1,35 MB, a większość wejść nie dotyka zdjęć — nie ma powodu,
+  żeby każdy płacił za nią czasem pierwszego otwarcia.
+- **Pułapka wersji:** pakiet to Font Awesome **7**, a w `index.html` stała zaszyta
+  rodzina `'Font Awesome 6 Free'` z czasów CDN-u. Po wciągnięciu ikon do buildu ta nazwa
+  przestała istnieć i chevron przy statusie znikał bez śladu. Przy zmianie wersji pakietu
+  trzeba przejrzeć zaszyte nazwy rodzin.
+
+Sprawdzone przebiegiem z **zablokowaną siecią**: strona nie wykonuje ani jednego żądania
+poza `localhost`, `document.fonts.check('900 32px "Font Awesome 7 Free"')` zwraca `true`,
+a font przychodzi z `/node_modules/@fortawesome/...` (w produkcji: z `dist/assets`).
+
+W buildzie zostają wyłącznie adresy usług Firebase (logowanie, rejestracja FCM) oraz
+`open.er-api.com` dla kursów walut — ten ostatni ma `try/catch`, więc brak sieci nie psuje
+aplikacji, tylko pomija przelicznik.
+
+### Granica wsparcia wypowiedziana wprost
+
+`vite.config.js` ma teraz `build.target: ['safari15.4', 'chrome107', 'firefox115']`.
+Safari 15.4 jest progiem naturalnym: od niego działa selektor `:has()`, na którym stoi
+chowanie paska przy otwartym arkuszu i odsunięcie treści spod paska offline.
+
+| Rzecz | Chrome (Android/desktop) | Safari iOS | Firefox |
+|---|---|---|---|
+| Układ, arkusze, kontrolki | działa | działa od 15.4 | działa od 121 (`:has()`) |
+| Morfowanie `[+]` w arkusz | działa (111+) | **od Safari 18**; niżej zwykłe pojawienie | brak — zwykłe pojawienie |
+| Push | działa | **tylko w aplikacji z ekranu początkowego, iOS 16.4+** | działa |
+| Instalacja PWA | pełna | ręczna (Udostępnij → Do ekranu początkowego) | ograniczona |
+| HEIC z iPhone'a | nie dotyczy | konwersja po stronie przeglądarki | nie dotyczy |
+| Kod QR | rysowany lokalnie, bez sieci | jw. | jw. |
+
+Degradacja jest wszędzie bezstratna funkcjonalnie: brak View Transitions oznacza brak
+animacji, a nie brak arkusza.

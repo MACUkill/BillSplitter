@@ -216,6 +216,17 @@
             el.classList.add('value-flash');
         };
 
+        // Konwersja HEIC (zdjęcia z iPhone'a) wchodzi DOPIERO wtedy, gdy ktoś wybierze
+        // taki plik. Biblioteka waży swoje, a większość wejść do aplikacji nie dotyka
+        // zdjęć — nie ma powodu, żeby każdy płacił za nią czasem pierwszego otwarcia.
+        // Wcześniej przychodziła z CDN-u: przy zablokowanym skrypcie zdjęcie z iPhone'a
+        // po prostu nie wchodziło, i to bez zrozumiałego komunikatu.
+        let heic2anyPromise = null;
+        const loadHeic2Any = () => {
+            if (!heic2anyPromise) heic2anyPromise = import('heic2any').then((m) => m.default || m);
+            return heic2anyPromise;
+        };
+
         const generateId = () => Math.random().toString(36).substring(2, 10);
         // Parsuje kwotę z przecinkiem/kropką (zasięg modułu — używane m.in. w „Ureguluj").
         const parseLocalFloat = (val) => parseFloat(String(val).replace(',', '.')) || 0;
@@ -1937,7 +1948,7 @@
             if (!myMember || !file) return;
             let f = file, name = file.name || 'photo.jpg';
             if (file.type === 'image/heic' || name.toLowerCase().endsWith('.heic')) {
-                try { showToast('Konwertowanie zdjęcia HEIC...'); f = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.8 }); name = name.replace(/\.[^/.]+$/, '') + '.jpg'; }
+                try { showToast('Konwertowanie zdjęcia HEIC...'); f = await (await loadHeic2Any())({ blob: file, toType: 'image/jpeg', quality: 0.8 }); name = name.replace(/\.[^/.]+$/, '') + '.jpg'; }
                 catch (e) { console.error(e); showToast('Nie udało się przekonwertować HEIC.', true); return; }
             }
             if (!f.type || !f.type.startsWith('image/')) { showToast('Wybierz obraz.', true); return; }
@@ -4228,7 +4239,7 @@
                 if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
                     try {
                         showToast("Konwertowanie zdjęcia HEIC...");
-                        const conversionResult = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.8 });
+                        const conversionResult = await (await loadHeic2Any())({ blob: file, toType: "image/jpeg", quality: 0.8 });
                         fileToProcess = conversionResult;
                         fileName = fileName.replace(/\.[^/.]+$/, "") + ".jpg";
                     } catch (error) {

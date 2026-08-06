@@ -9,6 +9,14 @@
 @import '@fontsource-variable/bricolage-grotesque';
 @import '@fontsource-variable/archivo/wght.css';
 
+/* Ikony też W BUILDZIE, nie z sieci. Wcześniej Font Awesome przychodził z cdnjs:
+   przy zablokowanym CDN (firmowe wifi, blokada reklam) albo słabym zasięgu w lokalu
+   CAŁA ikonografia znikała — pasek nawigacji, chevrony, aparat, statusy — a aplikacja
+   ma działać offline. Bierzemy wyłącznie rodzinę `solid`, bo tylko jej używamy
+   (65 wystąpień `fas`, zero ikon marek); reszta zestawu nie wchodzi do paczki. */
+@import '@fortawesome/fontawesome-free/css/fontawesome.css';
+@import '@fortawesome/fontawesome-free/css/solid.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
