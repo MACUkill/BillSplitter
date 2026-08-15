@@ -136,6 +136,16 @@ body:has(#offline-banner:not(.hidden)) #app-container {
        atrybut `viewport` w `index.html` oraz odrzucenie zdarzeń `gesture*` w `main.js`
        (to drugie jest na iOS jedyną skuteczną). Dwustuknięcie zdejmuje
        `touch-action: manipulation` nałożone WYŁĄCZNIE na przyciski, nie na dokument. */
+
+    /* KONIEC ROZCIĄGANIA STRONY NA KOŃCU PRZEWIJANIA.
+       Na iOS ciągnięcie w dół na krótkiej stronie odbija całym dokumentem, a razem
+       z nim potrafią jechać elementy przypięte przez `position: fixed` — czyli pasek
+       nawigacji. Widać to najmocniej tam, gdzie nie ma czego przewijać, bo wtedy
+       gumka jest jedyną reakcją na gest (zgłoszenie: „w zakładce Profil nawigacja
+       zaczyna się przemieszczać przy próbie przeciągania w dół").
+       Nie tracimy przy tym nic: aplikacja nie ma odświeżania pociągnięciem, a listy
+       wewnątrz arkuszy mają własne `overscroll-behavior: contain`. */
+    overscroll-behavior-y: none;
   }
 
   body {
@@ -145,6 +155,23 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     color: rgb(var(--ink));
     /* Bez `touch-action` — patrz komentarz przy `html`. Deklaracja na korzeniu dokumentu
        zabierała iOS gest cofania przesunięciem od krawędzi. */
+    /* Powtórzone za `html`, bo o tym, czy strona się rozciąga, decyduje ten z dwóch
+       elementów, który realnie przewija — a to zależy od przeglądarki. */
+    overscroll-behavior-y: none;
+  }
+
+  /* PASEK PRZEWIJANIA UKRYTY.
+     Aplikacja to jedna kolumna kart, nie dokument — o długości treści mówi sama lista,
+     nie kreska przy krawędzi. Na komputerze i Androidzie to załatwia sprawę.
+     Na iPhonie wskaźnik przewijania CAŁEGO DOKUMENTU rysuje system i stąd się go nie
+     zdejmie; znikłby dopiero wtedy, gdyby przewijał kontener wewnątrz strony zamiast
+     samego dokumentu — a to przebudowa układu, nie reguła stylu. */
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar { display: none; }
+
+  html, body {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
 
 
@@ -239,18 +266,17 @@ body:has(#offline-banner:not(.hidden)) #app-container {
 
   .wordmark-bill { color: #C6F03A; }
 
-  /* WERSJA JEDNOBARWNA NA JASNYM PODŁOŻU.
-     Bez pigułki logotyp stoi wprost na tle aplikacji, a limonka na jasnym ma kontrast
-     około 1,5:1 — jest nieczytelna, tak samo jak biel. Znaki firmowe rozwiązują to od
-     zawsze wersją jednobarwną i tak robimy tutaj: na jasnym motywie znak i nazwa idą
-     atramentem, a dwutonowość niesie różnica wagi tonu, nie barwa.
-
-     Znak przechodzi na atrament filtrem, a nie drugim plikiem: `brightness(0)` zeruje
-     kanały koloru i zostawia kanał krycia nietknięty, więc z limonkowego konia robi się
-     ten sam koń w atramencie, bez dogrywania kolejnego obrazka. */
-  :root[data-theme='light'] .wordmark { color: rgb(var(--ink-3)); }
-  :root[data-theme='light'] .wordmark-bill { color: rgb(var(--ink)); }
-  :root[data-theme='light'] .brand-lockup img { filter: brightness(0); }
+  /* JASNE PODŁOŻE: ZNAK ZOSTAJE KOLOROWY.
+     Wcześniej stała tu wersja jednobarwna — koń i nazwa schodziły na jasnym motywie
+     na atrament (`brightness(0)`), bo limonka na bieli ma kontrast około 1,5:1.
+     Decyzja właściciela (2026-08-16) jest inna i to jest decyzja o znaku firmowym,
+     nie o tekście: koń ma być zielony wszędzie, „Bill" zielone, „iada" czarne.
+     Kryteria czytelności dla tekstu logotypu nie obowiązują — nazwy marki nikt tu
+     nie czyta jako treści, rozpoznaje ją po kształcie i barwie, a jednakowy wygląd
+     w obu motywach jest wart więcej niż zgodność ze współczynnikiem.
+     Reguła kontrastu zostaje wiążąca dla WSZYSTKIEGO poza tym blokiem. */
+  :root[data-theme='light'] .wordmark { color: rgb(var(--ink)); }
+  :root[data-theme='light'] .wordmark-bill { color: #C6F03A; }
 
   /* Wersja duża — ekran wczytywania, gdzie znak jest jedyną treścią. */
   .brand-lockup-lg { gap: 0.875rem; }
@@ -1056,17 +1082,14 @@ body:has(#offline-banner:not(.hidden)) #app-container {
        ekranie początkowym (gdzie nie ma paska adresu) wcięcie jest stałe i pasek
        nie rusza się w ogóle.
 
-       Do tego dochodzi `--deck-lift`: ile dolnej części układu przykrywa w tej chwili
-       pasek przeglądarki. Liczy to `pinDeckToVisualViewport` w `main.js` z API widocznego
-       obszaru okna, bo CSS o tym nie wie NIC. Bez tego pasek nawigacji jest przypięty do
-       dołu UKŁADU strony, a ten sięga pod pasek Safari — więc przy przewijaniu, gdy pasek
-       przeglądarki się chowa i wraca, nawigacja jeździła razem z nim.
-
-       Wartość idzie przez `bottom`, nie przez `transform`, i to jest celowe: `transform`
-       ma na sobie przejście 220 ms (zjazd paska przy otwartym oknie), więc korekta
-       goniłaby pasek przeglądarki z opóźnieniem. `bottom` nie jest animowane i trafia
-       na miejsce w tej samej klatce. */
-    bottom: calc(max(1.5rem, env(safe-area-inset-bottom)) + var(--deck-lift, 0px));
+       I TO JEST CAŁA OBSŁUGA POŁOŻENIA. Stała `--deck-lift`, liczona w JavaScripcie
+       z API widocznego obszaru okna, została usunięta 2026-08-16 razem z pomysłem,
+       który za nią stał: element `position: fixed` z odległością od dołu jest na iOS
+       JUŻ pozycjonowany nad paskiem Safari, więc nie ma czego kompensować. Dodatek
+       podnosił pasek nawigacji o wysokość paska przeglądarki, czyli o jakieś 75 px,
+       i to WYŁĄCZNIE tam, gdzie strona nie miała czego przewijać (Safari nie mógł wtedy
+       schować swojego paska). Stąd „w zakładce Profil nawigacja jest wyżej". */
+    bottom: max(1.5rem, env(safe-area-inset-bottom));
     z-index: 40;
     transition: transform 220ms cubic-bezier(0.2, 0, 0, 1), opacity 160ms ease-out;
     display: flex;

@@ -38,20 +38,32 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   adresu, 34 px po jego zwinięciu. Odległości od dolnej krawędzi bierz przez
   `max(własny odstęp, env(...))`, nigdy przez dodawanie — inaczej wszystko, co przypięte
   do dołu, skacze o 34 px przy każdym przewinięciu.
-- **`visualViewport.offsetTop` NIE mówi nic o pasku przeglądarki.** To przesunięcie
-  widocznego obszaru wewnątrz układu; iOS zmienia je przy rozciąganiu strony na końcu
-  przewijania (gumka) i przy przybliżaniu, a przy ciągnięciu w dół schodzi poniżej zera.
-  Wciągnięcie go do wzoru na wysokość paska nawigacji posłało pasek w górę tym mocniej,
-  im mocniej ktoś pociągnął stronę. Pasek przeglądarki zabiera wyłącznie WYSOKOŚĆ, więc
-  liczy się `clientHeight - visualViewport.height` i nic poza tym.
+- **Pasek nawigacji NIE jest kompensowany względem paska przeglądarki — i nie wolno tego
+  przywracać.** Element `position: fixed` z odległością od dołu jest na iOS **już**
+  umieszczony nad paskiem Safari. Poprzednie podejście liczyło z JavaScriptu
+  `clientHeight - visualViewport.height` („ile układu przykrywa pasek przeglądarki")
+  i o tyle podnosiło nawigację. Efekt: na krótkich ekranach, gdzie nie ma czego przewijać,
+  Safari nie może schować swojego paska, wartość zostaje na ~75 px i nawigacja stoi
+  wyżej niż wszędzie indziej — stąd zgłoszenia „w zakładce Profil nawigacja jest wyżej".
+  Wcześniejszy wariant tego samego wzoru wciągał jeszcze `visualViewport.offsetTop`
+  i przy ciągnięciu strony w dół posyłał pasek w górę tym mocniej, im mocniej ktoś
+  pociągnął. Cała mechanika usunięta 2026-08-16. Z API widocznego obszaru okna zostało
+  **tylko wykrywanie klawiatury** (`watchKeyboardForDeck`, próg 140 px — mniej to pasek
+  przeglądarki, więcej to klawiatura).
+- **`overscroll-behavior-y: none` na `html` i `body`** wyłącza rozciąganie strony na końcu
+  przewijania. Bez tego iOS przy ciągnięciu w dół na krótkiej stronie odbija całym
+  dokumentem i ciągnie za sobą elementy `position: fixed`, czyli pasek nawigacji.
+  Aplikacja nie ma odświeżania pociągnięciem, więc nic na tym nie tracimy.
+- **Paska przewijania dokumentu na iPhonie NIE da się ukryć stylami.** `::-webkit-scrollbar`
+  i `scrollbar-width` załatwiają komputer i Androida; wskaźnik przewijania całego dokumentu
+  na iOS rysuje system. Zniknąłby dopiero, gdyby przewijał kontener wewnątrz strony
+  zamiast samego dokumentu — a to przebudowa układu ze skutkami dla nawigacji
+  i narzędzia sprawdzającego układ, nie zmiana stylu.
 - **NIE ustawiaj `touch-action` na `html` ani `body`.** Deklaracja na korzeniu dokumentu
   zabiera iOS **gest cofania przesunięciem od krawędzi**, czyli podstawową drogę wstecz
   na iPhonie. Przybliżanie szczypaniem blokuje atrybut `viewport` plus odrzucenie zdarzeń
   `gesture*` w `main.js` — i to wystarcza. `touch-action` zostaje wyłącznie na przyciskach
   (`manipulation`) oraz tam, gdzie sami obsługujemy gest: `.sheet` i `.room-swipe`.
-- **W aplikacji z ekranu początkowego poprawka położenia paska jest WYŁĄCZONA** —
-  tam nie ma paska przeglądarki, więc nie ma czego kompensować, a każde liczenie to
-  tylko okazja do usterki. Zostaje samo chowanie paska pod klawiaturę.
 - **Trzy piętra okien:** 50 okno z ekranu, 60 (`modal-over`) okno otwierane z innego okna,
   70 (`modal-top`) decyzja. Piętro wynika z tego, SKĄD okno się otwiera. Bez tego arkusz
   wyboru otwierał się pod arkuszem, który go wywołał.

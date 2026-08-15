@@ -1494,8 +1494,58 @@ ułożona wzdłuż koła barw, więc branie kolejnych pozycji dawało czteroosob
 cztery sąsiadujące odcienie. Krok siedem jest względnie pierwszy z szesnastką, więc
 obchodzi całą paletę bez powtórki, a kolejni ludzie dostają barwy z przeciwnych stron koła.
 
+### 19.16 Pasek nawigacji: kompensacja usunięta w całości (2026-08-16)
+
+Trzy podejścia do „pasek nawigacji stoi w różnych miejscach" były trzema wariantami tego
+samego błędu. Kolejno: liczenie z `visualViewport.offsetTop` (pasek odlatywał w górę tym
+mocniej, im mocniej ktoś ciągnął stronę w dół), potem samo
+`clientHeight - visualViewport.height` (pasek stał wyżej **tylko w zakładce Profil**),
+aż do rozstrzygnięcia: **nie było czego kompensować**. Element `position: fixed`
+z odległością od dołu jest na iOS już umieszczony nad paskiem Safari.
+
+Objaw rozstrzygnął sprawę lepiej niż kod. Różnica wynosiła około 75 pikseli, czyli
+dokładnie wysokość dolnego paska Safari, i występowała wyłącznie na Profilu — ekranie
+tak krótkim, że strona nie ma czego przewijać, więc Safari **nie może** schować swojego
+paska. Wszędzie indziej pasek przeglądarki znikał przy pierwszym przewinięciu i poprawka
+schodziła do zera. Wcześniejsze zgłoszenie „nawigacja zmienia pozycję przy przełączaniu
+zakładek" to była ta sama poprawka w akcji.
+
+Zostało: odległość od dołu w CSS (`max(1,5rem, env(safe-area-inset-bottom))`) i nasłuch
+klawiatury, który pasek **chowa** (`watchKeyboardForDeck`, próg 140 px — mniej to pasek
+przeglądarki, więcej to klawiatura). Dołożone `overscroll-behavior-y: none` na `html`
+i `body` wyłącza rozciąganie strony na końcu przewijania: bez tego iOS przy ciągnięciu
+w dół odbija całym dokumentem i ciągnie za sobą wszystko, co przypięte. Aplikacja nie ma
+odświeżania pociągnięciem, więc nie tracimy nic.
+
+### 19.17 Trzy drobiazgi z tej samej tury
+
+**Pasek przewijania ukryty** (`::-webkit-scrollbar` plus `scrollbar-width`). Aplikacja to
+jedna kolumna kart, nie dokument — o długości treści mówi sama lista. Załatwia to komputer
+i Androida; **na iPhonie wskaźnik przewijania całego dokumentu rysuje system** i stylami
+się go nie zdejmie. Zniknąłby dopiero, gdyby przewijał kontener wewnątrz strony zamiast
+samego dokumentu, a to przebudowa układu ze skutkami dla nawigacji i narzędzia audytowego.
+Nie warta ukrycia kreski.
+
+**Objaśnienie znika z okna „Nowy rachunek".** Akapit tłumaczył, że rachunek startuje
+podziałem po równo i że da się to przestawić. Przełącznik „Jak dzielimy" stoi na rachunku
+na wierzchu i mówi to samo — tylko wtedy, gdy jest to komuś potrzebne. Okno zakładania
+rachunku ma pytać o nazwę i o to, kogo dotyczy, i na tym kończyć.
+
+**Znak firmowy zostaje kolorowy w jasnym motywie** (decyzja właściciela). Wcześniej koń
+i „Bill" schodziły na jasnym tle na atrament, bo limonka na bieli ma kontrast około 1,5:1.
+To jest jednak decyzja o znaku, nie o tekście: nazwy marki nikt nie czyta jako treści,
+rozpoznaje ją po kształcie i barwie, a jednakowy wygląd w obu motywach jest wart więcej
+niż zgodność ze współczynnikiem. **Wyjątek kończy się na logotypie** — reguła 4,5:1
+obowiązuje w całej reszcie aplikacji bez zmian.
+
 ### 19.11 Stan audytu po partii
 
 Cztery szerokości z kontraktu (360 / 390 / 834 / 1280), 32 stany ekranu, **zero zgłoszeń**:
 bez wyjazdów poza ekran, bez celów poniżej progu, bez nachodzących się przycisków, bez
-treści uwięzionej pod paskiem. 164 testy jednostkowe przechodzą.
+treści uwięzionej pod paskiem. 170 testów jednostkowych przechodzi.
+
+Audyt przycisków zgłasza trzy pozycje i **wszystkie trzy są fałszywe** — warto to wiedzieć,
+zanim ktoś zacznie ich „naprawiać": klik w zakładkę, na której już się jest (`nav-room`,
+`nav-me`, nic się nie zmienia, bo nie ma czego zmieniać) oraz przełącznik trybu podziału
+(`bill-mode-own`), który zapisuje do Firestore i czeka na powrót danych — a baza w audycie
+odpowiada 403.

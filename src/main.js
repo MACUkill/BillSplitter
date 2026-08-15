@@ -487,7 +487,7 @@
             setupGlobalModalListeners();
             setupPwaInstallButton();
             setupDeckNav();
-            pinDeckToVisualViewport();
+            watchKeyboardForDeck();
             setupPersonSearch();
             registerServiceWorker();
 
@@ -778,34 +778,32 @@
             if (roomsBtn) roomsBtn.onclick = () => goToRoomsList();
         };
 
-        // --- PASEK NAWIGACJI PRZYPIĘTY DO WIDOCZNEGO OBSZARU OKNA -------------------
+        // --- PASEK NAWIGACJI A KLAWIATURA -------------------------------------------
         //
-        // `position: fixed` przypina do dołu UKŁADU strony, a na iPhonie układ sięga pod
-        // pasek Safari. Skutek: przy przewijaniu, gdy przeglądarka chowa i przywraca swój
-        // pasek, nawigacja jeździ razem z nim. Zgłoszenie właściciela: „w zakładce Profil
-        // nawigacja porusza się przy scrollowaniu".
+        // TU BYŁA POPRAWKA, KTÓRA SAMA BYŁA USTERKĄ. Przez trzy podejścia próbowałem
+        // „kompensować" pasek przeglądarki: liczyć, ile dolnej części układu jest
+        // przykryte, i podnosić o tyle pasek nawigacji. Cały ten pomysł stał na fałszywym
+        // założeniu.
         //
-        // CSS o tym nie wie nic — jedynym źródłem tej informacji jest `window.visualViewport`.
-        // Liczymy, ile dolnej części układu jest w tej chwili przykryte, i podnosimy pasek
-        // dokładnie o tyle. Wynik: pasek stoi nieruchomo względem tego, co człowiek widzi.
+        // Na iOS element `position: fixed` z odległością od dołu JEST JUŻ pozycjonowany
+        // nad paskiem Safari — przeglądarka robi to sama. Nie było czego kompensować,
+        // a dodatek podnosił pasek o wysokość paska przeglądarki, czyli o jakieś 75 px.
         //
-        // W aplikacji zainstalowanej na ekranie początkowym nie ma paska przeglądarki,
-        // więc poprawka wychodzi zerowa i nic się nie dzieje. To jest w porządku:
-        // ten kod ma naprawiać Safari, a nie zastępować `env(safe-area-inset-bottom)`.
+        // Objaw, który to rozstrzygnął (zgłoszenie właściciela): pasek stał wyżej TYLKO
+        // w zakładce Profil. Profil jest krótki, więc strona nie ma czego przewijać,
+        // więc Safari NIE MOŻE schować swojego paska — i tylko tam „kompensacja"
+        // wychodziła niezerowa. Na dłuższych zakładkach pasek przeglądarki znikał przy
+        // przewijaniu i poprawka schodziła do zera. Stąd też pierwotne „nawigacja zmienia
+        // pozycję przy przełączaniu zakładek": to była moja własna poprawka w akcji.
+        //
+        // Zostaje wyłącznie odległość od dołu w CSS (`max(1,5rem, env(...))`) i to
+        // wystarcza. Poniżej został sam nasłuch klawiatury, bo tam pasek ma ZNIKNĄĆ,
+        // a nie przesunąć się o kilka pikseli — i pomyłka o 75 px niczego tam nie psuje.
         const KEYBOARD_MIN_PX = 140; // mniej to pasek przeglądarki, więcej to klawiatura
-        const DECK_LIFT_MAX_PX = 120; // wyżej pasek nawigacji nie ma prawa wjechać nigdy
-        const DECK_LIFT_MIN_PX = 8;   // niżej to szum pomiaru, nie pasek przeglądarki
-
-        // Aplikacja dodana do ekranu początkowego NIE MA paska przeglądarki, więc nie ma
-        // też czego kompensować. Sprawdzamy to raz i wtedy poprawka jest wyłączona
-        // w całości — zostaje wyłącznie chowanie paska pod klawiaturę.
-        const isStandaloneApp = () =>
-            !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
-            || window.navigator.standalone === true;
 
         let refreshDeckPin = () => {};
 
-        const pinDeckToVisualViewport = () => {
+        const watchKeyboardForDeck = () => {
             const vv = window.visualViewport;
             const deck = document.getElementById('deck-nav');
             if (!vv || !deck) return;
@@ -813,31 +811,11 @@
             let queued = false;
             const apply = () => {
                 queued = false;
-                // TU BYŁ BŁĄD, KTÓRY POSŁAŁ PASEK W GÓRĘ PRZY CIĄGNIĘCIU STRONY W DÓŁ.
-                //
-                // Poprzednia wersja liczyła `clientHeight - (vv.height + vv.offsetTop)`.
-                // `offsetTop` nie mówi jednak nic o pasku przeglądarki — to przesunięcie
-                // widocznego obszaru wewnątrz układu, które iOS zmienia przy rozciąganiu
-                // strony na końcu przewijania (gumka) i przy przybliżaniu. Przy ciągnięciu
-                // w dół schodzi poniżej zera, więc różnica rosła razem z siłą gestu
-                // i pasek odlatywał tym wyżej, im mocniej ktoś pociągnął.
-                //
-                // Pasek przeglądarki zabiera wyłącznie WYSOKOŚĆ, więc liczy się różnica
-                // wysokości i nic poza nią.
+                // Klawiatura zabiera 250 px i więcej; pasek przeglądarki najwyżej 90 px.
+                // Próg 140 px rozdziela je z zapasem w obie strony.
                 const covered = document.documentElement.clientHeight - vv.height;
-
-                // Klawiatura to inna sprawa niż pasek przeglądarki: tam pasek nawigacji
-                // ma zejść z drogi, a nie wjechać nad nią i przykryć pole wpisywania.
-                const keyboard = covered >= KEYBOARD_MIN_PX;
-                let lift = 0;
-                if (!keyboard && !isStandaloneApp() && covered >= DECK_LIFT_MIN_PX) {
-                    lift = Math.min(Math.round(covered), DECK_LIFT_MAX_PX);
-                }
-                deck.style.setProperty('--deck-lift', `${lift}px`);
-                deck.classList.toggle('deck-keyboard', keyboard);
+                deck.classList.toggle('deck-keyboard', covered >= KEYBOARD_MIN_PX);
             };
-            // Zdarzeń widocznego obszaru potrafi przyjść kilkadziesiąt na sekundę przy
-            // przewijaniu; liczymy raz na klatkę, bo częściej i tak nie ma czego malować.
             const schedule = () => {
                 if (queued) return;
                 queued = true;
@@ -845,12 +823,7 @@
             };
 
             vv.addEventListener('resize', schedule);
-            vv.addEventListener('scroll', schedule);
-            window.addEventListener('resize', schedule);
             window.addEventListener('orientationchange', schedule);
-            // Zmiana zakładki albo ekranu też przelicza poprawkę. Bez tego wartość
-            // policzona w chwili gestu potrafiła zostać na pasku, gdy żadne kolejne
-            // zdarzenie widocznego obszaru już nie przyszło — i pasek zostawał wyżej.
             refreshDeckPin = schedule;
             apply();
         };
