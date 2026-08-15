@@ -648,7 +648,8 @@
         const HELP_CONTENT = {
             'start': {
                 title: 'Jak zacząć',
-                html: `<p>Billiada dzieli rachunki w grupie znajomych i liczy, kto komu ile jest winien.</p>
+                html: `<p><b>Zrób zdjęcie paragonu, a ekipa odklika swoje pozycje.</b> Bez kont i bez logowania.</p>
+                    <p>Billiada dzieli rachunki w grupie znajomych i liczy, kto komu ile jest winien.</p>
                     <ul class="list-disc pl-5 space-y-1">
                         <li>Nazwij grupę i dopisz osoby pojedynczo. Resztę ekipy dodasz później.</li>
                         <li>Zaproś znajomych linkiem, kodem pokoju albo kodem QR. Każdy wybiera swoje imię z listy.</li>
@@ -2689,11 +2690,16 @@
             if (note) {
                 // Ten komunikat pada tylko wtedy, gdy suwak sam odsunął odcień. Bez niego
                 // uchwyt „ucieka" spod palca bez wyjaśnienia, co wygląda na usterkę.
+                //
+                // Przełączamy KRYCIE, nie obecność w układzie: wiersz ma zarezerwowaną
+                // wysokość (`.color-note`), więc pojawienie się komunikatu nie przesuwa
+                // suwaka pod palcem. Treść zostaje w węźle także po zgaszeniu, bo
+                // kasowanie jej wywoływało drugie ogłoszenie u czytnika ekranu.
                 const reserved = isReservedColor(colorFromControls(colorDraft.rawHue ?? colorDraft.hue, colorDraft.intensity));
-                note.classList.toggle('hidden', !reserved);
-                note.textContent = reserved
-                    ? 'Ten odcień jest zarezerwowany dla oznaczeń kwot, więc suwak go omija. Przesuń dalej albo zmień intensywność.'
-                    : '';
+                if (reserved) {
+                    note.textContent = 'Ten odcień jest zarezerwowany dla oznaczeń kwot, więc suwak go omija.';
+                }
+                note.classList.toggle('is-on', reserved);
             }
             paintHueTrack();
             paintIntensityTrack();

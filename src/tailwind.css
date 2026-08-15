@@ -203,25 +203,22 @@ body:has(#offline-banner:not(.hidden)) #app-container {
      stałymi barwami niezależnymi od motywu — bo tym właśnie jest znak firmowy.
      Dlatego logotyp zawsze siedzi we własnym ciemnym bloku.
 
-     Znak wchodzi tu w wersji PRZEZROCZYSTEJ (`mark-160.png`), a nie jako ikona z własnym
-     tłem. Ikona z tłem zostawiała w pigułce widoczny kwadrat: jej tło i tło pigułki to
-     nigdy nie jest dokładnie ten sam piksel, a przy okrągłym przycięciu widać było szew.
-     Przezroczysty znak wtapia się bez śladu.
+     Znak wchodzi w wersji PRZEZROCZYSTEJ (`mark-160.png`) i stoi SAM, bez żadnej ramki
+     ani podkładki. Wersja w ciemnej pigułce została odrzucona przez właściciela
+     2026-08-15: obwódka robiła ze znaku naklejkę i zabierała mu powietrze.
 
-     Pigułka ma kolor `#181A20` — jedną z DWÓCH barw znaku firmowego (drugą jest limonka
-     `#C6F03A`). Cały logotyp stoi więc na dwóch kolorach właściciela i na niczym więcej. */
+     Układ jest pionowy — znak, pod nim nazwa. Poziomy wymuszał małą ikonę, żeby lockup
+     nie rozpychał wiersza; pionowy pozwala jej być znakiem, a nie sygnaturką. */
   .brand-lockup {
     display: inline-flex;
+    flex-direction: column;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.375rem 1rem 0.375rem 0.625rem;
-    border-radius: 999px;
-    background-color: #181A20;
   }
 
   .brand-lockup img {
-    width: 2rem;
-    height: 2rem;
+    width: 3rem;
+    height: 3rem;
     flex-shrink: 0;
   }
 
@@ -240,9 +237,22 @@ body:has(#offline-banner:not(.hidden)) #app-container {
 
   .wordmark-bill { color: #C6F03A; }
 
+  /* WERSJA JEDNOBARWNA NA JASNYM PODŁOŻU.
+     Bez pigułki logotyp stoi wprost na tle aplikacji, a limonka na jasnym ma kontrast
+     około 1,5:1 — jest nieczytelna, tak samo jak biel. Znaki firmowe rozwiązują to od
+     zawsze wersją jednobarwną i tak robimy tutaj: na jasnym motywie znak i nazwa idą
+     atramentem, a dwutonowość niesie różnica wagi tonu, nie barwa.
+
+     Znak przechodzi na atrament filtrem, a nie drugim plikiem: `brightness(0)` zeruje
+     kanały koloru i zostawia kanał krycia nietknięty, więc z limonkowego konia robi się
+     ten sam koń w atramencie, bez dogrywania kolejnego obrazka. */
+  :root[data-theme='light'] .wordmark { color: rgb(var(--ink-3)); }
+  :root[data-theme='light'] .wordmark-bill { color: rgb(var(--ink)); }
+  :root[data-theme='light'] .brand-lockup img { filter: brightness(0); }
+
   /* Wersja duża — ekran wczytywania, gdzie znak jest jedyną treścią. */
-  .brand-lockup-lg { gap: 0.75rem; padding: 0.625rem 1.5rem 0.625rem 0.875rem; }
-  .brand-lockup-lg img { width: 3rem; height: 3rem; }
+  .brand-lockup-lg { gap: 0.875rem; }
+  .brand-lockup-lg img { width: 4.5rem; height: 4.5rem; }
   .brand-lockup-lg .wordmark { font-size: 1.875rem; }
 
   /* --- KWOTA --------------------------------------------------------------
@@ -501,6 +511,19 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 4px rgb(var(--shadow) / 0.4), 0 2px 6px rgb(var(--shadow) / 0.35);
     cursor: pointer;
   }
+
+  /* Wiersz komunikatu o odcieniu zarezerwowanym. Wysokość jest STAŁA i wystarcza na
+     dwie linie na najwęższym telefonie — pojawianie się treści nie ma prawa przesunąć
+     ani suwaka, ani niczego pod nim. Zmienia się wyłącznie krycie. */
+  .color-note {
+    min-height: 2.5rem;
+    font-size: 0.875rem;
+    line-height: 1.3;
+    color: rgb(var(--ink-2));
+    opacity: 0;
+    transition: opacity 160ms ease-out;
+  }
+  .color-note.is-on { opacity: 1; }
 
   .color-preview {
     display: flex;

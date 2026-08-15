@@ -490,14 +490,19 @@ krój Bricolage Grotesque — ten sam, którym pisane są kwoty.
 
 **Barwy znaku firmowego NIE idą za motywem i to jest jedyny taki wyjątek w całym systemie.**
 Limonka na jasnym podłożu ma kontrast około 1,5:1, a biel na jasnym tle nie istnieje —
-więc logotyp zawsze siedzi we własnej ciemnej pigułce w kolorze `#181A20`. Znak firmowy
-ma stałe barwy, bo tym właśnie jest znak firmowy, a znak Billiady stoi na **dwóch**
-kolorach i tylko na nich: limonce `#C6F03A` i atramencie `#181A20`.
+więc na jasnym podłożu logotyp idzie **wersją jednobarwną**: znak i nazwa atramentem,
+a dwutonowość niesie różnica tonu, nie barwa. Znak przechodzi na atrament filtrem
+`brightness(0)`, który zeruje kanały koloru i zostawia krycie nietknięte — jeden plik
+obsługuje oba motywy.
 
-Do pigułki wchodzi **przezroczysta** wersja znaku, nie ikona z własnym tłem: ikona z tłem
-zostawiała w pigułce widoczny kwadrat, bo jej tło i tło pigułki to nigdy nie jest ten sam
-piksel. Ikony PWA przychodzą gotowe od właściciela i `tools/make-icons.mjs` ich nie rusza
-— skaluje wyłącznie znak używany wewnątrz aplikacji.
+**Znak stoi SAM, bez ramki i bez podkładki**, w układzie pionowym: znak, pod nim nazwa.
+Wersja w ciemnej pigułce została odrzucona 2026-08-15 — obwódka robiła ze znaku naklejkę
+i zabierała mu powietrze, a układ poziomy wymuszał małą ikonę, żeby lockup nie rozpychał
+wiersza.
+
+Do lockupu wchodzi **przezroczysta** wersja znaku, nie ikona z własnym tłem. Ikony PWA
+przychodzą gotowe od właściciela i `tools/make-icons.mjs` ich nie rusza — skaluje
+wyłącznie znak używany wewnątrz aplikacji.
 
 Stoi w dwóch miejscach: ekran wczytywania i nagłówek ekranu startowego. **Nie w pokoju** —
 tam nazwa pokoju jest ważniejsza od nazwy aplikacji, a logo na każdym ekranie to szyld,

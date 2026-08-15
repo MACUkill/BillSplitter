@@ -1088,6 +1088,14 @@ znak firmowy. W motywie jasnym logotyp siedzi więc we własnym ciemnym bloku.
 Gdzie stoi: ekran wczytywania i nagłówek ekranu startowego. Nie w pokoju — tam nazwa
 pokoju jest ważniejsza od nazwy aplikacji, a logo na każdym ekranie to szyld, nie produkt.
 
+**Nagłówek ekranu startowego to sam znak.** Wielkie „Podziel rachunek" i zdanie pod nim
+zniknęły 2026-08-15 na wniosek właściciela, i słusznie: pod spodem stoją dwie karty,
+które mówią to samo własnymi nagłówkami („Masz kod pokoju?", „Nazwa grupy"), więc
+nagłówek powtarzał treść ekranu i spychał pierwszą realną akcję poniżej zgięcia.
+Opis produktu nie zniknął — przeniósł się pod znak zapytania, czyli tam, gdzie pomoc
+mieszka na każdym innym ekranie. Przycisk nie potrzebuje własnej obsługi, bo `showHelp`
+bierze treść z `HELP_CONTENT` po nazwie ekranu.
+
 ### 19.3 Dwie ciche awarie znalezione przy okazji
 
 **Nominał bilansu renderował się bez stylu.** `denominationHtml` w `main.js` wypisywał
@@ -1413,14 +1421,15 @@ usunięta z repozytorium.
 
 Logotyp: **„Bill" w limonce, „iada" w bieli**, krój Bricolage Grotesque — ten sam, którym
 pisane są kwoty, więc logotyp nie wprowadza dziewiątego stopnia ani drugiego kroju.
-Stoi w ciemnej pigułce w kolorze `#181A20`, czyli w drugiej z dwóch barw znaku
-(pierwsza to limonka `#C6F03A`). Cały logotyp stoi więc na kolorach właściciela
-i na niczym więcej.
+Znak stoi SAM, bez ramki i bez podkładki, w układzie pionowym: znak, pod nim nazwa.
+Wersja w ciemnej pigułce została odrzucona przez właściciela 2026-08-15 — obwódka robiła
+ze znaku naklejkę i zabierała mu powietrze, a układ poziomy wymuszał małą ikonę, żeby
+lockup nie rozpychał wiersza.
 
-Do pigułki wchodzi **przezroczysta** wersja znaku (`public/icons/mark-160.png`), a nie
-ikona z własnym tłem: ikona z tłem zostawiała w pigułce widoczny kwadrat, bo jej tło
-i tło pigułki to nigdy nie jest dokładnie ten sam piksel, a przy okrągłym przycięciu
-widać było szew.
+Bez pigułki logotyp stoi wprost na tle aplikacji, więc na JASNYM motywie idzie wersją
+jednobarwną: znak i nazwa atramentem, dwutonowość niesie różnica tonu, nie barwa.
+Znak przechodzi na atrament filtrem `brightness(0)` — zeruje kanały koloru i zostawia
+krycie nietknięte, więc jeden plik obsługuje oba motywy bez dogrywania drugiego obrazka.
 
 **Barwy logotypu nie idą za motywem i to jest jawny wyjątek** od reguły rozdziału kolorów:
 limonka na jasnym podłożu ma kontrast około 1,5:1, a biel na jasnym tle nie istnieje.

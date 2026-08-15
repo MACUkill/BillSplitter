@@ -174,17 +174,29 @@ the verdict, and DESIGN.md
              podpowiada imiona. Pierwszy żeton to Ty — grupa zawsze ma autora. -->
         <div id="start-screen" class="hidden">
             <div class="max-w-md mx-auto">
-                <div class="mb-8">
-                    <!-- Znak firmowy stoi TYLKO tutaj i na ekranie wczytywania. W pokoju
-                         ważniejsza jest nazwa pokoju, a logo na każdym ekranie to szyld,
-                         nie produkt. -->
-                    <span class="brand-lockup mb-5">
+                <!-- NAGŁÓWEK EKRANU STARTOWEGO TO SAM ZNAK.
+                     Wielkie „Podziel rachunek" i zdanie pod nim zniknęły na wniosek
+                     właściciela 2026-08-15: pod spodem stoją dwie karty, które mówią
+                     dokładnie to samo własnymi nagłówkami („Masz kod pokoju?",
+                     „Nazwa grupy"), więc nagłówek powtarzał treść ekranu i spychał
+                     pierwszą realną akcję poniżej zgięcia.
+
+                     Opis produktu nie zniknął — przeniósł się pod znak zapytania,
+                     czyli tam, gdzie mieszka pomoc na każdym innym ekranie. `showHelp`
+                     bierze treść z `HELP_CONTENT` po nazwie ekranu, więc ten przycisk
+                     nie potrzebuje własnej obsługi. -->
+                <header class="flex items-start justify-between gap-3 mb-8">
+                    <!-- Równoważnia szerokości przycisku pomocy: bez niej znak byłby
+                         wyśrodkowany względem wiersza, a nie względem ekranu. -->
+                    <span class="w-11 flex-shrink-0" aria-hidden="true"></span>
+                    <span class="brand-lockup mt-1">
                         <img src="/icons/mark-160.png" width="160" height="160" alt="" aria-hidden="true">
                         <span class="wordmark"><span class="wordmark-bill">Bill</span>iada</span>
                     </span>
-                    <h1 class="font-display text-5xl font-extrabold tracking-tight leading-none mb-3">Podziel rachunek</h1>
-                    <p class="text-ink-2 text-lg">Zrób zdjęcie paragonu, a ekipa odklika swoje pozycje. Bez kont i bez logowania.</p>
-                </div>
+                    <button class="help-btn tap w-11 h-11 rounded-full flex items-center justify-center text-ink-2 bg-surface-2 flex-shrink-0" title="Jak to działa?" aria-label="Pomoc: jak to działa?">
+                        <i class="fas fa-question"></i>
+                    </button>
+                </header>
 
                 <div id="my-rooms"></div>
 
@@ -886,7 +898,14 @@ the verdict, and DESIGN.md
                 <label for="color-intensity" class="block text-sm font-bold text-ink-3 mt-4 mb-2">Intensywność</label>
                 <input id="color-intensity" class="color-slider" type="range" min="0" max="100" step="1" value="40" aria-label="Intensywność koloru">
 
-                <p id="color-reserved-note" class="hidden text-sm text-ink-2 mt-3"></p>
+                <!-- MIEJSCE NA KOMUNIKAT JEST ZAREZERWOWANE NA STAŁE.
+                     Wcześniej ten wiersz pojawiał się i znikał klasą `hidden`, więc arkusz
+                     zmieniał wysokość w trakcie przesuwania suwaka — treść skakała pod
+                     palcem, a przy krótkim arkuszu potrafił przeskoczyć cały układ.
+                     Teraz zmienia się wyłącznie krycie: wysokość jest stała niezależnie
+                     od tego, czy komunikat jest widoczny. `aria-live` zostaje, bo czytnik
+                     ekranu ma o tym powiedzieć, a nie odkryć przy następnym przejściu. -->
+                <p id="color-reserved-note" class="color-note mt-3" aria-live="polite"></p>
 
                 <!-- Kolory zajęte przez resztę ekipy. Aplikacja nie blokuje powtórki
                      ani nie ostrzega (decyzja właściciela): pokazuje stan i zostawia
