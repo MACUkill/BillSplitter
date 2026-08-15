@@ -857,12 +857,49 @@ the verdict, and DESIGN.md
                 <div class="sheet-grip" aria-hidden="true"></div>
                 <div class="sheet-head-row">
                     <h3 class="sheet-title">Kolor znaku</h3>
-                    <button id="close-color-picker-btn" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
                 </div>
                 <p class="sheet-lede">Tym kolorem ekipa rozpoznaje Cię przy pozycjach rachunku.</p>
             </div>
+
+            <!-- DWA SUWAKI ZAMIAST SZESNASTU KÓŁEK (decyzja właściciela 2026-08-15).
+                 Gotowa paleta dawała za mało realnie różnych kolorów, a przy dwudziestu
+                 osobach każdy chce mieć swój. Odcień prowadzi po całym kole barw,
+                 intensywność po jednej krzywej od jasnej i łagodnej do ciemnej
+                 i nasyconej — bo dwa osobne suwaki na nasycenie i jasność otwierają
+                 całe obszary nieczytelnego błota.
+
+                 Litera na znaku dobiera teraz kolor sama, więc żółty i inne jasne barwy
+                 wreszcie wchodzą w grę: to właśnie stała biała litera trzymała wcześniej
+                 paletę w jednym ciemnym pasmie. -->
             <div class="sheet-body">
-                <div id="dashboard-color-picker" class="grid grid-cols-6 gap-2 justify-items-center pb-1"></div>
+                <div class="color-preview">
+                    <span id="color-preview-mark" class="color-preview-mark" aria-hidden="true"></span>
+                    <span class="min-w-0">
+                        <span class="block font-bold">Twój znak</span>
+                        <span id="color-preview-hex" class="block text-sm text-ink-3 serial"></span>
+                    </span>
+                </div>
+
+                <label for="color-hue" class="block text-sm font-bold text-ink-3 mt-5 mb-2">Odcień</label>
+                <input id="color-hue" class="color-slider" type="range" min="0" max="359" step="1" value="258" aria-label="Odcień koloru">
+
+                <label for="color-intensity" class="block text-sm font-bold text-ink-3 mt-4 mb-2">Intensywność</label>
+                <input id="color-intensity" class="color-slider" type="range" min="0" max="100" step="1" value="40" aria-label="Intensywność koloru">
+
+                <p id="color-reserved-note" class="hidden text-sm text-ink-2 mt-3"></p>
+
+                <!-- Kolory zajęte przez resztę ekipy. Aplikacja nie blokuje powtórki
+                     ani nie ostrzega (decyzja właściciela): pokazuje stan i zostawia
+                     wybór człowiekowi. -->
+                <div class="mt-6">
+                    <p class="text-sm font-bold text-ink-3 mb-2">Kolory w pokoju</p>
+                    <div id="color-taken" class="color-taken"></div>
+                </div>
+            </div>
+
+            <div class="sheet-foot flex gap-2">
+                <button id="close-color-picker-btn" class="btn btn-quiet flex-1">Anuluj</button>
+                <button id="save-color-picker-btn" class="btn btn-primary flex-1">Zapisz kolor</button>
             </div>
         </div>
     </div>

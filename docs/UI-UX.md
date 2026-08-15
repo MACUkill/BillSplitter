@@ -1430,6 +1430,61 @@ Logotyp stoi w dwóch miejscach: na ekranie wczytywania (jedyne miejsce, gdzie n
 się nie dzieje) i w nagłówku ekranu startowego. **Nie w pokoju** — tam nazwa pokoju jest
 ważniejsza od nazwy aplikacji, a logo na każdym ekranie to szyld, nie produkt.
 
+### 19.15 Kolor znaku: dwa suwaki zamiast szesnastu kółek
+
+Zgłoszenie właściciela: „wybór kolorów jest dość ograniczony i niektóre są bardzo
+podobne, może suwak?". Zanim cokolwiek dotknąłem, policzyłem paletę — i objaw okazał się
+łagodniejszy od choroby.
+
+**Stara paleta miała szesnaście pozycji, ale pięć rodzin.** Piętnaście par różniło się
+mniej niż o dwadzieścia stopni odcienia przy niemal równej jasności, czyli dla oka było
+tym samym kolorem: „malina" i „wiśnia" dzieliły DWA stopnie, „fiolet" i „ametyst" jeden.
+Do tego **sześć kolorów siedziało na barwach ról pieniężnych**: „lazur" siedem stopni od
+błękitu „czeka na Ciebie", „malina" siedem od czerwieni długu, „szmaragd" piętnaście od
+zieleni należności. Paleta łamała regułę rozdziału kolorów, którą sama miała chronić.
+
+**Przyczyną było jedno założenie: litera na znaku jest zawsze biała.** To wymuszało
+wyłącznie ciemne barwy, więc szesnaście kolorów wciskało się w jedno wąskie pasmo
+jasności, gdzie różnicował je tylko odcień — a odcień się zbijał. To także powód, dla
+którego w palecie nie było żółtego: wypadł przez kontrast, nie przez estetykę.
+
+**Zmiana, która odblokowała resztę:** litera dobiera kolor sama (`readableInk`, jedna
+z dwóch barw systemu, wybierana po luminancji). Od tej chwili całe koło barw jest
+dostępne w każdej jasności.
+
+**Kontrolka** (wybór właściciela): dwa suwaki — odcień i intensywność. Intensywność jest
+jedną liczbą sterującą nasyceniem i jasnością naraz; osobne suwaki dałyby więcej kolorów,
+ale też całe obszary nieczytelnego błota (wysoka jasność przy niskim nasyceniu to prawie
+biel). Ścieżka suwaka odcienia pokazuje **dokładnie te kolory, które wyjdą przy bieżącej
+intensywności**, a nie ogólną tęczę, a odcienie zarezerwowane widać na niej jako szare
+odcinki, zanim palec tam trafi.
+
+**Trzy gwarancje i sposób, w jaki są dotrzymane:**
+
+1. **Czytelność.** Żaden punkt obu suwaków nie schodzi poniżej 4,5:1. Pośrodku zakresu
+   jasności jest wąskie pasmo, w którym ANI biel, ANI atrament nie łapią progu (dla
+   nasyconej czerwieni wychodziło 4,45), a jego położenie zależy od odcienia.
+   `colorFromControls` odsuwa wtedy jasność do bliższego brzegu pasma. **Znalazł to test,
+   nie oko** — dlatego test przechodzi teraz przez wszystkie odcienie co pięć stopni
+   i wszystkie intensywności co dziesięć.
+2. **Znaczenia.** Sąsiedztwa limonki marki i trzech barw pieniężnych są wyłączone, ale
+   jako punkty w trzech wymiarach, nie jako całe pasma odcienia. Suwak omija je sam
+   i pisze, dlaczego uchwyt odskoczył — interfejs, który rusza się bez wyjaśnienia,
+   czyta się jak zepsuty.
+3. **Rozróżnialność.** Aplikacja **nie blokuje** powtórki i **nie ostrzega** przed nią
+   (decyzja właściciela). Pokazuje rząd „Kolory w pokoju" ze znakami reszty ekipy
+   i zostawia wybór człowiekowi.
+
+**Paleta domyślna przebudowana** przy tej samej okazji, bo to ona trafia do ludzi, którzy
+nigdy nie otworzą arkusza wyboru: szesnaście barw co 22,5 stopnia po całym kole,
+z naprzemienną jasnością (parzyste ciemne i nasycone, nieparzyste jasne i łagodniejsze),
+z omijaniem stref zarezerwowanych. Zero par nie do odróżnienia, zero kolizji ze znaczeniami.
+
+**Przydział przy zakładaniu grupy rozrzucony po palecie**, a nie po kolei. Paleta jest
+ułożona wzdłuż koła barw, więc branie kolejnych pozycji dawało czteroosobowej grupie
+cztery sąsiadujące odcienie. Krok siedem jest względnie pierwszy z szesnastką, więc
+obchodzi całą paletę bez powtórki, a kolejni ludzie dostają barwy z przeciwnych stron koła.
+
 ### 19.11 Stan audytu po partii
 
 Cztery szerokości z kontraktu (360 / 390 / 834 / 1280), 32 stany ekranu, **zero zgłoszeń**:

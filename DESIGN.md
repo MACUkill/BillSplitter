@@ -178,8 +178,32 @@ paski tekstu, wszystko, co wygląda na dokument urzędowy.
 
 ### Tertiary — tożsamość ludzi
 
-Szesnaście nasyconych kolorów w `src/identity.js`, liczonych z identyfikatora uczestnika.
-Zbiór zamknięty. Zdjęcie ma pierwszeństwo przed kolorem; kolor przed literą.
+Kolor przypisuje się z identyfikatora uczestnika (paleta szesnastu barw w `src/identity.js`),
+a człowiek może go **zmienić dwoma suwakami**: odcieniem i intensywnością. Zdjęcie ma
+pierwszeństwo przed kolorem; kolor przed literą.
+
+**Reguła litery, która dobiera się sama.** Litera na znaku bierze jedną z DWÓCH barw
+systemu — atrament albo biel — tę, która daje wyższy kontrast z tłem znaku (`readableInk`).
+Do 2026-08-15 była zawsze biała i to jedno założenie trzymało całą paletę w wąskim pasmie
+ciemnych barw: żółty, jasny cyjan i róż wypadały przez kontrast, nie przez estetykę.
+Zdjęcie tego ograniczenia otworzyło całe koło barw w każdej jasności.
+
+**Reguła progu na każdym punkcie suwaka.** Żaden punkt obu suwaków nie może dać koloru,
+na którym litera schodzi poniżej 4,5:1. Pośrodku zakresu jasności jest wąskie pasmo,
+w którym ani biel, ani atrament nie łapią progu, a jego położenie zależy od odcienia —
+`colorFromControls` odsuwa wtedy jasność do bliższego brzegu tego pasma. Pilnują tego
+testy przechodzące przez wszystkie odcienie i intensywności.
+
+**Reguła zarezerwowanych sąsiedztw.** Kolor człowieka nie może udawać limonki marki ani
+żadnej z trzech barw pieniężnych. Nie wycinamy całych pasm odcienia (to zabrałoby cały
+żółty i cały zielony): blokujemy dopiero punkty podobne na **wszystkich trzech** wymiarach
+naraz — odcień, nasycenie i jasność. Ciemna oliwka przechodzi, jasna limonka nie.
+Suwak omija te strefy sam i mówi, że to zrobił.
+
+**Reguła realnej różnicy.** Dwa kolory tożsamości bliższe niż dwadzieścia stopni odcienia
+przy niemal równej jasności to dla oka jeden kolor. Paleta domyślna nie ma ani jednej
+takiej pary — wcześniejsza miała piętnaście przy szesnastu pozycjach, czyli była pięcioma
+rodzinami udającymi szesnaście barw. Pilnuje tego test.
 
 ### Neutral
 

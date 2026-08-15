@@ -4,7 +4,10 @@
         import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
         import { unreadNudgeCount, hasRecentNudge, inboxItems, badgeCount, hasDot } from './nudges.js';
         import { itemQuantity, itemPickers, itemPickerCount, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
-        import { identityColor, initials, IDENTITY_COLORS } from './identity.js';
+        import {
+            identityColor, initials, IDENTITY_COLORS,
+            readableInk, colorFromControls, controlsFromColor, nearestAllowedHue, isReservedColor,
+        } from './identity.js';
         // Kod QR rysowany lokalnie, w buildzie. Biblioteka bez zależności i bez sieci:
         // aplikacja pracuje offline, więc obrazek z cudzego serwera nie wchodzi w grę.
         import qrcode from 'qrcode-generator';
@@ -1266,9 +1269,13 @@
         const PROFILE_COLORS = IDENTITY_COLORS;
         const colorForMember = (memberId, name) => {
             const explicit = ((groupData && groupData.members && groupData.members[memberId]) || {}).color;
-            // Kolory zapisane w poprzednich wersjach pochodzą z innych palet. Honorujemy je
-            // tylko wtedy, gdy należą do obecnej — inaczej jeden odcień rozbija cały ekran.
-            if (explicit && IDENTITY_COLORS.includes(explicit)) return explicit;
+            // Przyjmujemy KAŻDY poprawny zapis szesnastkowy, nie tylko kolory z palety.
+            // Do 2026-08-15 stało tu sprawdzenie przynależności do zamkniętego zbioru —
+            // miało chronić przed kolorami ze starych palet, ale po wprowadzeniu suwaka
+            // odrzucałoby własny wybór człowieka i po cichu wracało do koloru z losowania.
+            // Wzorzec jest twardy, więc do atrybutu stylu nadal nie wejdzie nic innego
+            // niż sześć znaków szesnastkowych.
+            if (/^#[0-9a-f]{6}$/i.test(String(explicit || ''))) return explicit.toUpperCase();
             return identityColor(memberId, name);
         };
         // sizeClass podmienia rozmiar/odstęp (nie dokłada się do domyślnych) — inaczej przy Tailwindzie
@@ -1285,7 +1292,12 @@
             const mark = escapeHtml(initials(name));
             // Kolor idzie atrybutem stylu, bo to dana z bazy — klasa sklejana ze stringu
             // wyparowałaby przy kompilacji Tailwinda.
-            return `<span class="rounded-full flex-shrink-0 inline-flex items-center justify-center font-bold text-white ${sizeClass}" style="background-color:${escapeHtml(color)}">
+            // Litera dobiera kolor sama: ciemna na jasnym znaku, biała na ciemnym.
+            // Do 2026-08-15 była zawsze biała, co wymuszało paletę wyłącznie ciemnych
+            // barw i to właśnie ta jedna linijka trzymała szesnaście kolorów w jednym
+            // wąskim pasmie jasności. `readableInk` zwraca jedną z DWÓCH barw systemu,
+            // więc do znaczników nie wchodzi nic z bazy.
+            return `<span class="rounded-full flex-shrink-0 inline-flex items-center justify-center font-bold ${sizeClass}" style="background-color:${escapeHtml(color)};color:${readableInk(color)}">
                 <span style="font-size:0.72em">${mark}</span>
             </span>`;
         };
@@ -2576,26 +2588,149 @@
         // litera imienia, a wybrany dało się rozpoznać wyłącznie po cienkim pierścieniu.
         const renderColorField = (myMember) => {
             if (!myMember) return;
-            const current = colorForMember(myMember.id, myMember.name);
             const dot = document.getElementById('profile-color-dot');
-            if (dot) dot.style.backgroundColor = current;
+            if (dot) dot.style.backgroundColor = colorForMember(myMember.id, myMember.name);
+        };
 
-            const picker = document.getElementById('dashboard-color-picker');
-            if (!picker) return;
-            // Same kolory, bez liter: to jest wybór barwy, a nie podgląd awatara —
-            // podgląd stoi obok, w polu i na zdjęciu profilowym u góry ekranu.
-            picker.innerHTML = PROFILE_COLORS.map(c => {
-                const selected = c === current;
-                return `<button class="profile-color-swatch tap w-12 h-12 rounded-full flex items-center justify-center text-white" data-color="${c}" aria-pressed="${selected}" title="Ustaw ten kolor" style="background-color:${c}">${selected ? '<i class="fas fa-check"></i>' : ''}</button>`;
+        // --- WYBÓR KOLORU ZNAKU: DWA SUWAKI -----------------------------------------
+        //
+        // Szesnaście gotowych kółek zastąpił suwak odcienia i suwak intensywności
+        // (decyzja właściciela 2026-08-15). Powód był konkretny: przy dwudziestu osobach
+        // gotowa paleta nie starcza, a jej kolory były do siebie zbyt podobne, żeby
+        // wybór cokolwiek znaczył.
+        //
+        // Trzy rzeczy, które ten wybór musi pilnować, i sposób, w jaki to robi:
+        //   1. CZYTELNOŚĆ — litera dobiera kolor sama (`readableInk`), więc każdy punkt
+        //      na obu suwakach jest kolorem, na którym da się przeczytać znak.
+        //   2. ZNACZENIA — sąsiedztwa limonki marki i trzech barw pieniężnych są
+        //      wyłączone. Nie całe pasma odcienia (to zabrałoby cały żółty i zielony),
+        //      tylko punkty podobne na wszystkich trzech wymiarach naraz.
+        //   3. ROZRÓŻNIALNOŚĆ — aplikacja NIE blokuje powtórki i nie ostrzega przed nią
+        //      (wybór właściciela). Pokazuje, kto ma jaki kolor, i zostawia decyzję.
+        let colorDraft = { hue: 258, intensity: 40 };
+
+        const currentDraftColor = () => colorFromControls(colorDraft.hue, colorDraft.intensity);
+
+        // Ścieżka suwaka odcienia pokazuje DOKŁADNIE te kolory, które wyjdą przy bieżącej
+        // intensywności — nie ogólną tęczę. Odcienie zarezerwowane dla znaczeń schodzą
+        // do szarości, więc widać je jako martwe odcinki, zanim palec tam trafi.
+        const paintHueTrack = () => {
+            const slider = document.getElementById('color-hue');
+            if (!slider) return;
+            const stops = [];
+            for (let i = 0; i <= 36; i++) {
+                const hue = Math.round((i * 360) / 36) % 360;
+                const hex = colorFromControls(hue, colorDraft.intensity);
+                stops.push(`${isReservedColor(hex) ? 'rgb(var(--ink-3))' : hex} ${(i / 36 * 100).toFixed(2)}%`);
+            }
+            slider.style.setProperty('--slider-track', `linear-gradient(to right, ${stops.join(',')})`);
+            slider.style.setProperty('--slider-thumb', currentDraftColor());
+        };
+
+        // Ścieżka intensywności pokazuje ten sam odcień od najjaśniejszego do najciemniejszego.
+        const paintIntensityTrack = () => {
+            const slider = document.getElementById('color-intensity');
+            if (!slider) return;
+            const stops = [];
+            for (let i = 0; i <= 10; i++) {
+                stops.push(`${colorFromControls(colorDraft.hue, i * 10)} ${i * 10}%`);
+            }
+            slider.style.setProperty('--slider-track', `linear-gradient(to right, ${stops.join(',')})`);
+            slider.style.setProperty('--slider-thumb', currentDraftColor());
+        };
+
+        const renderColorPreview = () => {
+            const me = myMemberNow();
+            const hex = currentDraftColor();
+            const mark = document.getElementById('color-preview-mark');
+            if (mark) {
+                mark.style.backgroundColor = hex;
+                mark.style.color = readableInk(hex);
+                mark.textContent = initials(me ? me.name : '?');
+            }
+            const label = document.getElementById('color-preview-hex');
+            if (label) label.textContent = hex;
+            const note = document.getElementById('color-reserved-note');
+            if (note) {
+                // Ten komunikat pada tylko wtedy, gdy suwak sam odsunął odcień. Bez niego
+                // uchwyt „ucieka" spod palca bez wyjaśnienia, co wygląda na usterkę.
+                const reserved = isReservedColor(colorFromControls(colorDraft.rawHue ?? colorDraft.hue, colorDraft.intensity));
+                note.classList.toggle('hidden', !reserved);
+                note.textContent = reserved
+                    ? 'Ten odcień jest zarezerwowany dla oznaczeń kwot, więc suwak go omija. Przesuń dalej albo zmień intensywność.'
+                    : '';
+            }
+            paintHueTrack();
+            paintIntensityTrack();
+        };
+
+        const renderTakenColors = () => {
+            const wrap = document.getElementById('color-taken');
+            if (!wrap || !groupData) return;
+            const me = myMemberNow();
+            const order = groupData.memberOrder || Object.keys(groupData.members || {});
+            const others = order.filter((id) => !me || id !== me.id);
+            if (others.length === 0) {
+                wrap.innerHTML = `<p class="text-sm text-ink-3">Jesteś na razie sam w tym pokoju.</p>`;
+                return;
+            }
+            wrap.innerHTML = others.map((id) => {
+                const m = groupData.members[id];
+                if (!m) return '';
+                return `<span class="color-taken-item" title="${escapeHtml(m.name)}">
+                    ${avatarHtml(m.name, id, 'w-10 h-10 text-sm')}
+                    <span class="color-taken-name">${escapeHtml(m.name)}</span>
+                </span>`;
             }).join('');
-            const groupRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
-            picker.querySelectorAll('.profile-color-swatch').forEach(sw => {
-                sw.onclick = async () => {
-                    await updateDoc(groupRef, { [`members.${myMember.id}.color`]: sw.dataset.color });
-                    document.getElementById('color-picker-modal').classList.remove('active');
-                    showToast('Zmieniono kolor znaku.');
-                };
-            });
+        };
+
+        const openColorPicker = () => {
+            const me = myMemberNow();
+            if (!me) return;
+            colorDraft = controlsFromColor(colorForMember(me.id, me.name));
+            const hue = document.getElementById('color-hue');
+            const intensity = document.getElementById('color-intensity');
+            if (hue) hue.value = String(colorDraft.hue);
+            if (intensity) intensity.value = String(colorDraft.intensity);
+            renderTakenColors();
+            renderColorPreview();
+            document.getElementById('color-picker-modal').classList.add('active');
+        };
+
+        const setupColorPicker = () => {
+            const hue = document.getElementById('color-hue');
+            const intensity = document.getElementById('color-intensity');
+            if (!hue || !intensity) return;
+
+            hue.oninput = () => {
+                const raw = Number(hue.value);
+                // Odcień zarezerwowany przeskakujemy do najbliższego dozwolonego, ale
+                // ZAPAMIĘTUJEMY surową wartość — inaczej nie da się powiedzieć, dlaczego
+                // uchwyt odskoczył, a interfejs, który rusza się sam bez wyjaśnienia,
+                // czyta się jak zepsuty.
+                colorDraft.rawHue = raw;
+                colorDraft.hue = nearestAllowedHue(raw, colorDraft.intensity);
+                renderColorPreview();
+            };
+            intensity.oninput = () => {
+                colorDraft.intensity = Number(intensity.value);
+                // Zmiana intensywności przesuwa granice stref zarezerwowanych, więc
+                // odcień trzeba sprawdzić ponownie.
+                colorDraft.hue = nearestAllowedHue(colorDraft.hue, colorDraft.intensity);
+                renderColorPreview();
+            };
+
+            const save = document.getElementById('save-color-picker-btn');
+            if (save) save.onclick = async () => {
+                const me = myMemberNow();
+                if (!me || !currentGroupId) return;
+                const hex = currentDraftColor();
+                document.getElementById('color-picker-modal').classList.remove('active');
+                await updateDoc(doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId), {
+                    [`members.${me.id}.color`]: hex,
+                });
+                showToast('Zmieniono kolor znaku.');
+            };
         };
 
         const renderProfile = () => {
@@ -4328,7 +4463,7 @@
                     // Kasownik żetonu miał 24×18 px — poniżej progu trafienia kciukiem.
                     // Teraz jest kołem 32 px w żetonie o wysokości 44 px.
                     return `<span class="chip pl-1 pr-1 py-1 gap-2 h-11">
-                        <span class="w-8 h-8 rounded-full inline-flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style="background-color:${escapeHtml(color)}">${escapeHtml(initials(name))}</span>
+                        <span class="w-8 h-8 rounded-full inline-flex items-center justify-center text-xs font-bold flex-shrink-0" style="background-color:${escapeHtml(color)};color:${readableInk(color)}">${escapeHtml(initials(name))}</span>
                         <span class="text-sm font-bold text-ink">${escapeHtml(name)}</span>
                         <button class="draft-member-remove hit-44 w-8 h-8 rounded-full flex items-center justify-center text-ink-3 text-lg leading-none flex-shrink-0" data-index="${i}" title="Usuń ${escapeHtml(name)} z grupy" aria-label="Usuń ${escapeHtml(name)}">&times;</button>
                     </span>`;
@@ -4386,7 +4521,13 @@
 
                 memberNames.forEach((name, index) => {
                     const id = generateId();
-                    membersMap[id] = { id, name, claimedBy: null, color: PROFILE_COLORS[index % PROFILE_COLORS.length] };
+                    // Kolory rozrzucamy PO PALECIE, a nie po kolei. Paleta jest ułożona
+                    // wzdłuż koła barw, więc branie kolejnych pozycji dawało małej grupie
+                    // same barwy sąsiadujące: przy czterech osobach wychodziły cztery
+                    // odcienie tego samego rejonu. Krok 7 jest względnie pierwszy z 16,
+                    // więc obchodzi całą paletę bez powtórki, a kolejni ludzie dostają
+                    // kolory z przeciwnych stron koła.
+                    membersMap[id] = { id, name, claimedBy: null, color: PROFILE_COLORS[(index * 7) % PROFILE_COLORS.length] };
                     memberOrder.push(id); // Add member ID to the order array
                 });
 
@@ -4770,8 +4911,9 @@
             const colorBtn = document.getElementById('profile-color-btn');
             if (colorBtn) colorBtn.onclick = () => {
                 document.getElementById('mark-modal').classList.remove('active');
-                document.getElementById('color-picker-modal').classList.add('active');
+                openColorPicker();
             };
+            setupColorPicker();
             const closeColorBtn = document.getElementById('close-color-picker-btn');
             if (closeColorBtn) closeColorBtn.onclick = () => document.getElementById('color-picker-modal').classList.remove('active');
             const closeChoiceBtn = document.getElementById('close-choice-modal');

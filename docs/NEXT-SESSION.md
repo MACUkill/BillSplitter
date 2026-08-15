@@ -43,6 +43,16 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   wyboru otwierał się pod arkuszem, który go wywołał.
 - **Motyw domyślny jest ciemny** i nie idzie już za ustawieniem systemu. Jasny zostaje
   wyborem w zakładce „Ty".
+- **Kolor znaku wybiera się DWOMA SUWAKAMI**, nie z zamkniętej palety. `members.X.color`
+  przyjmuje teraz dowolny poprawny zapis szesnastkowy — nie dopisuj z powrotem
+  sprawdzania przynależności do `IDENTITY_COLORS`, bo odrzuci własny wybór człowieka.
+- **Litera na znaku dobiera kolor sama** (`readableInk`). Nie wpisuj `text-white` przy
+  kolorze tożsamości: to jedno założenie trzymało wcześniej całą paletę w ciemnym paśmie
+  i przez nie w aplikacji nie dało się mieć żółtego.
+- **Listy są JEDNOKOLUMNOWE na każdej szerokości.** Siatka dwukolumnowa od 768 px została
+  wycofana (`docs/UI-UX.md` §19.12) i nie wraca bez rozmowy z właścicielem.
+- **Ikony PWA są plikami właściciela** (`public/icons/icon-*.png`). `tools/make-icons.mjs`
+  ich NIE generuje — skaluje tylko przezroczysty znak do wnętrza aplikacji.
 - **Sondy badające ruch muszą wyłączyć tryb ograniczonego ruchu.** Chrome bez interfejsu
   zgłasza `prefers-reduced-motion: reduce` domyślnie, więc bez
   `page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])`

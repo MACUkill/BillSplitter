@@ -79,7 +79,8 @@ Funkcje, które redesign musi zachować w całości:
 - Przypomnienia (dzwonek, skrzynka, push). Bramka anty-spamowa: dziesięć sekund między
   przypomnieniami do tej samej osoby (zmienione 2026-08-05 z sześciu godzin — produkt ma
   domykać dług, a nie chronić dłużnika; blokujemy tylko walenie w przycisk co sekundę).
-- Profil: kolor, zdjęcie, metody płatności (konto/IBAN, telefon, Revolut, PayPal, Wise,
+- Profil: kolor znaku wybierany DWOMA SUWAKAMI (odcień i intensywność, z omijaniem
+  barw o znaczeniu i gwarancją kontrastu litery), zdjęcie, metody płatności (konto/IBAN, telefon, Revolut, PayPal, Wise,
   własne). Metody, które da się otworzyć, mają przycisk otwierający aplikację albo stronę;
   kopiowanie zostaje obok. Podsumowanie „ile kto wydał" mieszka w ustawieniach pokoju.
 - Zdjęcia paragonów z podglądem i licznikiem miejsca; ukrywanie rachunków;

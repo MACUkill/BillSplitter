@@ -442,6 +442,108 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     color: rgb(var(--ink-2));
   }
 
+  /* --- WYBÓR KOLORU ZNAKU: DWA SUWAKI --------------------------------------
+     Suwak systemowy wygląda w każdej przeglądarce inaczej i ma uchwyt wielkości
+     ziarnka grochu, więc jest tu przebrany w całości. Uchwyt ma 28 px rysunku
+     i 44 px celu (biała obwódka daje kontrast na KAŻDYM kolorze ścieżki, także
+     na jasnym żółtym — dlatego jest podwójna: biała i ciemna). */
+  .color-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 2.75rem;
+    background: none;
+    outline: none;
+    /* Ścieżkę maluje `background-image` ustawiany z main.js: pokazuje DOKŁADNIE te
+       kolory, które wyjdą przy bieżącej intensywności, a nie ogólną tęczę. */
+  }
+
+  .color-slider::-webkit-slider-runnable-track {
+    height: 1.25rem;
+    border-radius: 999px;
+    background: var(--slider-track, rgb(var(--surface-2)));
+    box-shadow: inset 0 0 0 1px rgb(var(--ink) / 0.10);
+  }
+  .color-slider::-moz-range-track {
+    height: 1.25rem;
+    border-radius: 999px;
+    background: var(--slider-track, rgb(var(--surface-2)));
+    box-shadow: inset 0 0 0 1px rgb(var(--ink) / 0.10);
+  }
+
+  .color-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 1.75rem;
+    height: 1.75rem;
+    margin-top: -0.25rem;
+    border-radius: 999px;
+    background-color: var(--slider-thumb, rgb(var(--ink)));
+    box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 4px rgb(14 15 19 / 0.35), 0 2px 6px rgb(0 0 0 / 0.3);
+    cursor: pointer;
+  }
+  .color-slider::-moz-range-thumb {
+    width: 1.75rem;
+    height: 1.75rem;
+    border: none;
+    border-radius: 999px;
+    background-color: var(--slider-thumb, rgb(var(--ink)));
+    box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 4px rgb(14 15 19 / 0.35), 0 2px 6px rgb(0 0 0 / 0.3);
+    cursor: pointer;
+  }
+
+  .color-preview {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.875rem 1rem;
+    border-radius: theme('borderRadius.block');
+    background-color: rgb(var(--surface-2));
+  }
+
+  .color-preview-mark {
+    flex-shrink: 0;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    transition: background-color 120ms linear, color 120ms linear;
+  }
+
+  /* Kolory zajęte przez resztę ekipy: same znaki z imionami pod spodem, przewijane
+     w poziomie. Przy dwudziestu osobach to jest rząd do przejrzenia wzrokiem,
+     a nie lista do czytania. */
+  .color-taken {
+    display: flex;
+    gap: 0.75rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    scrollbar-width: none;
+  }
+  .color-taken::-webkit-scrollbar { display: none; }
+
+  .color-taken-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+    width: 3.25rem;
+  }
+  .color-taken-name {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: rgb(var(--ink-3));
+  }
+
   /* --- ŻYWY PARAGON -------------------------------------------------------
      ZNAK TEJ APLIKACJI. Rachunek czyta się jak paragon, a zdjęcia ekipy lądują
      na liniach w chwili, gdy ktoś odklika swoje — na oczach patrzącego.
