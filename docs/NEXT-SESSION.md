@@ -27,9 +27,18 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   wyprzewinięte poza kontener. Blok `AUDIT` w tym pliku jest szablonem znakowym: apostrof
   odwrotny w komentarzu wywala cały skrypt.
 
-**Czeka na decyzję właściciela:** `docs/animacje-nowego-rachunku.html` — pięć wariantów
-animacji otwierania arkusza nowego rachunku. W aplikacji stoi wariant 1 („nad paskiem").
-Podmiana to jedna sekcja w `src/tailwind.css`.
+- **Animacja nowego rachunku: wariant „rozwinięcie z koła"** (wybór właściciela
+  2026-08-15). Włącza ją klasa `anim-reveal` na `#new-bill-modal` w `index.html`.
+  Powrót do poprzedniego wariantu to podmiana tego jednego słowa na `anim-sprout` —
+  oba warianty stoją obok siebie w `src/tailwind.css`. Właściciel zastrzegł, że może
+  wrócić, więc **nie kasuj `anim-sprout`**.
+- **Sondy badające ruch muszą wyłączyć tryb ograniczonego ruchu.** Chrome bez interfejsu
+  zgłasza `prefers-reduced-motion: reduce` domyślnie, więc bez
+  `page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])`
+  sonda bada ścieżkę bez animacji i nic o niej nie mówi. Tak właśnie wyszło na jaw, że
+  nadpisanie dla ograniczonego ruchu przegrywało specyficznością (`docs/UI-UX.md` §19.6.1).
+
+Pole testowe z pięcioma wariantami zostaje w `docs/animacje-nowego-rachunku.html`.
 
 ---
 

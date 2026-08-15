@@ -1155,18 +1155,60 @@ gołym okiem:
 3. Safari ma to API dopiero od osiemnastki, więc większość ekipy nigdy tej animacji nie widziała.
 
 **W zamian:** okno `new-bill-modal` nosi klasę `keeps-deck`. Pasek ZOSTAJE na ekranie,
-arkusz wyrasta tuż nad nim z zaczepieniem na dole (`transform-origin: bottom center`),
-a koło [+] obraca się o 135° w krzyżyk i jest przyciskiem zamknięcia. Nic nie przenika,
-nic nie zmienia koloru, droga powrotna jest odwrotnością drogi otwarcia, a całość to
-zwykłe `transform` i `opacity` — działa wszędzie tak samo.
+a koło [+] obraca się o 135° w krzyżyk i jest przyciskiem zamknięcia. Zakładki pod
+otwartym arkuszem gasną i przestają być klikalne: pasek trzyma w tej chwili jedną rolę.
 
-Zakładki pod otwartym arkuszem gasną i przestają być klikalne: pasek trzyma w tej chwili
-jedną rolę.
+**Wariant wejścia wybiera JEDNA KLASA na oknie w `index.html`.** Oba warianty żyją
+w `src/tailwind.css` obok siebie, bo właściciel zastrzegł możliwość powrotu:
 
-**Do rozstrzygnięcia przez właściciela.** `docs/animacje-nowego-rachunku.html` to pole
-testowe z pięcioma wariantami tej animacji (nad paskiem, rozwinięcie z koła, kaskada,
-wyciągnięcie z paska, podniesienie ekranu), każdy z argumentami za i przeciw. W aplikacji
-stoi wariant 1. Podmiana to jedna sekcja w `src/tailwind.css`.
+| Klasa | Ruch | Stan |
+|---|---|---|
+| `anim-reveal` | okrąg rośnie z punktu, w którym stoi [+], i ODSŁANIA arkusz | **włączone** (wybór właściciela 2026-08-15) |
+| `anim-sprout` | arkusz wyrasta nad paskiem z zaczepieniem na dole | gotowe do powrotu |
+
+Cofnięcie to podmiana jednego słowa w znacznikach i nic więcej.
+
+**Dlaczego „rozwinięcie z koła" nie powtarza błędu morfowania.** Arkusz od pierwszej
+klatki ma swój docelowy kolor i swoje miejsce — zmienia się wyłącznie to, ile go widać.
+Nie ma dwóch kształtów przenikających się nawzajem, więc nie ma czym mignąć.
+
+Środek okręgu to **nie** dno arkusza, tylko `calc(100% + 4rem)`: arkusz stoi 7,25 rem nad
+dolną krawędzią, a koło [+] jakieś 3,25 rem, czyli 4 rem niżej. Bez tej poprawki okrąg
+wychodziłby z krawędzi arkusza zamiast z przycisku, a cały sens wariantu polega na tym,
+że wychodzi DOKŁADNIE z przycisku. `calc()` trzyma to niezależnie od wysokości arkusza.
+
+**Zamknięcie dostało własną animację** (`sheet-conceal` / `sheet-shrink`, 280 ms, krzywa
+wyjściowa). Wcześniej zamknięcia nie było w ogóle: `.modal` bez klasy `active` dostaje
+`display: none` w tej samej klatce, więc arkusz po prostu znikał. Teraz najpierw wchodzi
+klasa `is-closing`, a `active` schodzi dopiero po animacji, z zapasowym licznikiem czasu
+na wypadek, gdyby `animationend` nie doszedł (karta w tle, przerwana animacja).
+
+### 19.6.1 Dwa błędy złapane sondą, nie okiem
+
+Warto zapisać, bo oba były niewidoczne w zrzutach.
+
+1. **Tryb ograniczonego ruchu nie działał.** Nadpisanie w `@media (prefers-reduced-motion)`
+   miało trzy klasy w selektorze, a reguła włączająca animację — cztery (doszła klasa
+   wariantu). Krótszy selektor przegrywał specyficznością i animacja leciała mimo
+   ustawienia systemowego. Wykryte przypadkiem: **Chrome bez interfejsu zgłasza
+   `prefers-reduced-motion: reduce` domyślnie**, więc sonda badała ścieżkę bez ruchu
+   i pokazała, że mimo to `animation-name` jest ustawiony. Dla części ludzi to nie jest
+   preferencja, tylko warunek korzystania z telefonu bez mdłości.
+   *Wniosek na przyszłość:* sondy sprawdzające ruch muszą wołać
+   `page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])`,
+   inaczej testują coś innego, niż się wydaje.
+2. **Koło [+] było martwe przez 280 ms po zamknięciu.** Klasa `active` wisi przez czas
+   animacji wyjścia, więc stuknięcie w tym oknie trafiało w gałąź „zamknij", ta wychodziła
+   od razu (bo już się zamyka) i przycisk nie robił nic. Arkusz w trakcie zamykania liczy
+   się teraz jako ZAMKNIĘTY.
+
+Przy okazji: zsunięcie arkusza palcem nie zeruje już przesunięcia przed zamknięciem.
+Wcześniej arkusz podskakiwał z powrotem na miejsce i dopiero stamtąd znikał, czyli gest
+kończył się ruchem w przeciwną stronę.
+
+**Pole testowe zostaje:** `docs/animacje-nowego-rachunku.html` ma pięć wariantów
+(nad paskiem, rozwinięcie z koła, kaskada, wyciągnięcie z paska, podniesienie ekranu),
+każdy z argumentami za i przeciw.
 
 ### 19.7 Rachunek: tryb podziału zamiast ręcznego statusu
 

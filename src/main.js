@@ -404,8 +404,16 @@
                 if (!dragging) return;
                 const velocity = dy / Math.max(1, performance.now() - startedAt);
                 const shouldClose = decided && (dy > SHEET_CLOSE_PX || velocity > SHEET_CLOSE_VELOCITY);
-                reset();
-                if (shouldClose) closeModal(modal);
+                if (!shouldClose) { reset(); return; }
+                // Przy zamknięciu NIE zerujemy przesunięcia od razu: arkusz podskoczyłby
+                // wtedy z powrotem na miejsce i dopiero stamtąd zniknął, czyli gest palca
+                // kończyłby się ruchem w przeciwną stronę. Przesunięcie znika dopiero po
+                // domknięciu okna, gdy i tak nikt go nie widzi.
+                dragging = false;
+                decided = false;
+                sheet.classList.remove('is-dragging');
+                closeModal(modal);
+                setTimeout(() => { sheet.style.transform = ''; dy = 0; }, 340);
             };
 
             head.addEventListener('pointerdown', onDown);
@@ -4404,16 +4412,20 @@
                 'payer-claim-modal',
             ]);
             const openModals = () => [...document.querySelectorAll('.modal.active')];
+            // Zamykamy przez `closeModal`, nie przez zdjęcie klasy: okno nowego rachunku
+            // ma własną drogę wyjścia (odwrotna animacja plus obrót koła [+] z powrotem
+            // w plus). Zdjęcie samej klasy zostawiłoby krzyżyk w pasku przy zamkniętym
+            // oknie — przycisk kłamałby o swoim stanie.
             const closeTopModal = () => {
                 const top = openModals().pop();
-                if (top && !CONFIRM_MODALS.has(top.id)) top.classList.remove('active');
+                if (top && !CONFIRM_MODALS.has(top.id)) closeModal(top);
             };
 
             document.addEventListener('click', (e) => {
                 const modal = e.target.closest('.modal');
                 // Kliknięcie MUSI trafić w samo tło — kliknięcie w arkusz nie zamyka okna.
                 if (modal && e.target === modal && !CONFIRM_MODALS.has(modal.id)) {
-                    modal.classList.remove('active');
+                    closeModal(modal);
                 }
             });
 
@@ -4772,8 +4784,28 @@
                 syncPersonSearchCount(peopleWrap);
             };
 
+            // ZAMYKANIE MA WŁASNĄ ANIMACJĘ, więc nie może być zwykłym zdjęciem klasy:
+            // `.modal` bez `.active` dostaje `display: none` w tej samej klatce i arkusz
+            // znika, zanim cokolwiek zdąży się wydarzyć. Dlatego najpierw `is-closing`
+            // (odwrotna animacja), a `active` schodzi dopiero po niej.
+            //
+            // `closeToken` chroni przed wyścigiem: gdy ktoś wciśnie [+] w trakcie
+            // zamykania, sprzątanie z poprzedniego przebiegu nie ma prawa zgasić
+            // świeżo otwartego arkusza.
+            let closeToken = 0;
+            let closeTimer = null;
+
+            const finishClose = () => {
+                modal.classList.remove('is-closing', 'active');
+            };
+
             const openNewBillSheet = () => {
                 if (!groupData) return;
+                // Przerywamy trwające zamykanie: arkusz ma się otworzyć od razu,
+                // a nie po dojechaniu poprzedniej animacji.
+                closeToken++;
+                clearTimeout(closeTimer);
+                modal.classList.remove('is-closing');
                 newBillState = { name: '', type: 'advanced', participantIds: Object.keys(groupData.members || {}) };
                 nameInput.value = '';
                 renderNewBillPeople();
@@ -4788,15 +4820,42 @@
             };
 
             closeNewBillSheet = () => {
-                modal.classList.remove('active');
+                if (!modal.classList.contains('active') || modal.classList.contains('is-closing')) return;
+                // Koło [+] wraca z krzyżyka w plus OD RAZU, równolegle z arkuszem:
+                // to jeden ruch w dwóch miejscach, a nie dwa zdarzenia po kolei.
                 addBtn.setAttribute('aria-expanded', 'false');
                 addBtn.setAttribute('aria-label', 'Nowy rachunek');
+
+                if (prefersReducedMotion()) { finishClose(); return; }
+
+                const sheet = modal.querySelector('.sheet');
+                const token = ++closeToken;
+                modal.classList.add('is-closing');
+
+                const done = () => {
+                    // Przerwane zamykanie (ktoś w międzyczasie otworzył okno na nowo)
+                    // nie ma prawa zgasić tego, co stoi teraz na ekranie.
+                    if (token !== closeToken) return;
+                    clearTimeout(closeTimer);
+                    finishClose();
+                };
+                if (sheet) sheet.addEventListener('animationend', done, { once: true });
+                // Zapas na wypadek, gdyby zdarzenie nie doszło: karta w tle, przerwana
+                // animacja, przeglądarka bez `animationend` na `clip-path`. Bez tego
+                // okno zostałoby otwarte na zawsze, a to gorsze niż brak animacji.
+                closeTimer = setTimeout(done, 600);
             };
 
             // Jeden przycisk, dwa stany. Otwiera i zamyka to samo okno, więc nie ma
             // sytuacji, w której arkusz stoi otwarty, a [+] dalej wygląda jak „dodaj".
+            //
+            // Arkusz W TRAKCIE ZAMYKANIA liczy się jako ZAMKNIĘTY. Sama klasa `active`
+            // wisi jeszcze przez czas animacji, więc bez tego rozróżnienia stuknięcie
+            // w [+] w tych 280 ms trafiało w gałąź „zamknij", ta wychodziła od razu
+            // (bo już się zamyka) i przycisk przez chwilę wyglądał na martwy.
             addBtn.onclick = () => {
-                if (modal.classList.contains('active')) closeNewBillSheet();
+                const otwarty = modal.classList.contains('active') && !modal.classList.contains('is-closing');
+                if (otwarty) closeNewBillSheet();
                 else openNewBillSheet();
             };
 
@@ -4813,13 +4872,9 @@
             });
 
             cancelBtn.onclick = () => closeNewBillSheet();
-            // `stopPropagation`, bo globalny strażnik tła zdejmuje klasę wprost, a tutaj
-            // trzeba jeszcze cofnąć obrót koła [+] w pasku.
-            modal.addEventListener('click', (e) => {
-                if (e.target !== modal) return;
-                e.stopPropagation();
-                closeNewBillSheet();
-            });
+            // Kliknięcie w tło obsługuje globalny strażnik w `setupGlobalModalListeners`:
+            // przechodzi przez `closeModal`, a ten dla tego okna woła `closeNewBillSheet`.
+            // Osobny nasłuch był tu potrzebny, dopóki strażnik zdejmował klasę wprost.
 
             createBtn.onclick = async () => {
                 if (newBillState.participantIds.length === 0) {

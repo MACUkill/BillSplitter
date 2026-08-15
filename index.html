@@ -928,9 +928,15 @@ the verdict, and DESIGN.md
     </div>
 
     <!-- NOWY RACHUNEK — jedyny arkusz z klasą `keeps-deck`: pasek zostaje na ekranie,
-         a koło [+] obraca się w krzyżyk i pełni rolę zamknięcia. Arkusz wyrasta NAD
-         paskiem, więc widać, skąd się wziął, i nic nie przenika w nic. -->
-    <div id="new-bill-modal" class="modal keeps-deck fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+         a koło [+] obraca się w krzyżyk i pełni rolę zamknięcia.
+
+         WYBÓR ANIMACJI WEJŚCIA: klasa `anim-reveal` albo `anim-sprout`. Obie są
+         zdefiniowane w `src/tailwind.css`, więc powrót do poprzedniej to podmiana
+         jednego słowa TUTAJ i nic więcej.
+           anim-reveal — rozwinięcie z koła, okrąg rośnie z punktu, w którym stoi [+]
+                         (włączone 2026-08-15, wybór właściciela)
+           anim-sprout — arkusz wyrasta nad paskiem (poprzednie ustawienie) -->
+    <div id="new-bill-modal" class="modal keeps-deck anim-reveal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet w-full max-w-lg">
             <div class="sheet-head">
                 <div class="sheet-grip" aria-hidden="true"></div>

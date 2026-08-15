@@ -449,13 +449,21 @@ Czas w dół 90 ms, w górę 220 ms — szybko przyjmuje, wolniej oddaje, jak rz
 Na iOS to wszystko jest MARTWE, dopóki dokument nie ma choćby jednego nasłuchu dotyku;
 `main.js` zakłada pusty nasłuch `touchstart` na `body` i to on odblokowuje cały odzew.
 
-**Nowy rachunek: arkusz wyrasta nad paskiem.** Pasek zostaje na ekranie, arkusz rośnie
-tuż nad nim z zaczepieniem na dole, a koło [+] obraca się o 135° w krzyżyk i jest
-przyciskiem zamknięcia. Morfowanie koła w arkusz przez View Transitions API zostało
-**odrzucone i nie wraca**: limonka przenikała w biel (mignięcie, nie przemiana), zamknięcie
-pokazywało wielki limonkowy kształt rozciągnięty na cały arkusz, a Safari ma to API dopiero
-od osiemnastki, więc większość ekipy nigdy tej animacji nie widziała. Obecne rozwiązanie
-to zwykłe `transform` i `opacity`, więc wygląda tak samo wszędzie.
+**Nowy rachunek: okrąg rozwija arkusz z przycisku.** Pasek zostaje na ekranie, koło [+]
+obraca się o 135° w krzyżyk i jest przyciskiem zamknięcia, a arkusz jest ODSŁANIANY
+okręgiem rosnącym dokładnie z punktu, w którym stoi [+]. Od pierwszej klatki ma swój
+docelowy kolor i swoje miejsce — zmienia się wyłącznie to, ile go widać.
+
+Morfowanie koła w arkusz przez View Transitions API zostało **odrzucone i nie wraca**:
+limonka przenikała w biel (mignięcie, nie przemiana), zamknięcie pokazywało wielki
+limonkowy kształt rozciągnięty na cały arkusz, a Safari ma to API dopiero od osiemnastki.
+Reguła, która z tego wynika: **dwa kształty o różnej jasności nie mają prawa się
+przenikać** — jeśli coś ma wyrosnąć z przycisku, ma być odsłaniane albo przesuwane,
+nigdy wmieszane w drugi kolor.
+
+Wariant wejścia wybiera jedna klasa na oknie (`anim-reveal` albo `anim-sprout`); oba
+warianty stoją obok siebie w arkuszu stylów. **Zamknięcie zawsze idzie tą samą drogą
+wstecz i szybciej**: otwarcie ma coś pokazać, zamknięcie ma zejść z drogi.
 
 ## Do's and Don'ts
 

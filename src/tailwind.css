@@ -1024,7 +1024,10 @@
   /* Zakładki pod otwartym arkuszem przestają być klikalne: pasek trzyma w tej chwili
      jedną rolę — zamknięcie arkusza. Skakanie po zakładkach z otwartym oknem zostawiało
      niedokończoną decyzję za plecami. */
-  body:has(.modal.keeps-deck.active) .deck-btn {
+  /* `:not(.is-closing)` — zakładki odzyskują pełną jasność w chwili, gdy arkusz
+     zaczyna znikać, a nie dopiero po dojechaniu jego animacji. Pasek ma być gotowy
+     do pracy zanim palec zdąży się przesunąć. */
+  body:has(.modal.keeps-deck.active:not(.is-closing)) .deck-btn {
     opacity: 0.35;
     pointer-events: none;
   }
@@ -1104,16 +1107,79 @@
     padding-right: 0.75rem;
   }
 
+  /* ----------------------------------------------------------------------
+     DWA WARIANTY WEJŚCIA ARKUSZA. Wybór robi JEDNA KLASA na `#new-bill-modal`
+     w `index.html`:
+
+         anim-reveal  — rozwinięcie z koła   (włączone, wybór właściciela 2026-08-15)
+         anim-sprout  — wyrastanie nad paskiem (poprzednie, gotowe do powrotu)
+
+     Cofnięcie do poprzedniego wariantu to podmiana jednego słowa w znacznikach.
+     Oba warianty siedzą tutaj celowo: właściciel zastrzegł, że może wrócić,
+     a wariant wyrzucony z arkusza trzeba by odtwarzać z pamięci.
+     ---------------------------------------------------------------------- */
+
+  /* --- WARIANT „NAD PASKIEM" (anim-sprout) ------------------------------- */
   @keyframes sheet-sprout {
     from { opacity: 0; transform: translateY(1.5rem) scale(0.94); }
     to   { opacity: 1; transform: translateY(0) scale(1); }
   }
 
-  .modal.keeps-deck.active .sheet {
+  @keyframes sheet-shrink {
+    from { opacity: 1; transform: translateY(0) scale(1); }
+    to   { opacity: 0; transform: translateY(1.5rem) scale(0.94); }
+  }
+
+  .modal.keeps-deck.anim-sprout.active .sheet {
     /* Punkt zaczepienia na dole i w środku, czyli tam, gdzie stoi koło [+]:
        arkusz rośnie z paska, a nie ze swojego środka. */
     transform-origin: bottom center;
     animation: sheet-sprout 300ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+  .modal.keeps-deck.anim-sprout.active.is-closing .sheet {
+    transform-origin: bottom center;
+    animation: sheet-shrink 220ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+
+  /* --- WARIANT „ROZWINIĘCIE Z KOŁA" (anim-reveal) ------------------------
+     Arkusz nie wjeżdża: jest ODSŁANIANY okręgiem rosnącym z punktu, w którym
+     stoi koło [+]. Od pierwszej klatki ma swój docelowy kolor i swoje miejsce,
+     więc nie ma tu żadnego przenikania barw — a to właśnie przenikanie limonki
+     w biel zabiło poprzednie morfowanie przez View Transitions API.
+
+     Środek okręgu NIE jest dnem arkusza. Arkusz stoi 7,25 rem nad dolną krawędzią,
+     a środek koła [+] jakieś 3,25 rem — czyli 4 rem niżej. Bez tej poprawki okrąg
+     wychodziłby z dolnej krawędzi arkusza zamiast z przycisku, a cały sens wariantu
+     polega na tym, że wychodzi DOKŁADNIE z przycisku. `calc()` trzyma to niezależnie
+     od wysokości arkusza, więc dłuższy formularz niczego nie rozjeżdża. */
+  @keyframes sheet-reveal {
+    from { clip-path: circle(0% at 50% calc(100% + 4rem)); }
+    to   { clip-path: circle(150% at 50% calc(100% + 4rem)); }
+  }
+
+  @keyframes sheet-conceal {
+    from { clip-path: circle(150% at 50% calc(100% + 4rem)); }
+    to   { clip-path: circle(0% at 50% calc(100% + 4rem)); }
+  }
+
+  .modal.keeps-deck.anim-reveal.active .sheet {
+    animation: sheet-reveal 420ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+  /* Zamknięcie idzie tą samą drogą wstecz i SZYBCIEJ: otwarcie ma coś pokazać,
+     zamknięcie ma zejść z drogi. Krzywa też inna — wolny start przy chowaniu
+     wygląda jak zawahanie. */
+  .modal.keeps-deck.anim-reveal.active.is-closing .sheet {
+    animation: sheet-conceal 280ms cubic-bezier(0.4, 0, 1, 1) both;
+  }
+
+  /* Przyciemnienie tła musi wychodzić razem z arkuszem. Bez tego okno znikało,
+     a szara zasłona gasła osobno, ułamek sekundy później. */
+  @keyframes scrim-out {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+  }
+  .modal.active.is-closing {
+    animation: scrim-out 240ms ease-out both;
   }
 
   /* Koło [+] jest w tej chwili przyciskiem zamknięcia i mówi to obrotem. 135 stopni,
@@ -1124,8 +1190,23 @@
   }
   .deck-add[aria-expanded='true'] i { transform: rotate(135deg); }
 
+  /* Selektory MUSZĄ wymieniać klasę wariantu (`anim-reveal` / `anim-sprout`).
+     Reguły włączające animację mają cztery klasy, więc krótsze nadpisanie z trzema
+     przegrywało specyficznością i tryb ograniczonego ruchu po prostu nie działał —
+     złapane sondą, bo Chrome bez interfejsu zgłasza `prefers-reduced-motion: reduce`
+     domyślnie. Dla części ludzi to nie jest preferencja, tylko warunek korzystania
+     z telefonu bez mdłości, więc ta reguła nie może być ozdobą. */
   @media (prefers-reduced-motion: reduce) {
-    .modal.keeps-deck.active .sheet { animation: none; }
+    .modal.keeps-deck.anim-reveal.active .sheet,
+    .modal.keeps-deck.anim-reveal.active.is-closing .sheet,
+    .modal.keeps-deck.anim-sprout.active .sheet,
+    .modal.keeps-deck.anim-sprout.active.is-closing .sheet,
+    .modal.active.is-closing {
+      animation: none;
+      /* Bez tego arkusz zostałby przycięty do zera przez ostatnią klatkę `both`
+         i po prostu by go nie było. */
+      clip-path: none;
+    }
     .deck-add i { transition: none; }
   }
 
