@@ -53,6 +53,15 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   wycofana (`docs/UI-UX.md` §19.12) i nie wraca bez rozmowy z właścicielem.
 - **Ikony PWA są plikami właściciela** (`public/icons/icon-*.png`). `tools/make-icons.mjs`
   ich NIE generuje — skaluje tylko przezroczysty znak do wnętrza aplikacji.
+- **Po zmianie nazwy, ikon albo manifestu PODBIJ `CACHE` w `public/sw.js`.** Handler
+  `activate` kasuje wszystkie pamięci o innej nazwie i to jedyny sposób, żeby telefon
+  wyrzucił zasoby o niezmiennych nazwach. `manifest.json` i `/icons/*` idą teraz
+  najpierw z sieci (`isIdentity` w `sw.js`), bo iOS bierze podpowiedź nazwy przy
+  dodawaniu do ekranu początkowego z `short_name` w manifeście — a stary manifest
+  z pamięci podręcznej podpowiadał starą nazwę mimo świeżej strony.
+- **Skrót już dodany do ekranu początkowego NIE zaktualizuje się nigdy.** iOS zapisuje
+  nazwę i ikonę w chwili dodania. Przy zmianie znaku trzeba usunąć skrót i dodać go
+  ponownie — to nie jest usterka do naprawienia w kodzie.
 - **Sondy badające ruch muszą wyłączyć tryb ograniczonego ruchu.** Chrome bez interfejsu
   zgłasza `prefers-reduced-motion: reduce` domyślnie, więc bez
   `page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])`

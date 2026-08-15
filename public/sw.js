@@ -2,7 +2,14 @@
 // Offline app-shell przez runtime caching (bez precache-manifestu — Vite hashuje nazwy).
 // Strategia: network-first dla nawigacji (zawsze świeża wersja gdy online, fallback offline),
 //            cache-first + odświeżenie w tle (stale-while-revalidate) dla statycznych zasobów.
-const CACHE = 'billsplitter-v2';
+// NAZWA PAMIĘCI PODRĘCZNEJ JEST WERSJONOWANA i to nie jest kosmetyka.
+// Handler `activate` kasuje WSZYSTKIE pamięci o innej nazwie, więc podbicie tej stałej
+// jest jedynym sposobem, żeby telefon wyrzucił zasoby o niezmiennych nazwach: manifest,
+// ikony, `index.html`. Zasoby z katalogu `assets` mają skrót w nazwie i odnawiają się
+// same, ale `/icons/icon-192x192.png` nazywa się tak samo przed i po podmianie rysunku.
+//
+// PODBIJ TĘ WERSJĘ przy każdej zmianie nazwy aplikacji, ikon albo manifestu.
+const CACHE = 'billiada-v3';
 
 self.addEventListener('install', () => {
   // Nowy SW przejmuje od razu — bez czekania na zamknięcie kart.
@@ -87,7 +94,35 @@ self.addEventListener('fetch', (event) => {
   const sameOrigin = url.origin === self.location.origin;
   if (!sameOrigin && !CACHEABLE_HOSTS.includes(url.hostname)) return;
 
-  // Statyczne zasoby (JS/CSS/ikony/fonty, też CDN): cache-first + odświeżenie w tle.
+  // TOŻSAMOŚĆ APLIKACJI IDZIE ZAWSZE Z SIECI, nie z pamięci podręcznej.
+  //
+  // Manifest i ikony mają NIEZMIENNE nazwy plików, więc przy strategii „najpierw cache"
+  // telefon trzymał je w nieskończoność. Objaw zgłoszony przez właściciela: iPhone przy
+  // dodawaniu do ekranu początkowego podpowiadał starą nazwę aplikacji, choć na serwerze
+  // od dawna była nowa. To samo dotyczyłoby podmienionego rysunku ikony.
+  //
+  // Te pliki są malutkie i pobierane rzadko (raz na wejście), więc „najpierw sieć"
+  // nic nie kosztuje, a offline i tak spada do kopii z pamięci.
+  const isIdentity = sameOrigin && (url.pathname === '/manifest.json' || url.pathname.startsWith('/icons/'));
+  if (isIdentity) {
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(req, { cache: 'no-cache' });
+        if (fresh && fresh.ok) {
+          const cache = await caches.open(CACHE);
+          cache.put(req, fresh.clone()).catch(() => {});
+        }
+        return fresh;
+      } catch (_) {
+        const cache = await caches.open(CACHE);
+        return (await cache.match(req)) || Response.error();
+      }
+    })());
+    return;
+  }
+
+  // Statyczne zasoby (JS/CSS/fonty, też CDN): cache-first + odświeżenie w tle.
+  // Ich nazwy niosą skrót zawartości, więc stara kopia nigdy nie udaje nowej.
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(req);

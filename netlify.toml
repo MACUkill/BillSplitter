@@ -24,3 +24,12 @@
   for = "/manifest.json"
   [headers.values]
     Cache-Control = "no-cache"
+
+# Ikony też nie mogą siedzieć w pamięci podręcznej. Mają NIEZMIENNE nazwy plików
+# (`icon-192x192.png` nazywa się tak samo przed i po podmianie rysunku), więc bez tego
+# nagłówka przeglądarka pokazuje stary znak jeszcze długo po wydaniu nowego.
+# Zasoby z katalogu `assets` mają skrót zawartości w nazwie i tego problemu nie mają.
+[[headers]]
+  for = "/icons/*"
+  [headers.values]
+    Cache-Control = "no-cache"
