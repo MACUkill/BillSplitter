@@ -484,6 +484,7 @@
             setupGlobalModalListeners();
             setupPwaInstallButton();
             setupDeckNav();
+            pinDeckToVisualViewport();
             setupPersonSearch();
             registerServiceWorker();
 
@@ -770,6 +771,53 @@
             // z „Opuść pokój": tam zwalniamy imię, tu tylko wychodzimy.
             const roomsBtn = document.getElementById('back-to-rooms-btn');
             if (roomsBtn) roomsBtn.onclick = () => goToRoomsList();
+        };
+
+        // --- PASEK NAWIGACJI PRZYPIĘTY DO WIDOCZNEGO OBSZARU OKNA -------------------
+        //
+        // `position: fixed` przypina do dołu UKŁADU strony, a na iPhonie układ sięga pod
+        // pasek Safari. Skutek: przy przewijaniu, gdy przeglądarka chowa i przywraca swój
+        // pasek, nawigacja jeździ razem z nim. Zgłoszenie właściciela: „w zakładce Profil
+        // nawigacja porusza się przy scrollowaniu".
+        //
+        // CSS o tym nie wie nic — jedynym źródłem tej informacji jest `window.visualViewport`.
+        // Liczymy, ile dolnej części układu jest w tej chwili przykryte, i podnosimy pasek
+        // dokładnie o tyle. Wynik: pasek stoi nieruchomo względem tego, co człowiek widzi.
+        //
+        // W aplikacji zainstalowanej na ekranie początkowym nie ma paska przeglądarki,
+        // więc poprawka wychodzi zerowa i nic się nie dzieje. To jest w porządku:
+        // ten kod ma naprawiać Safari, a nie zastępować `env(safe-area-inset-bottom)`.
+        const KEYBOARD_MIN_PX = 140; // mniej to pasek przeglądarki, więcej to klawiatura
+
+        const pinDeckToVisualViewport = () => {
+            const vv = window.visualViewport;
+            const deck = document.getElementById('deck-nav');
+            if (!vv || !deck) return;
+
+            let queued = false;
+            const apply = () => {
+                queued = false;
+                const layout = document.documentElement.clientHeight;
+                const covered = layout - (vv.height + vv.offsetTop);
+                // Klawiatura to inna sprawa niż pasek przeglądarki: tam pasek nawigacji
+                // ma zejść z drogi, a nie wjechać nad nią i przykryć pole wpisywania.
+                const keyboard = covered >= KEYBOARD_MIN_PX;
+                const lift = !keyboard && covered > 0 ? Math.round(covered) : 0;
+                deck.style.setProperty('--deck-lift', `${lift}px`);
+                deck.classList.toggle('deck-keyboard', keyboard);
+            };
+            // Zdarzeń widocznego obszaru potrafi przyjść kilkadziesiąt na sekundę przy
+            // przewijaniu; liczymy raz na klatkę, bo częściej i tak nie ma czego malować.
+            const schedule = () => {
+                if (queued) return;
+                queued = true;
+                requestAnimationFrame(apply);
+            };
+
+            vv.addEventListener('resize', schedule);
+            vv.addEventListener('scroll', schedule);
+            window.addEventListener('orientationchange', schedule);
+            apply();
         };
 
         const showScreen = (screenName) => {

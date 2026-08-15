@@ -203,21 +203,25 @@ body:has(#offline-banner:not(.hidden)) #app-container {
      stałymi barwami niezależnymi od motywu — bo tym właśnie jest znak firmowy.
      Dlatego logotyp zawsze siedzi we własnym ciemnym bloku.
 
-     Kolor bloku to `#21242B`, czyli DOKŁADNIE tło rysunku. Dzięki temu kwadrat obrazka
-     wtapia się w pigułkę i nie widać, że to dwa osobne przedmioty. */
+     Znak wchodzi tu w wersji PRZEZROCZYSTEJ (`mark-160.png`), a nie jako ikona z własnym
+     tłem. Ikona z tłem zostawiała w pigułce widoczny kwadrat: jej tło i tło pigułki to
+     nigdy nie jest dokładnie ten sam piksel, a przy okrągłym przycięciu widać było szew.
+     Przezroczysty znak wtapia się bez śladu.
+
+     Pigułka ma kolor `#181A20` — jedną z DWÓCH barw znaku firmowego (drugą jest limonka
+     `#C6F03A`). Cały logotyp stoi więc na dwóch kolorach właściciela i na niczym więcej. */
   .brand-lockup {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.375rem 1rem 0.375rem 0.375rem;
+    padding: 0.375rem 1rem 0.375rem 0.625rem;
     border-radius: 999px;
-    background-color: #21242B;
+    background-color: #181A20;
   }
 
   .brand-lockup img {
-    width: 2.25rem;
-    height: 2.25rem;
-    border-radius: 999px;
+    width: 2rem;
+    height: 2rem;
     flex-shrink: 0;
   }
 
@@ -237,8 +241,8 @@ body:has(#offline-banner:not(.hidden)) #app-container {
   .wordmark-bill { color: #C6F03A; }
 
   /* Wersja duża — ekran wczytywania, gdzie znak jest jedyną treścią. */
-  .brand-lockup-lg { gap: 0.75rem; padding: 0.5rem 1.375rem 0.5rem 0.5rem; }
-  .brand-lockup-lg img { width: 3.25rem; height: 3.25rem; }
+  .brand-lockup-lg { gap: 0.75rem; padding: 0.625rem 1.5rem 0.625rem 0.875rem; }
+  .brand-lockup-lg img { width: 3rem; height: 3rem; }
   .brand-lockup-lg .wordmark { font-size: 1.875rem; }
 
   /* --- KWOTA --------------------------------------------------------------
@@ -753,32 +757,19 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     .sheet-foot { padding-bottom: 0.875rem; }
   }
 
-  /* --- TABLET: LISTY W DWÓCH KOLUMNACH ------------------------------------
-     Kontrakt responsywności z DESIGN.md: powyżej 768 px NIE skalujemy układu
-     telefonowego, tylko zmieniamy liczbę kolumn listy. Do siatki wchodzą
-     wyłącznie listy powtarzalnych kafelków — rachunki i wiersze rozliczeń.
-     Kwota zostaje w jednej kolumnie, bo bohater nie stoi w dwóch.
+  /* --- JEDNA KOLUMNA NA KAŻDEJ SZEROKOŚCI ---------------------------------
+     Do 2026-08-15 listy rachunków i rozliczeń łamały się od 768 px na dwie kolumny.
+     Wyglądało to źle i właściciel zgłosił to po zobaczeniu na dużym ekranie:
 
-     `space-y-*` z Tailwinda dokłada margines górny każdemu kolejnemu dziecku,
-     co w siatce daje schodki — dlatego w tym trybie margines znika, a odstęp
-     robi `gap`. */
-  /* Siatka wchodzi WYŁĄCZNIE na listy powtarzalnych kafelków — nie na cały widok.
-     Gdy siatkę dostawał kontener rozliczeń w całości, do kolumn wpadały też nagłówki
-     („Płacisz"), akapit wyjaśnienia i zwinięta lista cudzych przelewów, więc treść
-     rozlewała się na dwie kolumny bez sensu. */
-  @media (min-width: 768px) {
-    .bills-day-grid,
-    .settle-rows {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.5rem;
-      align-items: start;
-    }
-    .bills-day-grid > * + *,
-    .settle-rows > * + * {
-      margin-top: 0;
-    }
-  }
+       - Rachunki są pogrupowane po dniach, więc dzień z dwoma rachunkami dawał jeden
+         rząd, dzień z jednym — pół rzędu i dziurę obok. Lista zamieniała się w szachownicę
+         z przypadkowymi lukami zamiast w ciąg, który da się przewijać wzrokiem.
+       - Kolejność czytania przestawała być oczywista: przy dwóch kolumnach nie wiadomo,
+         czy nowszy rachunek jest po lewej, czy wyżej.
+       - Nawyk z telefonu przestawał działać, a to ta sama aplikacja i ci sami ludzie.
+
+     Zostaje więc JEDNA kolumna wszędzie. Kontener i tak zatrzymuje się na 56 rem,
+     więc wiersz nigdy nie rozciąga się na całą szerokość monitora. */
 
   /* FILTRY PIGUŁKAMI — zawsze widoczne, przewijalne w poziomie, gdy nie mieszczą
      się w rzędzie. Aktywny filtr niesie wypełnienie, nie samą ramkę: na telefonie
@@ -913,8 +904,19 @@ body:has(#offline-banner:not(.hidden)) #app-container {
        `max()` bierze większą z dwóch wartości: 24 px własnego odstępu albo wysokość
        paska gestów. Skok schodzi z 34 px do 10 px, a w aplikacji zainstalowanej na
        ekranie początkowym (gdzie nie ma paska adresu) wcięcie jest stałe i pasek
-       nie rusza się w ogóle. */
-    bottom: max(1.5rem, env(safe-area-inset-bottom));
+       nie rusza się w ogóle.
+
+       Do tego dochodzi `--deck-lift`: ile dolnej części układu przykrywa w tej chwili
+       pasek przeglądarki. Liczy to `pinDeckToVisualViewport` w `main.js` z API widocznego
+       obszaru okna, bo CSS o tym nie wie NIC. Bez tego pasek nawigacji jest przypięty do
+       dołu UKŁADU strony, a ten sięga pod pasek Safari — więc przy przewijaniu, gdy pasek
+       przeglądarki się chowa i wraca, nawigacja jeździła razem z nim.
+
+       Wartość idzie przez `bottom`, nie przez `transform`, i to jest celowe: `transform`
+       ma na sobie przejście 220 ms (zjazd paska przy otwartym oknie), więc korekta
+       goniłaby pasek przeglądarki z opóźnieniem. `bottom` nie jest animowane i trafia
+       na miejsce w tej samej klatce. */
+    bottom: calc(max(1.5rem, env(safe-area-inset-bottom)) + var(--deck-lift, 0px));
     z-index: 40;
     transition: transform 220ms cubic-bezier(0.2, 0, 0, 1), opacity 160ms ease-out;
     display: flex;
@@ -1165,6 +1167,16 @@ body:has(#offline-banner:not(.hidden)) #app-container {
      Arkusz z klasą `keeps-deck` (nowy rachunek) celowo zostawia pasek na miejscu,
      bo to koło [+] w tym pasku jest jego przyciskiem zamknięcia. */
   body:has(.modal.active:not(.keeps-deck)) .deck {
+    transform: translateX(-50%) translateY(calc(100% + 1.5rem));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* KLAWIATURA NA EKRANIE. Gdy wyskakuje, widoczny obszar kurczy się o 250–350 px.
+     Podnoszenie paska nawigacji nad klawiaturę byłoby wtedy szkodliwe: przykrywałby
+     pole, w które człowiek właśnie pisze. W tej chwili nikt nie nawiguje, tylko wpisuje,
+     więc pasek schodzi z ekranu tak samo, jak przy otwartym oknie. */
+  .deck.deck-keyboard {
     transform: translateX(-50%) translateY(calc(100% + 1.5rem));
     opacity: 0;
     pointer-events: none;

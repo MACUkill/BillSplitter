@@ -321,18 +321,25 @@ nie dlatego, że istnieje urządzenie o tej szerokości. Podejście od telefonu 
 |---|---|---|
 | — | **telefon** | jedna kolumna, margines 16 px, arkusze od dołu na pełną szerokość, pasek dolny |
 | `640px` | **arkusz na środku** | arkusze przestają być wysuwane od dołu: środek, `max-width: 32rem`, promień 28 px ze wszystkich stron |
-| `768px` | **tablet** | kontener `max-width: 48rem`, margines 24 px; listy kafelkowe łamią się na **dwie kolumny**, odstęp 16 px |
+| `768px` | **tablet** | kontener `max-width: 48rem`, margines 24 px |
 | `1024px` | **sufit** | kontener zatrzymuje się na `max-width: 56rem` i dalej nie rośnie; arkusze `max-width: 36rem` |
 
-**Reguła jednej kolumny dla kwoty.** Nominał bilansu, kwota rachunku i suma kontrolna
-zostają pełną szerokością kolumny na każdej szerokości ekranu. Do siatki wchodzą
-wyłącznie listy powtarzalnych kafelków: rachunki i wiersze rozliczeń. Kwota jest
-bohaterem, a bohater nie stoi w dwóch kolumnach.
+**Reguła jednej kolumny.** Każda lista w tej aplikacji jest JEDNĄ kolumną na każdej
+szerokości ekranu. Rachunki łamały się od 768 px na dwie kolumny i zostało to cofnięte
+2026-08-15 (decyzja właściciela po zobaczeniu na dużym ekranie), bo:
+
+- rachunki są pogrupowane po dniach, więc dzień z jednym rachunkiem zostawiał dziurę
+  obok — lista stawała się szachownicą z przypadkowymi lukami zamiast ciągiem;
+- przy dwóch kolumnach przestaje być oczywiste, czy nowsze jest po lewej, czy wyżej;
+- nawyk z telefonu przestaje działać, a to ta sama aplikacja i ci sami ludzie.
+
+Kontener i tak zatrzymuje się na 56 rem, więc wiersz nigdy nie rozciąga się na całą
+szerokość monitora.
 
 **Reguła strukturalnej adaptacji.** Powyżej 768 px nie wolno skalować układu telefonowego
-proporcjonalnie — zmienia się liczba kolumn listy, nie rozmiar elementów. Cel dotykowy
-zostaje 48 px na akcji i 44 px na kontrolce na **każdej** szerokości; tablet trzyma się
-w dłoniach tak samo jak telefon.
+proporcjonalnie. Zmienia się szerokość kontenera i marginesy, nie rozmiar elementów.
+Cel dotykowy zostaje 48 px na akcji i 44 px na kontrolce na **każdej** szerokości;
+tablet trzyma się w dłoniach tak samo jak telefon.
 
 **Reguła paska w dłoni.** Pasek nawigacji zostaje dolny i pływający na każdej szerokości,
 wyśrodkowany, `width: min(21.25rem, 100vw - 2rem)`. Na dużym ekranie nie przenosi się do
@@ -459,9 +466,14 @@ krój Bricolage Grotesque — ten sam, którym pisane są kwoty.
 
 **Barwy znaku firmowego NIE idą za motywem i to jest jedyny taki wyjątek w całym systemie.**
 Limonka na jasnym podłożu ma kontrast około 1,5:1, a biel na jasnym tle nie istnieje —
-więc logotyp zawsze siedzi we własnej ciemnej pigułce w kolorze `#21242B` (dokładnie tło
-rysunku, żeby kwadrat obrazka się w nią wtopił). Znak firmowy ma stałe barwy, bo tym
-właśnie jest znak firmowy.
+więc logotyp zawsze siedzi we własnej ciemnej pigułce w kolorze `#181A20`. Znak firmowy
+ma stałe barwy, bo tym właśnie jest znak firmowy, a znak Billiady stoi na **dwóch**
+kolorach i tylko na nich: limonce `#C6F03A` i atramencie `#181A20`.
+
+Do pigułki wchodzi **przezroczysta** wersja znaku, nie ikona z własnym tłem: ikona z tłem
+zostawiała w pigułce widoczny kwadrat, bo jej tło i tło pigułki to nigdy nie jest ten sam
+piksel. Ikony PWA przychodzą gotowe od właściciela i `tools/make-icons.mjs` ich nie rusza
+— skaluje wyłącznie znak używany wewnątrz aplikacji.
 
 Stoi w dwóch miejscach: ekran wczytywania i nagłówek ekranu startowego. **Nie w pokoju** —
 tam nazwa pokoju jest ważniejsza od nazwy aplikacji, a logo na każdym ekranie to szyld,

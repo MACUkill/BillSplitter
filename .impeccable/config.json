@@ -47,6 +47,12 @@
         "value": "#000",
         "createdAt": "2026-08-15T20:34:44.519Z",
         "reason": "To nie jest kolor tylko kanal alfa maski: w conic-gradient dla mask-image #000 znaczy widoczne, a #0000 przezroczyste. Zadna z tych wartosci nie trafia na ekran jako barwa"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#181a20",
+        "createdAt": "2026-08-15T21:07:41.545Z",
+        "reason": "Druga z dwoch barw znaku firmowego (obok limonki C6F03A). DESIGN.md sekcja Znak firmowy opisuje to jako jedyny jawny wyjatek: barwy znaku nie ida za motywem"
       }
     ]
   }

@@ -1413,8 +1413,14 @@ usunięta z repozytorium.
 
 Logotyp: **„Bill" w limonce, „iada" w bieli**, krój Bricolage Grotesque — ten sam, którym
 pisane są kwoty, więc logotyp nie wprowadza dziewiątego stopnia ani drugiego kroju.
-Stoi w ciemnej pigułce w kolorze `#21242B`, czyli dokładnie tła rysunku, więc kwadrat
-obrazka wtapia się w pigułkę.
+Stoi w ciemnej pigułce w kolorze `#181A20`, czyli w drugiej z dwóch barw znaku
+(pierwsza to limonka `#C6F03A`). Cały logotyp stoi więc na kolorach właściciela
+i na niczym więcej.
+
+Do pigułki wchodzi **przezroczysta** wersja znaku (`public/icons/mark-160.png`), a nie
+ikona z własnym tłem: ikona z tłem zostawiała w pigułce widoczny kwadrat, bo jej tło
+i tło pigułki to nigdy nie jest dokładnie ten sam piksel, a przy okrągłym przycięciu
+widać było szew.
 
 **Barwy logotypu nie idą za motywem i to jest jawny wyjątek** od reguły rozdziału kolorów:
 limonka na jasnym podłożu ma kontrast około 1,5:1, a biel na jasnym tle nie istnieje.
