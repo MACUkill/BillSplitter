@@ -60,7 +60,14 @@ service cloud.firestore {
                             .affectedKeys()
                             .hasOnly(['confirmed', 'confirmedBy', 'confirmedAt'])
                       && memberOwner(appId, groupId, resource.data.to) == request.auth.uid;
-        allow delete: if request.auth != null && resource.data.createdBy == request.auth.uid;
+        // Usunąć wpis może TYLKO jego autor i TYLKO dopóki odbiorca go nie potwierdził
+        // (decyzja właściciela 2026-08-15). To jest naprawa własnej pomyłki sprzed minuty,
+        // a nie kasowanie historii: po potwierdzeniu wpłata jest dowodem dla obu stron
+        // i znika wyłącznie wpłatą w drugą stronę. Interfejs pokazuje kosz na dokładnie
+        // tych samych warunkach, więc reguła i ekran mówią to samo.
+        allow delete: if request.auth != null
+                      && resource.data.createdBy == request.auth.uid
+                      && resource.data.confirmed != true;
       }
 
       // Przypomnienia (nudge-windykator): zalogowany tworzy jako on sam (createdBy=uid), każdy zalogowany czyta.

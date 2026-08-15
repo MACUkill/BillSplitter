@@ -79,23 +79,43 @@ Funkcje, które redesign musi zachować w całości:
 - Przypomnienia (dzwonek, skrzynka, push). Bramka anty-spamowa: dziesięć sekund między
   przypomnieniami do tej samej osoby (zmienione 2026-08-05 z sześciu godzin — produkt ma
   domykać dług, a nie chronić dłużnika; blokujemy tylko walenie w przycisk co sekundę).
-- Profil: kolor, zdjęcie, metody płatności (konto/IBAN, telefon, Revolut, PayPal, własne)
-  z kopiowaniem; ekran „kto ile wydał i ile wyłożył".
-- Zdjęcia paragonów z podglądem i licznikiem miejsca; ukrywanie rachunków; „nie dotyczy";
+- Profil: kolor, zdjęcie, metody płatności (konto/IBAN, telefon, Revolut, PayPal, Wise,
+  własne). Metody, które da się otworzyć, mają przycisk otwierający aplikację albo stronę;
+  kopiowanie zostaje obok. Podsumowanie „ile kto wydał" mieszka w ustawieniach pokoju.
+- Zdjęcia paragonów z podglądem i licznikiem miejsca; ukrywanie rachunków;
   edycja składu rachunku; usuwanie rachunku z oknem „Cofnij"; kontekstowa pomoc „?";
   lista „Twoje pokoje"; wskaźnik offline; instalacja PWA.
+
+**Zmiana modelu statusu (2026-08-15, decyzja właściciela).** Ręczny status uczestnika
+(Nieuzupełnione / Uzupełnione / **Mnie nie dotyczy**) został usunięty jako WYBÓR. Rachunek
+ma teraz jeden przełącznik `splitMode`: `'even'` (po równo) albo `'own'` (ze swoimi
+kosztami), a gotowość liczy się sama z tego, czy ktoś stuknął pozycję albo wpisał koszt
+własny. Wypisanie kogoś z rachunku robi się przez edycję składu.
+
+Uwaga dla każdego, kto rusza matmę: **wartość `not_applicable` zostaje w bazie i nadal
+jest jedynym stanem, który wyklucza uczestnika z podziału** w `functions/calc.js`. Zniknął
+sposób ustawiania jej ręcznie, nie sama wartość — stare rachunki ją noszą.
+
+**Rejestr wpłat (2026-08-15).** Wpis o wpłacie usuwa wyłącznie jego autor i wyłącznie
+dopóki odbiorca go nie potwierdził. Po potwierdzeniu wpłata jest dowodem dla obu stron
+i znika tylko wpłatą w drugą stronę. Pilnują tego zarówno interfejs, jak i reguły Firestore.
+
+**Potwierdzenie płatnika (2026-08-15).** Bez niego rachunek nie wchodzi do rozliczeń, więc
+przestało być banerem do przewinięcia: wskazanie płatnika przechodzi przez okno
+potwierdzenia, a wskazana osoba dostaje przy wejściu na rachunek pytanie „Czy to Ty
+zapłaciłeś?" z odpowiedzią „Nie ja", która czyści wskazanie.
 
 Ograniczenia techniczne:
 
 - Vanilla JS bez frameworka (Vite + Vitest), Tailwind 3 kompilowany w buildzie —
   skaner klas obejmuje `index.html` i `src/**/*.js`, więc **żadnej klasy nie wolno
-  sklejać ze stringów**. Markup żyje w `index.html` (663 linie) i w szablonach wewnątrz
+  sklejać ze stringów**. Markup żyje w `index.html` i w szablonach wewnątrz
   `src/main.js`.
 - Firebase: Firestore, Storage, Auth (anonimowe), Cloud Functions (`europe-central2`),
   FCM. Jeden service worker obsługuje offline i push.
 - Sieć asekuracyjna, której redesign nie może obejść: `selectors.contract.test.js`
   (kontrakt identyfikatorów i klas-uchwytów), `render.safety.test.js` (żadna dana z bazy
-  nie trafia do znaczników bez neutralizacji). 143 testy jednostkowe muszą zostać zielone.
+  nie trafia do znaczników bez neutralizacji). 164 testy jednostkowe muszą zostać zielone.
 - Tożsamość jest anonimowa i przypięta do urządzenia — wyczyszczenie danych przeglądarki
   oznacza utratę dostępu do pokoi. To znany, świadomie przyjęty koszt.
 
@@ -155,12 +175,29 @@ i w ustawieniach pokoju, kod QR rysuje się lokalnie, a ekran startowy ma pole
 ekran startowy, bo `start_url` zostaje `"/"`. Eksperyment z dynamicznym manifestem
 czeka na test na żywym iPhonie — dopóki go nie ma, nie wiemy, czy iOS go uszanuje.
 
+**Stan 2026-08-15: problem obchodzony po stronie aplikacji, bez ruszania manifestu.**
+Aplikacja otwarta bez `?group=` w adresie wchodzi do pokoju odwiedzonego ostatnio
+(zapis w `localStorage`). Wyjątkiem jest sytuacja, w której człowiek SAM wyszedł na listę
+pokoi albo opuścił pokój — wtedy znacznik w pamięci **sesji** wyłącza automatyczny powrót
+do końca tej sesji przeglądarki i ginie przy następnym uruchomieniu.
+
+Skutek dla skrótu z ekranu początkowego: pierwsze wejście nadal wymaga kodu pokoju, bo
+skrót ma własny, pusty magazyn danych. Ale **tylko pierwsze** — od drugiego uruchomienia
+skrót otwiera się od razu we właściwym pokoju. To jest cały praktyczny ciężar tego błędu
+i on właśnie znika. Arkusz instalacji mówi o tym wprost, zamiast obiecywać, że zadziała
+za pierwszym razem. Dynamiczny manifest przestaje być potrzebny.
+
 ## Brand Commitments
 
-- Nazwa **BillSplitter** zostaje na czas redesignu. Właściciel uważa ją za zajętą i
-  planuje zmianę — nazwa i logo są **otwartą decyzją**, do rozstrzygnięcia osobno.
-  Rozstrzygnięcie 2026-08-04: nowa nazwa **musi być angielska**. Propozycje polskie
-  (Rewers, Kwit, Nominał) odrzucone przez właściciela; wybór odłożony, nie zamknięty.
+- Nazwa produktu to **Billyada** (decyzja właściciela 2026-08-15). Punkt jest ZAMKNIĘTY;
+  wcześniejsze ustalenie z 2026-08-04, że nazwa musi być angielska, jest tym samym
+  nieaktualne — właściciel wybrał inaczej i to jego wybór.
+  Nazwa siedzi w `index.html`, `public/manifest.json`, `public/sw.js`, `package.json`
+  i tekstach pomocy. Przedrostek `billsplitter_` w kluczach `localStorage` **zostaje
+  celowo**: to jedyny ślad po pokojach na urządzeniu, a jego zmiana wyczyściłaby listę
+  pokoi każdemu, kto już aplikacji używa.
+- Znak: **rachunek przedarty na pół**, limonka `#C6F03A` na atramencie `#0E0F13`.
+  Źródło w `public/icons/icon.svg`, rasteryzacja `node tools/make-icons.mjs`.
 - Język interfejsu: polski. Redesign ma zostawić UI gotowy na tłumaczenie (teksty
   wydzielone, layout znoszący dłuższe stringi), ale **druga wersja językowa nie wchodzi
   do zakresu tego redesignu**.
@@ -183,7 +220,7 @@ adresat.
 - Działająca aplikacja na gałęzi `BillSplitterV2`, wdrożona pod
   `billsplitterv2--groupbillsplitter.netlify.app` (piaskownica `billsplitter-push-test`).
 - Audyt techniczny z 27.07.2026 (13 ustaleń naprawionych, 4 świadomie otwarte).
-- 143 testy jednostkowe + 29 testów reguł.
+- 164 testy jednostkowe + 32 testy reguł.
 - Brak: opinii użytkowników w formie pisemnej, danych o użyciu, materiałów prasowych,
   logo, zdjęć produktowych. Niczego z tej listy nie wolno wymyślać.
 

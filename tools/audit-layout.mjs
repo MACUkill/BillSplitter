@@ -30,11 +30,43 @@ const AUDIT = `(() => {
   const vw = document.documentElement.clientWidth;
   const out = { overflow: [], smallTaps: [], overlaps: [], covered: [], scrollX: document.documentElement.scrollWidth > vw + 1 };
 
+  // PROSTOKĄT PO PRZYCIĘCIU, nie surowy.
+  //
+  // getBoundingClientRect zwraca miejsce, w którym element BYŁBY, gdyby nic go nie
+  // przycinało. W arkuszu z przewijaną treścią to nieprawda: wiersz listy wyprzewinięty
+  // pod stopkę nadal ma tam współrzędne, choć żaden jego piksel się tam nie maluje.
+  // Bez tego audyt zgłaszał nachodzenie wiersza na przyciski stopki i krzyżyka na pole
+  // waluty — dwie usterki, których na ekranie nie ma. Pogoń za takim zgłoszeniem kończy
+  // się psuciem układu, który był w porządku.
+  //
+  // (Uwaga dla przyszłych zmian: ten blok żyje w SZABLONIE ZNAKOWYM, więc apostrof
+  // odwrotny jest tu zakazany — zamyka literał i wywala cały skrypt.)
+  const clippedRect = (el) => {
+    let r = el.getBoundingClientRect();
+    let box = { top: r.top, right: r.right, bottom: r.bottom, left: r.left };
+    for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) {
+      const ps = getComputedStyle(p);
+      const clipsY = ps.overflowY === 'auto' || ps.overflowY === 'scroll' || ps.overflowY === 'hidden';
+      const clipsX = ps.overflowX === 'auto' || ps.overflowX === 'scroll' || ps.overflowX === 'hidden';
+      if (!clipsY && !clipsX) continue;
+      const pr = p.getBoundingClientRect();
+      if (clipsY) { box.top = Math.max(box.top, pr.top); box.bottom = Math.min(box.bottom, pr.bottom); }
+      if (clipsX) { box.left = Math.max(box.left, pr.left); box.right = Math.min(box.right, pr.right); }
+    }
+    box.width = box.right - box.left;
+    box.height = box.bottom - box.top;
+    return box;
+  };
+
   const visible = (el) => {
     const s = getComputedStyle(el);
     if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0) return false;
-    const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0;
+    // Treść ZWINIĘTEGO <details> nie jest malowana, ale Chrome i tak zwraca dla niej
+    // prostokąt: chowa ją przez content-visibility, a nie przez display none.
+    const details = el.closest('details');
+    if (details && !details.open && !el.closest('summary')) return false;
+    const r = clippedRect(el);
+    return r.width > 1 && r.height > 1;
   };
 
   // Element w rzędzie przewijanym w poziomie MA prawo wystawać poza ekran —
@@ -105,7 +137,9 @@ const AUDIT = `(() => {
   //    „okno vs tło" nachodzi z definicji i nie jest usterką. Porównujemy
   //    wyłącznie elementy z tej samej warstwy.
   const layer = (el) => (el.closest('.modal.active') ? 'modal' : el.closest('.deck') ? 'deck' : 'page');
-  const boxes = tappables.filter(visible).map((el) => ({ el, r: el.getBoundingClientRect(), layer: layer(el) }));
+  // Porównujemy prostokąty PO PRZYCIĘCIU: nachodzenie liczy się na pikselach, które
+  // naprawdę się malują, a nie na miejscu, w którym element leżałby bez przewijania.
+  const boxes = tappables.filter(visible).map((el) => ({ el, r: clippedRect(el), layer: layer(el) }));
   for (let i = 0; i < boxes.length; i++) {
     for (let j = i + 1; j < boxes.length; j++) {
       const a = boxes[i], b = boxes[j];
@@ -227,12 +261,38 @@ const run = async () => {
   await click('#create-new-bill-btn');
   await new Promise((r) => setTimeout(r, 500));
   await shot('05-okno-nowy-rachunek');
+
+  // Wybór osób w oknie nowego rachunku: te same wiersze, co przy pozycji paragonu,
+  // plus lupa rozwijająca pole wyszukiwania.
+  await click('#edit-participants-btn-modal');
+  await new Promise((r) => setTimeout(r, 500));
+  await shot('05a-nowy-rachunek-osoby');
+  await page.evaluate(() => { const b = document.querySelector('#new-bill-people .person-search-toggle'); if (b) b.click(); });
+  await new Promise((r) => setTimeout(r, 500));
+  await type('#new-bill-people .person-search-input', 'kas');
+  await new Promise((r) => setTimeout(r, 400));
+  await shot('05b-nowy-rachunek-szukanie');
+  await page.evaluate(() => { const b = document.querySelector('#new-bill-people .person-search-toggle'); if (b) b.click(); });
+  await click('#edit-participants-btn-modal');
+  await new Promise((r) => setTimeout(r, 400));
+
   await type('#new-bill-name', 'Kolacja w karczmie');
   await new Promise((r) => setTimeout(r, 300));
   await click('#confirm-create-bill-btn');
   await page.waitForSelector('#bill-screen:not(.hidden)', { timeout: 15000 });
   await new Promise((r) => setTimeout(r, 800));
   await shot('06-rachunek-pusty');
+
+  // Wskazanie płatnika przechodzi przez okno potwierdzenia (decyzja o cudzych
+  // pieniądzach nie wchodzi w życie samym stuknięciem w listę).
+  await click('#payer-select');
+  await new Promise((r) => setTimeout(r, 500));
+  await shot('06a-wybor-platnika');
+  await page.evaluate(() => { const b = document.querySelector('#choice-options .choice-option:nth-child(2)'); if (b) b.click(); });
+  await new Promise((r) => setTimeout(r, 500));
+  await shot('06b-potwierdzenie-platnika');
+  await click('#confirm-ok-btn');
+  await new Promise((r) => setTimeout(r, 900));
 
   // Kwota + płatnik.
   await page.evaluate(() => {
@@ -242,6 +302,13 @@ const run = async () => {
   });
   await new Promise((r) => setTimeout(r, 900));
   await shot('07-rachunek-kwota');
+
+  // Rachunek startuje podziałem PO RÓWNO, więc sekcja pozycji jest schowana:
+  // w tym trybie nie ma czego rozpisywać. Przełączamy na „ze swoimi kosztami",
+  // żeby audyt zobaczył żywy paragon.
+  await click('#bill-mode-own');
+  await new Promise((r) => setTimeout(r, 900));
+  await shot('07a-rachunek-tryb-wlasne-koszty');
 
   // Pozycje przez okno „Dodaj pozycję".
   for (const [desc, amount] of [['Pierogi ruskie', '48'], ['Żurek w chlebie', '38'], ['Kotlet schabowy z frytkami', '56'], ['Woda gazowana duża', '18']]) {
@@ -280,6 +347,23 @@ const run = async () => {
   await new Promise((r) => setTimeout(r, 700));
   await shot('12-rozliczenia');
 
+  // Rejestr wpłat: osobne miejsce spod rozliczeń. Przycisk pojawia się dopiero,
+  // gdy jest choć jedna wpłata, więc najpierw ją zapisujemy.
+  await page.evaluate(() => { const b = document.querySelector('#settlements-list .receive-btn'); if (b) b.click(); });
+  await new Promise((r) => setTimeout(r, 700));
+  if (await page.$('#settle-modal.active')) {
+    await shot('12a-ureguluj');
+    await click('#settle-record-btn');
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+  if (await page.$('#open-settlements-log:not(.hidden)')) {
+    await click('#open-settlements-log');
+    await new Promise((r) => setTimeout(r, 700));
+    await shot('12b-rejestr-wplat');
+    await page.keyboard.press('Escape');
+    await new Promise((r) => setTimeout(r, 400));
+  }
+
   // Rachunki — druga zakładka pulpitu.
   await click('#nav-bills');
   await new Promise((r) => setTimeout(r, 700));
@@ -306,7 +390,7 @@ const run = async () => {
   await click('#room-qr-toggle');
   await new Promise((r) => setTimeout(r, 600));
   await shot('14a-ustawienia-pokoju-qr');
-  await page.evaluate(() => { const b = document.querySelector('#room-settings-modal .overflow-y-auto'); if (b) b.scrollTop = b.scrollHeight; });
+  await page.evaluate(() => { const b = document.querySelector('#room-settings-modal .sheet-body'); if (b) b.scrollTop = b.scrollHeight; });
   await new Promise((r) => setTimeout(r, 500));
   await shot('14b-ustawienia-pokoju-dol');
   await page.keyboard.press('Escape');

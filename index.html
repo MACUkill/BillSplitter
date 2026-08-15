@@ -2,8 +2,16 @@
 <html lang="pl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BillSplitter - Rozliczaj się ze znajomymi</title>
+    <!-- `viewport-fit=cover` jest warunkiem, żeby `env(safe-area-inset-*)` w ogóle miało
+         wartość różną od zera. Bez niego iPhone raportuje zera, więc pływająca nawigacja
+         i przyciski arkuszy lądowały tuż nad paskiem gestów — dokładnie ta usterka,
+         przy której kciuk zamiast w zakładkę trafia w wyjście do ekranu początkowego.
+         `maximum-scale=1, user-scalable=no` wyłącza przybliżanie szczypaniem: aplikacja
+         jest układem o stałej szerokości kolumny, a przybliżenie robiło z niej mapę,
+         z której trudno wrócić. iOS ignoruje ten atrybut od dziesiątej wersji, więc
+         drugą warstwą jest `touch-action` w arkuszu i blokada gestu w `main.js`. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Billyada</title>
     <link rel="icon" href="/icons/icon-16x16.png">
     <link rel="manifest" href="/manifest.json">
     <!-- Kolor paska systemowego idzie za podłożem aplikacji, żeby ekran nie miał szwu. -->
@@ -11,7 +19,7 @@
     <meta name="theme-color" content="#0C0D11" media="(prefers-color-scheme: dark)">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="BillSplitter">
+    <meta name="apple-mobile-web-app-title" content="Billyada">
     <link rel="apple-touch-icon" href="/icons/icon-180x180.png">
     <!-- Tailwind nie przychodzi już z sieci — jest kompilowany do arkusza w buildzie
          (src/tailwind.css → import w main.js). Dzięki temu produkcja nie zależy od cudzego
@@ -47,60 +55,10 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        /* Wybór statusu to pełnoprawny cel dotykowy, nie etykieta: 44 px wysokości,
-           bo przy 24 px trafienie kciukiem w ruchu było kwestią szczęścia. */
-        .status-select-wrapper {
-            position: relative;
-            display: inline-flex;
-            /* Ikona stanu ma stać W OSI tekstu. Przy `align-items: stretch` była
-               rozciągana na całą wysokość otoczki i jej glif lądował przy górnej
-               krawędzi, nachodząc na pole wyboru zamiast stać obok niego. */
-            align-items: center;
-            gap: 0.5rem;
-            min-height: 2.75rem;
-            border-radius: 999px;
-            /* Bez odstępu pionowego: każdy piksel otoczki ma być klikalny. Przy
-               `padding: 0.25rem` samo pole wyboru miało 36 px, a 8 px otoczki tylko
-               wyglądało na cel — audyt układu łapał to na każdej szerokości.
-               Z prawej strony miejsce na chevron, żeby nie wchodził na tekst. */
-            padding: 0 1.75rem 0 0.875rem;
-        }
-        .status-select-wrapper > i {
-            flex-shrink: 0;
-            line-height: 1;
-        }
-        /* Sam wybór statusu jest teraz PRZYCISKIEM (otwiera arkusz), więc nosi obie
-           klasy naraz: otoczkę i uchwyt kliknięcia. Zostają tylko te własności, które
-           zdejmują wygląd systemowego przycisku — resztę niesie otoczka wyżej. */
-        .status-select {
-            -webkit-appearance: none;
-            appearance: none;
-            border: none;
-            font-family: inherit;
-            font-size: inherit;
-            line-height: inherit;
-            cursor: pointer;
-            outline: none;
-            transition: filter 160ms ease-out, transform 160ms cubic-bezier(0.2, 0, 0, 1);
-        }
-        .status-select:active { transform: scale(0.97); }
-        .status-select-wrapper::after {
-            content: '\f078';
-            /* Nazwa rodziny idzie za wersją pakietu (dziś 7). Wcześniej stało tu
-               „Font Awesome 6 Free" z czasów wczytywania z CDN — po wciągnięciu ikon
-               do buildu ta nazwa przestała istnieć i chevron znikał bez śladu. */
-            font-family: 'Font Awesome 7 Free';
-            font-weight: 900;
-            font-size: 0.6875rem;
-            position: absolute;
-            right: 0.75rem;
-            /* Bez wyśrodkowania w pionie chevron siadał przy górnej krawędzi otoczki
-               i czytał się jak druga, przekrzywiona ikona stanu. */
-            top: 50%;
-            transform: translateY(-50%);
-            opacity: 0.55;
-            pointer-events: none;
-        }
+        /* Style pola wyboru statusu (`.status-select`, `.status-select-wrapper`) zniknęły
+           2026-08-15 razem z samym wyborem: status jest teraz liczony z zawartości
+           rachunku, a nie ustawiany ręcznie. Uzasadnienie stoi w `src/main.js`
+           przy `billSplitMode`. */
         input[type=number]::-webkit-inner-spin-button,
         input[type=number]::-webkit-outer-spin-button {
             -webkit-appearance: none;
@@ -176,7 +134,9 @@ the verdict, and DESIGN.md
         <i class="fas fa-triangle-exclamation mr-2"></i>Jesteś offline. Zmiany zapiszą się lokalnie i zsynchronizują po odzyskaniu połączenia.
     </div>
 
-    <div id="app-container" class="max-w-4xl mx-auto p-4 md:p-8 pb-36">
+    <!-- Zapas na dole liczy arkusz stylów (`#app-container`), bo tylko tam da się dodać
+         wysokość paska gestów przez `env(safe-area-inset-bottom)`. -->
+    <div id="app-container" class="max-w-4xl mx-auto p-4 md:p-8">
 
         <div id="loading-screen" class="fixed inset-0 bg-bg flex flex-col items-center justify-center z-50">
             <div class="loader"></div>
@@ -242,37 +202,54 @@ the verdict, and DESIGN.md
             <!-- NAGŁÓWEK POKOJU — nazwa i twoje zdjęcie. Kod pokoju stoi tuż pod nazwą,
                  bo to on ratuje wejście na iPhonie, gdzie skrót z ekranu początkowego
                  gubi adres grupy. -->
-            <header class="flex items-center justify-between gap-3 mb-6">
-                <div class="min-w-0">
+            <!-- Nagłówek stoi w DWÓCH RZĘDACH, nie w jednym z kolumną w środku. Przy
+                 jednym rzędzie strzałka powrotu była wyśrodkowana względem bloku
+                 „nazwa + kod pokoju", więc lądowała pół wiersza niżej niż nazwa i cały
+                 nagłówek wyglądał na przekrzywiony. Teraz pierwszy rząd niesie nawigację
+                 i nazwę, a kod pokoju stoi pod spodem, wyrównany do nazwy. -->
+            <header class="mb-6">
+                <div class="flex items-center gap-2">
+                    <!-- WYJŚCIE DO LISTY POKOI. Do tej pory z pokoju nie dało się wyjść inaczej
+                         niż przez opuszczenie go albo wyczyszczenie adresu, a ludzie bywają
+                         w kilku pokojach naraz (wyjazd, mieszkanie, biuro). Strzałka w lewo
+                         znaczy w tej aplikacji jedno: „o poziom wyżej". Tak samo działa na
+                         ekranie rachunku, więc to nie jest nowy gest, tylko ten sam wyżej. -->
+                    <button id="back-to-rooms-btn" class="tap w-11 h-11 -ml-2.5 rounded-full flex items-center justify-center text-ink-2 flex-shrink-0" title="Twoje pokoje" aria-label="Wróć do listy pokoi">
+                        <i class="fas fa-arrow-left text-lg"></i>
+                    </button>
                     <!-- Nazwa pokoju JEST wejściem do ustawień pokoju: ustawienia stoją przy
                          rzeczy, której dotyczą. Chevron mówi, że to się otwiera. -->
-                    <button id="room-settings-btn" class="tap flex items-center gap-2 min-w-0 max-w-full min-h-tap" title="Ustawienia pokoju">
+                    <button id="room-settings-btn" class="tap flex items-center gap-2 min-w-0 flex-grow min-h-tap" title="Ustawienia pokoju">
                         <!-- Na wąskim telefonie nazwa pokoju schodzi o stopień skali:
                              przy 3 rem „Wyjazd w Bieszczady" kończył się na „Wyjazd w …",
                              czyli nagłówek nie mówił, w którym pokoju stoisz. -->
-                        <h2 id="dashboard-group-name" class="font-display text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight leading-none truncate"></h2>
+                        <h2 id="dashboard-group-name" class="font-display text-2xl sm:text-3xl font-extrabold tracking-tight leading-none truncate"></h2>
                         <i class="fas fa-chevron-down text-ink-3 text-sm flex-shrink-0"></i>
                     </button>
-                    <button id="room-serial-btn" class="tap mt-1 flex items-center gap-1.5 text-ink-3 text-sm min-h-tap" title="Kod pokoju: stuknij, aby skopiować">
-                        <i class="fas fa-hashtag text-xs"></i>
-                        <span id="room-serial" class="serial text-ink-2"></span>
-                    </button>
+                    <div class="flex items-center gap-1 flex-shrink-0">
+                        <!-- Pomoc mieszka w nagłówku ekranu, nie w pływającym kole. Koło
+                             wchodziło na treść przy każdym przewinięciu: raz na kafelek
+                             zdjęcia, raz na ołówek przy pozycji paragonu. -->
+                        <button id="help-fab" class="help-btn tap hidden w-11 h-11 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Pomoc: jak to działa?" aria-label="Pomoc">
+                            <i class="fas fa-question"></i>
+                        </button>
+                        <button id="nudges-bell" class="tap hidden relative w-11 h-11 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Skrzynka: sprawy czekające na Ciebie" aria-label="Skrzynka">
+                            <i class="fas fa-bell"></i>
+                            <span id="nudges-badge" class="hidden absolute top-0 right-0 min-w-[1.25rem] h-5 px-1 bg-owe text-white text-[0.6875rem] font-bold rounded-full flex items-center justify-center">0</span>
+                        </button>
+                        <!-- Bez znaku tożsamości w nagłówku. Nie był przyciskiem, więc niczego
+                             nie robił, a jako jedyny element rzędu miał inną wielkość niż
+                             okrągłe przyciski obok. Swoje zdjęcie i kolor widać w zakładce „Ty". -->
+                    </div>
                 </div>
-                <div class="flex items-center gap-1 flex-shrink-0">
-                    <!-- Pomoc mieszka w nagłówku ekranu, nie w pływającym kole. Koło
-                         wchodziło na treść przy każdym przewinięciu: raz na kafelek
-                         zdjęcia, raz na ołówek przy pozycji paragonu. -->
-                    <button id="help-fab" class="help-btn tap hidden w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Pomoc: jak to działa?" aria-label="Pomoc">
-                        <i class="fas fa-question"></i>
-                    </button>
-                    <button id="nudges-bell" class="tap hidden relative w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2" title="Skrzynka: sprawy czekające na Ciebie" aria-label="Skrzynka">
-                        <i class="fas fa-bell"></i>
-                        <span id="nudges-badge" class="hidden absolute top-0 right-0 min-w-[1.25rem] h-5 px-1 bg-owe text-white text-[0.6875rem] font-bold rounded-full flex items-center justify-center">0</span>
-                    </button>
-                    <!-- Bez znaku tożsamości w nagłówku. Nie był przyciskiem, więc niczego
-                         nie robił, a jako jedyny element rzędu miał inną wielkość niż
-                         okrągłe przyciski obok. Swoje zdjęcie i kolor widać w zakładce „Ty". -->
-                </div>
+
+                <!-- Kod pokoju w drugim rzędzie, wcięty pod nazwę: to jedyna droga do
+                     pokoju, gdy skrót z ekranu początkowego otworzy aplikację bez adresu
+                     grupy, ale nie jest tym, po co ktoś tu wchodzi. -->
+                <button id="room-serial-btn" class="tap ml-9 flex items-center gap-1.5 text-ink-3 text-sm min-h-tap" title="Kod pokoju: stuknij, aby skopiować">
+                    <i class="fas fa-hashtag text-xs"></i>
+                    <span id="room-serial" class="serial text-ink-2"></span>
+                </button>
             </header>
 
             <!-- TRZY MIEJSCA, nie trzy sekcje jednej strony. Pasek przełącza widoki:
@@ -286,25 +263,30 @@ the verdict, and DESIGN.md
             <h3 class="view-title mb-3">Bilans</h3>
 
             <!-- BILANS — limonkowy blok. Jedna liczba, po którą ludzie tu przychodzą,
-                 w skali, której nie da się przeoczyć w hałasie i przy złym świetle. -->
+                 w skali, której nie da się przeoczyć w hałasie i przy złym świetle.
+                 Stopień pisma nie jest stały: ustawia go `renderBalancePanel` z liczby
+                 znaków kwoty, bo „0,00" i „1 234 567,00" to ta sama rola, a nie ten sam
+                 rozmiar. Skrót waluty stoi POD liczbą, nie obok — obok zjadał szerokość
+                 potrzebną samym cyfrom i przy „120,80PLN" litera N dotykała krawędzi. -->
             <section id="balance-panel" class="block-brand relative overflow-hidden p-6 mb-3">
                 <!-- Bez podpisu „Twój bilans" w środku: tytuł zakładki nad blokiem mówi
                      to samo, a kwota nie potrzebuje dwóch etykiet nad sobą. -->
-                <div id="balance-amounts" class="space-y-1"></div>
-                <p id="balance-caption" class="mt-2 text-sm font-semibold opacity-70"></p>
+                <div id="balance-amounts" class="space-y-2"></div>
+                <p id="balance-caption" class="mt-3 text-sm font-semibold opacity-70"></p>
                 <div id="balance-actions" class="mt-5 flex flex-wrap gap-2"></div>
                 <span id="dashboard-user-name-display" class="sr-only"></span>
             </section>
 
-            <!-- TWARZE EKIPY — z kim dzielisz ten pokój. Sam nominał nie mówi, kogo
-                 dotyczy: przy dwunastu osobach rząd zdjęć jest szybszą odpowiedzią
-                 na „czy wszyscy już są?" niż lista imion w ustawieniach. -->
-            <div id="balance-crew" class="hidden mt-3"></div>
+            <!-- Rząd twarzy całej ekipy stał tu do 2026-08-15 i został usunięty na
+                 wniosek właściciela: zabierał wysokość pierwszego ekranu, a nie
+                 odpowiadał na żadne pytanie, które padałoby na Bilansie. Skład grupy
+                 ma swoje miejsce w ustawieniach pokoju i tam jest pełniejszy —
+                 z informacją, kto ma sposób płatności, a kto jeszcze nie zajął imienia. -->
 
             <!-- CO CZEKA NA CIEBIE — te same sprawy, co w skrzynce (poziom 1 i 2 progu),
                  ale na wejściu do pokoju. Skrzynka jest dla tych, którzy jej szukają;
                  to jest dla tych, którzy po prostu weszli. -->
-            <div id="balance-waiting" class="hidden mt-6">
+            <div id="balance-waiting" class="hidden mt-5">
                 <h4 class="text-sm font-bold text-ink-3 mb-2">Czeka na Ciebie</h4>
                 <div id="balance-waiting-list" class="space-y-2"></div>
             </div>
@@ -340,6 +322,18 @@ the verdict, and DESIGN.md
                 <div id="settlements-content">
                     <div id="settlements-list" class="space-y-2"></div>
                 </div>
+
+                <!-- REJESTR WPŁAT — własne wejście, nie zwijana linijka doklejona pod listą.
+                     Wchodzi się tu z konkretnym pytaniem („czy on to potwierdził?"), więc
+                     to jest miejsce, a nie przypis. Przycisk znika, dopóki nie ma ani jednej
+                     wpłaty: pusty rejestr nie ma czego pokazać. -->
+                <button id="open-settlements-log" class="settings-row tap mt-4 hidden">
+                    <span class="truncate">Rejestr wpłat</span>
+                    <span class="settings-row-value">
+                        <span id="settlements-log-count"></span>
+                        <i class="fas fa-chevron-right text-sm"></i>
+                    </span>
+                </button>
             </section>
             </div><!-- /view-settle -->
 
@@ -393,7 +387,7 @@ the verdict, and DESIGN.md
                     </span>
                 </button>
                 <div class="min-w-0">
-                    <p class="text-sm font-bold text-ink-3">Imię — stuknij, aby zmienić</p>
+                    <p class="text-sm font-bold text-ink-3">Twoje imię, stuknij aby zmienić</p>
                     <p id="dashboard-user-name" class="font-display text-2xl font-bold cursor-pointer truncate" title="Stuknij, aby zmienić imię"></p>
                 </div>
                 <input type="file" id="profile-photo-input" class="hidden" accept="image/jpeg,image/png,image/webp,image/heic">
@@ -505,15 +499,43 @@ the verdict, and DESIGN.md
                 </button>
             </section>
 
+            <!-- JAK DZIELIMY — jedna decyzja o kształcie rachunku, podjęta wtedy, gdy
+                 paragon już leży na stole, a nie przy zakładaniu rachunku.
+
+                 To zastępuje ręczny status uczestnika (Nieuzupełnione / Uzupełnione /
+                 Nie dotyczy), który zniknął 2026-08-15. Status był pytaniem do człowieka
+                 o rzecz, którą aplikacja i tak wie: czy dopisał swoje pozycje i koszty.
+                 Teraz liczy go sama:
+                   PO RÓWNO           — kwota dzieli się na uczestników i nie ma czego
+                                        uzupełniać, więc wszyscy są gotowi od razu.
+                   ZE SWOIMI KOSZTAMI — gotowy jest ten, kto stuknął choć jedną pozycję
+                                        albo wpisał koszt własny.
+                 „Nie dotyczy" też odpadło: od wypisania kogoś z rachunku jest edycja
+                 składu, a dwie drogi do tego samego znaczyły dwa różne stany w bazie. -->
+            <section class="card p-5 mb-3">
+                <div class="flex items-baseline justify-between gap-3 mb-2">
+                    <p class="font-bold">Jak dzielimy</p>
+                    <span id="bill-mode-note" class="text-sm text-ink-3 text-right min-w-0 truncate"></span>
+                </div>
+                <div class="seg w-full">
+                    <button id="bill-mode-even" data-mode="even" class="bill-mode-btn seg-btn flex-1" aria-pressed="true">Po równo</button>
+                    <button id="bill-mode-own" data-mode="own" class="bill-mode-btn seg-btn flex-1" aria-pressed="false">Ze swoimi kosztami</button>
+                </div>
+                <p id="bill-mode-hint" class="text-sm text-ink-2 mt-3"></p>
+            </section>
+
             <!-- POZYCJE — bohater tego ekranu i znak całej aplikacji.
                  Stuknięcie w linię dopisuje mnie; twarze ekipy lądują na liniach na żywo. -->
-            <section class="mb-3 mt-6">
+            <section id="items-section" class="mb-3 mt-6">
                 <div id="items-section-header"></div>
                 <div id="shared-costs-list" class="mb-3"></div>
-                <div class="flex flex-col sm:flex-row gap-2">
-                    <button id="add-shared-cost-btn" class="btn btn-dark flex-1">Dodaj pozycję</button>
-                    <button id="add-global-cost-btn" class="btn btn-quiet flex-1">Dodaj koszt wspólny</button>
-                </div>
+                <button id="add-shared-cost-btn" class="btn btn-dark w-full">Dodaj pozycję</button>
+            </section>
+
+            <!-- Koszt wspólny działa w OBU trybach: napiwek dzieli się po równo niezależnie
+                 od tego, czy pozycje są rozpisane. Dlatego stoi poza sekcją pozycji. -->
+            <section class="mb-3 mt-3">
+                <button id="add-global-cost-btn" class="btn btn-quiet w-full">Dodaj koszt wspólny</button>
             </section>
 
             <!-- PARAGON — źródło pozycji. Odczyt modelem stoi tuż przy zdjęciach, bo to
@@ -557,9 +579,13 @@ the verdict, and DESIGN.md
                  pozycje paragonu i spychała je poza ekran. Nagłówek mówi, ilu ich jest
                  i ilu ma jeszcze coś do zrobienia, więc zwinięcie nic nie ukrywa. -->
             <details id="participants-details" class="mb-3 mt-6">
+                <!-- CHEVRON ZAWSZE PO PRAWEJ. Do 2026-08-15 „Ekipa" miała go po prawej,
+                     a „Historia zmian" po lewej — ta sama kontrolka w dwóch miejscach
+                     wyglądała na dwie różne rzeczy. Teraz obie noszą `settle-others-summary`
+                     z chevronem `ml-auto`, więc znak rozwinięcia stoi zawsze tam samo. -->
                 <summary id="participants-summary" class="settle-others-summary">
-                    <span id="participants-summary-label">Uczestnicy</span>
-                    <i class="fas fa-chevron-down text-xs ml-auto" aria-hidden="true"></i>
+                    <span id="participants-summary-label">Ekipa</span>
+                    <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
                 </summary>
                 <div class="mt-3">
                     <div class="flex justify-end mb-3">
@@ -575,8 +601,8 @@ the verdict, and DESIGN.md
                  a nie treść, którą czyta się przy każdym wejściu. -->
             <details id="bill-history-details" class="mb-3 mt-6 hidden">
                 <summary class="settle-others-summary">
-                    <i class="fas fa-chevron-down settle-others-chevron" aria-hidden="true"></i>
                     <span id="bill-history-label">Historia zmian</span>
+                    <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
                 </summary>
                 <div id="bill-history-list" class="mt-3 space-y-2"></div>
             </details>
@@ -622,33 +648,52 @@ the verdict, and DESIGN.md
         </div>
     </nav>
 
+    <!-- ================================================================
+         ARKUSZE. Jedna budowa, jedna droga wyjścia, jedna obietnica gestu.
+
+         KAŻDY arkusz ma `sheet-head` (uchwyt + tytuł), opcjonalne `sheet-body`
+         (przewijana treść) i opcjonalną `sheet-foot` (przyciski, które nie odjeżdżają
+         z treścią). Krzyżyk stoi w nagłówku wtedy i tylko wtedy, gdy w stopce nie ma
+         „Anuluj" — inaczej byłyby dwa przyciski o tym samym znaczeniu w jednym oknie.
+
+         UCHWYT ZNACZY „ZSUŃ MNIE PALCEM" i naprawdę zsuwa (`wireSheetDrag` w main.js).
+         Wcześniej był ozdobą: wyglądał jak zaproszenie do gestu, którego nie było.
+         Dlatego okna decyzji nieodwracalnych uchwytu NIE MAJĄ — z takiej decyzji
+         nie wychodzi się muśnięciem ekranu.
+         ================================================================ -->
+
     <!-- INSTALACJA NA URZĄDZENIU — arkusz spod przycisku w „Aplikacji".
          Najpierw PO CO, potem JAK. Kroki iPhone'a niosą te same ikony, które widać
          na pasku Safari, bo instrukcja ma się czytać przy telefonie w drugiej ręce. -->
     <div id="install-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md flex flex-col" style="max-height:85vh">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-2xl font-bold mb-1">Zainstaluj na urządzeniu</h3>
-            <p class="text-sm text-ink-2 mb-4">Aplikacja siada na ekranie początkowym jak każda inna: wchodzisz jednym stuknięciem, bez szukania adresu w przeglądarce, na pełnym ekranie i bez pasków. Rachunki liczą się dalej offline, a przypomnienia o zaległościach mogą przyjść na telefon.</p>
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Zainstaluj na urządzeniu</h3>
+                    <button id="close-install-modal" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+                <p class="sheet-lede">Aplikacja siada na ekranie początkowym jak każda inna: wchodzisz jednym stuknięciem, bez szukania adresu w przeglądarce, na pełnym ekranie i bez pasków. Rachunki liczą się dalej offline, a przypomnienia o zaległościach mogą przyjść na telefon.</p>
+            </div>
 
-            <div class="overflow-y-auto">
+            <div class="sheet-body">
                 <!-- iPhone: Safari nie ma systemowego okna instalacji, więc trzy kroki ręcznie. -->
                 <div id="install-steps-ios" class="hidden space-y-2">
-                    <div class="card p-3 flex items-center gap-3">
+                    <div class="block-quiet p-3 flex items-center gap-3">
                         <i class="fas fa-arrow-up-from-bracket text-info w-6 text-center text-lg"></i>
                         <span class="text-sm"><b>1.</b> Dotknij <b>Udostępnij</b> na dolnym pasku Safari.</span>
                     </div>
-                    <div class="card p-3 flex items-center gap-3">
+                    <div class="block-quiet p-3 flex items-center gap-3">
                         <i class="fas fa-square-plus text-info w-6 text-center text-lg"></i>
                         <span class="text-sm"><b>2.</b> Przewiń listę i wybierz <b>Do ekranu początkowego</b>.</span>
                     </div>
-                    <div class="card p-3 flex items-center gap-3">
+                    <div class="block-quiet p-3 flex items-center gap-3">
                         <i class="fas fa-check text-info w-6 text-center text-lg"></i>
                         <span class="text-sm"><b>3.</b> Potwierdź <b>Dodaj</b> w prawym górnym rogu.</span>
                     </div>
-                    <div class="block-quiet p-4">
-                        <p class="text-sm font-bold">Zaraz po instalacji wejdź kodem pokoju</p>
-                        <p class="text-sm text-ink-2 mt-1">Skrót z ekranu początkowego otwiera aplikację bez adresu grupy — pierwszy raz trzeba wpisać kod:</p>
+                    <div class="card p-4">
+                        <p class="text-sm font-bold">Kod pokoju miej pod ręką</p>
+                        <p class="text-sm text-ink-2 mt-1">Skrót z ekranu początkowego ma własną pamięć, osobną od przeglądarki. Jeśli otworzy się na liście pokoi zamiast w Twoim pokoju, wejdź kodem:</p>
                         <p id="install-room-serial" class="serial text-ink text-lg font-bold mt-2"></p>
                     </div>
                 </div>
@@ -656,7 +701,7 @@ the verdict, and DESIGN.md
                 <!-- Android i desktop: systemowe okno instalacji. -->
                 <div id="install-steps-prompt" class="hidden">
                     <button id="install-pwa-confirm" class="btn btn-primary w-full">Dodaj do ekranu początkowego</button>
-                    <p class="text-sm text-ink-3 mt-2">Otworzy się okno systemowe — potwierdź w nim instalację.</p>
+                    <p class="text-sm text-ink-3 mt-2">Otworzy się okno systemowe. Potwierdź w nim instalację.</p>
                 </div>
 
                 <!-- Przeglądarka bez wsparcia albo aplikacja już zainstalowana. -->
@@ -665,22 +710,26 @@ the verdict, and DESIGN.md
                 </div>
 
                 <div id="install-steps-done" class="hidden block-quiet p-4">
-                    <p class="text-sm text-ink-2">Aplikacja jest już zainstalowana na tym urządzeniu — właśnie w niej jesteś.</p>
+                    <p class="text-sm text-ink-2">Aplikacja jest już zainstalowana na tym urządzeniu. Właśnie w niej jesteś.</p>
                 </div>
             </div>
-
-            <button id="close-install-modal" class="btn btn-dark w-full mt-4 flex-shrink-0">Zamknij</button>
         </div>
     </div>
 
     <!-- WYBÓR Z LISTY — jeden arkusz obsługujący każdy wybór jednokrotny
          (waluta, płatnik). Treść wstawia `openChoiceSheet`. -->
     <div id="choice-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md flex flex-col" style="max-height:80vh">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 id="choice-title" class="font-display text-2xl font-bold mb-4"></h3>
-            <div id="choice-options" class="space-y-2 overflow-y-auto"></div>
-            <button id="close-choice-modal" class="btn btn-dark w-full mt-5 flex-shrink-0">Zamknij</button>
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 id="choice-title" class="sheet-title"></h3>
+                    <button id="close-choice-modal" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+            </div>
+            <div class="sheet-body">
+                <div id="choice-options" class="space-y-2"></div>
+            </div>
         </div>
     </div>
 
@@ -688,24 +737,29 @@ the verdict, and DESIGN.md
          i wpisana z góry; humor może dołożyć wyłącznie człowiek, i nigdy przy kwocie.
          Treść widzi adresat, nie cała grupa. -->
     <div id="nudge-compose-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md flex flex-col" style="max-height:85vh">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-2xl font-bold mb-1">Przypomnij o zwrocie</h3>
-            <div class="flex items-center gap-3 mt-3 mb-4">
-                <span id="nudge-compose-avatar" class="flex-shrink-0"></span>
-                <p class="text-sm text-ink-2 min-w-0">
-                    Do <b id="nudge-compose-name" class="text-ink">…</b><br>
-                    <span id="nudge-compose-amount" class="text-ink-3"></span>
-                </p>
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Przypomnij o zwrocie</h3>
+                </div>
             </div>
 
-            <div class="overflow-y-auto">
+            <div class="sheet-body">
+                <div class="flex items-center gap-3 mb-4">
+                    <span id="nudge-compose-avatar" class="flex-shrink-0"></span>
+                    <p class="text-sm text-ink-2 min-w-0">
+                        Do <b id="nudge-compose-name" class="text-ink">…</b><br>
+                        <span id="nudge-compose-amount" class="text-ink-3"></span>
+                    </p>
+                </div>
+
                 <p class="text-sm font-bold text-ink-3 mb-2">Twoje szablony</p>
                 <div id="nudge-templates" class="filter-pills mb-3"></div>
 
                 <label for="nudge-message" class="block text-sm font-bold text-ink-3 mb-1.5">Treść wiadomości</label>
                 <textarea id="nudge-message" class="field w-full p-3" rows="3" maxlength="240"></textarea>
-                <p class="text-xs text-ink-3 mt-1.5">Zobaczy ją tylko adresat. Kwota i tak jedzie osobno — w treści nie musisz jej powtarzać.</p>
+                <p class="text-xs text-ink-3 mt-1.5">Zobaczy ją tylko adresat. Kwota jedzie osobno, więc w treści nie musisz jej powtarzać.</p>
 
                 <button id="nudge-save-template" class="settings-row tap mt-3">
                     <span class="truncate">Zapisz tę treść jako szablon</span>
@@ -713,99 +767,86 @@ the verdict, and DESIGN.md
                 </button>
             </div>
 
-            <div class="flex gap-2 mt-4 flex-shrink-0">
+            <div class="sheet-foot flex gap-2">
                 <button id="nudge-compose-cancel" class="btn btn-quiet flex-1">Anuluj</button>
                 <button id="nudge-compose-send" class="btn btn-primary flex-1">Wyślij</button>
             </div>
         </div>
     </div>
 
-    <!-- STATUS UCZESTNIKA — arkusz zamiast rozwijanej listy systemowej. -->
-    <div id="status-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-2xl font-bold mb-1">Twój status</h3>
-            <p class="text-sm text-ink-2 mb-4">Mówi ekipie, czy Twoja część rachunku jest już opisana.</p>
-            <div class="space-y-2">
-                <button class="status-option card tap w-full min-h-tap p-3 flex items-center gap-3 text-left" data-status="incomplete">
-                    <i class="fas fa-question-circle text-info w-5 text-center"></i>
-                    <span class="flex-grow min-w-0">
-                        <span class="block font-semibold">Nieuzupełnione</span>
-                        <span class="block text-sm text-ink-3">Jeszcze nie wskazałeś swoich pozycji.</span>
-                    </span>
-                    <i class="status-option-check fas fa-check text-ink hidden flex-shrink-0"></i>
-                </button>
-                <button class="status-option card tap w-full min-h-tap p-3 flex items-center gap-3 text-left" data-status="completed">
-                    <i class="fas fa-user-check text-ink-2 w-5 text-center"></i>
-                    <span class="flex-grow min-w-0">
-                        <span class="block font-semibold">Uzupełnione</span>
-                        <span class="block text-sm text-ink-3">Twoja część rachunku jest kompletna.</span>
-                    </span>
-                    <i class="status-option-check fas fa-check text-ink hidden flex-shrink-0"></i>
-                </button>
-                <button class="status-option card tap w-full min-h-tap p-3 flex items-center gap-3 text-left" data-status="not_applicable">
-                    <i class="fas fa-ban text-ink-3 w-5 text-center"></i>
-                    <span class="flex-grow min-w-0">
-                        <span class="block font-semibold">Mnie nie dotyczy</span>
-                        <span class="block text-sm text-ink-3">Nie brałeś udziału w tym rachunku.</span>
-                    </span>
-                    <i class="status-option-check fas fa-check text-ink hidden flex-shrink-0"></i>
-                </button>
-            </div>
-            <button id="close-status-modal" class="btn btn-dark w-full mt-5">Zamknij</button>
-        </div>
-    </div>
-
     <!-- TWÓJ ZNAK — arkusz spod znaku na ekranie „Ty". Dwie drogi do tego samego
          pytania „jak mam wyglądać przy pozycjach rachunku": własne zdjęcie albo kolor. -->
     <div id="mark-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-2xl font-bold mb-1">Twój znak</h3>
-            <p class="text-sm text-ink-2 mb-4">Tak widzi Cię ekipa przy pozycjach rachunku i w rozliczeniach.</p>
-            <div class="space-y-2">
-                <button id="profile-photo-btn" class="settings-row tap">
-                    <span class="truncate">Ustaw własne zdjęcie</span>
-                    <span class="settings-row-value"><i class="fas fa-camera text-sm"></i></span>
-                </button>
-                <button id="profile-color-btn" class="settings-row tap">
-                    <span class="truncate">Wybierz kolor znaku</span>
-                    <span class="settings-row-value">
-                        <span id="profile-color-dot" class="w-6 h-6 rounded-full block" style="background-color:transparent"></span>
-                        <i class="fas fa-chevron-right text-sm"></i>
-                    </span>
-                </button>
-                <button id="profile-photo-remove-btn" class="settings-row tap hidden">
-                    <span class="truncate">Usuń zdjęcie</span>
-                    <span class="settings-row-value"><i class="fas fa-trash text-sm"></i></span>
-                </button>
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Twój znak</h3>
+                    <button id="close-mark-modal" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+                <p class="sheet-lede">Tak widzi Cię ekipa przy pozycjach rachunku i w rozliczeniach.</p>
             </div>
-            <button id="close-mark-modal" class="btn btn-dark w-full mt-5">Gotowe</button>
+            <div class="sheet-body">
+                <div class="space-y-2">
+                    <button id="profile-photo-btn" class="settings-row tap">
+                        <span class="truncate">Ustaw własne zdjęcie</span>
+                        <span class="settings-row-value"><i class="fas fa-camera text-sm"></i></span>
+                    </button>
+                    <button id="profile-color-btn" class="settings-row tap">
+                        <span class="truncate">Wybierz kolor znaku</span>
+                        <span class="settings-row-value">
+                            <span id="profile-color-dot" class="w-6 h-6 rounded-full block" style="background-color:transparent"></span>
+                            <i class="fas fa-chevron-right text-sm"></i>
+                        </span>
+                    </button>
+                    <button id="profile-photo-remove-btn" class="settings-row tap hidden">
+                        <span class="truncate">Usuń zdjęcie</span>
+                        <span class="settings-row-value"><i class="fas fa-trash text-sm"></i></span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
     <!-- PALETA KOLORU ZNAKU — arkusz spod pola „Kolor znaku" na profilu. -->
     <div id="color-picker-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-2xl font-bold mb-1">Kolor znaku</h3>
-            <p class="text-sm text-ink-2 mb-4">Tym kolorem ekipa rozpoznaje Cię przy pozycjach rachunku.</p>
-            <div id="dashboard-color-picker" class="grid grid-cols-6 gap-2 justify-items-center"></div>
-            <button id="close-color-picker-btn" class="btn btn-dark w-full mt-5">Gotowe</button>
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Kolor znaku</h3>
+                    <button id="close-color-picker-btn" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+                <p class="sheet-lede">Tym kolorem ekipa rozpoznaje Cię przy pozycjach rachunku.</p>
+            </div>
+            <div class="sheet-body">
+                <div id="dashboard-color-picker" class="grid grid-cols-6 gap-2 justify-items-center pb-1"></div>
+            </div>
         </div>
     </div>
 
     <!-- USTAWIENIA POKOJU — arkusz spod nazwy pokoju. Ustawienia stoją przy rzeczy,
-         której dotyczą; zwijana sekcja „Pokój" na pulpicie zniknęła bez zamiennika. -->
-    <div id="room-settings-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-lg flex flex-col" style="max-height:85vh">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-2xl font-bold mb-4">Ustawienia pokoju</h3>
+         której dotyczą.
 
-            <div class="overflow-y-auto space-y-3">
+         KOLEJNOŚĆ IDZIE ZA CZĘSTOŚCIĄ, nie za budową danych (decyzja właściciela
+         2026-08-15). Najpierw to, po co się tu wchodzi przy stole: kod i link do
+         zaproszenia. Potem ustawienie, które realnie się zmienia: waluta domyślna.
+         Potem podsumowanie wydatków. Skład grupy jest długą listą, więc schodzi niżej,
+         a opuszczenie pokoju stoi na samym końcu, bo to jedyne wyjście bez powrotu. -->
+    <div id="room-settings-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-lg">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Ustawienia pokoju</h3>
+                    <button id="close-room-settings-btn" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+            </div>
+
+            <div class="sheet-body space-y-3">
                 <div class="card p-5">
                     <p class="text-sm font-bold text-ink-3">Kod pokoju</p>
-                    <p class="mt-1 text-sm text-ink-2">Podaj go przy stole — działa też wtedy, gdy skrót z ekranu początkowego zgubi adres grupy.</p>
+                    <p class="mt-1 text-sm text-ink-2">Podaj go przy stole. Spacja jest tylko dla oka: przy wpisywaniu można ją pominąć, tak samo jak wielkość liter.</p>
                     <div class="mt-2 flex items-center gap-2">
                         <span id="room-settings-serial" class="serial text-ink text-lg font-bold flex-grow min-w-0 truncate"></span>
                         <button id="room-settings-copy-serial-btn" class="btn btn-dark flex-shrink-0">Kopiuj</button>
@@ -831,27 +872,13 @@ the verdict, and DESIGN.md
                     </div>
                 </div>
 
-                <!-- SKŁAD GRUPY. Ryzyko podmiany cudzego numeru konta jest świadomie
-                     otwarte (PRODUCT.md), więc interfejs ma je POKAZAĆ, a nie przemilczeć:
-                     przy pieniądzach niewypowiedziane ryzyko jest gorsze od widocznego. -->
-                <div class="card p-5">
-                    <div class="flex items-center justify-between gap-3">
-                        <p class="text-sm font-bold text-ink-3">Skład grupy</p>
-                        <span id="room-members-count" class="chip text-xs"></span>
-                    </div>
-                    <div id="room-members-list" class="mt-3 space-y-2"></div>
-                    <div class="mt-3 flex items-center gap-2">
-                        <input type="text" id="room-add-member-input" class="field flex-grow min-w-0" placeholder="Imię nowej osoby" autocomplete="off" enterkeyhint="done">
-                        <button id="room-add-member-btn" class="btn btn-dark flex-shrink-0">Dodaj</button>
-                    </div>
-                    <p class="text-xs text-ink-3 mt-3">Numer konta i inne sposoby płatności może zmienić <b class="text-ink-2">każda osoba w pokoju</b>, nie tylko właściciel. Zanim wyślesz przelew na nowy numer, upewnij się u odbiorcy poza aplikacją.</p>
-                </div>
-
-                <!-- Waluta domyślna: dotyczy NOWYCH rachunków. Istniejące zostają przy
-                     swojej, bo kurs zapisuje się w dniu dodania rachunku. -->
+                <!-- Waluta domyślna: dotyczy WYŁĄCZNIE nowych rachunków i da się ją zmienić
+                     w każdej chwili, także w pokoju pełnym rachunków. Istniejące zostają
+                     przy swojej, bo kurs zapisuje się w dniu dodania rachunku i cofnięcie
+                     go zmieniłoby rozliczone już kwoty. -->
                 <div class="card p-5">
                     <p class="text-sm font-bold text-ink-3">Waluta domyślna</p>
-                    <p class="mt-1 text-sm text-ink-2">Nowe rachunki startują w tej walucie. Rachunki już dodane zostają przy swojej.</p>
+                    <p class="mt-1 text-sm text-ink-2">W tej walucie startuje każdy nowy rachunek. Możesz ją zmieniać kiedy chcesz. Rachunki już dodane zostają przy swojej, razem z kursem z dnia dodania.</p>
                     <button id="room-currency-btn" class="field choice-field w-full mt-2">
                         <span id="room-currency-label">PLN</span>
                         <i class="fas fa-chevron-down choice-field-chevron"></i>
@@ -873,71 +900,124 @@ the verdict, and DESIGN.md
                     </div>
                 </div>
 
+                <!-- SKŁAD GRUPY. Ryzyko podmiany cudzego numeru konta jest świadomie
+                     otwarte (PRODUCT.md), więc interfejs ma je POKAZAĆ, a nie przemilczeć:
+                     przy pieniądzach niewypowiedziane ryzyko jest gorsze od widocznego. -->
+                <div class="card p-5">
+                    <div class="flex items-center justify-between gap-3">
+                        <p class="text-sm font-bold text-ink-3">Skład grupy</p>
+                        <span id="room-members-count" class="chip text-xs"></span>
+                    </div>
+                    <div id="room-members-list" class="mt-3 space-y-2"></div>
+                    <div class="mt-3 flex items-center gap-2">
+                        <input type="text" id="room-add-member-input" class="field flex-grow min-w-0" placeholder="Imię nowej osoby" autocomplete="off" enterkeyhint="done">
+                        <button id="room-add-member-btn" class="btn btn-dark flex-shrink-0">Dodaj</button>
+                    </div>
+                    <p class="text-xs text-ink-3 mt-3">Numer konta i inne sposoby płatności może zmienić <b class="text-ink-2">każda osoba w pokoju</b>, nie tylko właściciel. Zanim wyślesz przelew na nowy numer, upewnij się u odbiorcy poza aplikacją.</p>
+                </div>
+
                 <!-- Wyjście z pokoju stoi NA KOŃCU i mówi wprost, co się dzieje: pokój
                      zostaje, rachunki zostają, znika tylko przypisanie tego urządzenia. -->
                 <div class="card p-5">
                     <p class="text-sm font-bold text-ink-3">Opuść pokój</p>
-                    <p class="mt-1 text-sm text-ink-2">Zwalniasz swoje imię i usuwasz pokój z listy na tym urządzeniu. Rachunki i rozliczenia zostają — wrócisz kodem pokoju i wybierzesz imię ponownie.</p>
+                    <p class="mt-1 text-sm text-ink-2">Zwalniasz swoje imię i usuwasz pokój z listy na tym urządzeniu. Rachunki i rozliczenia zostają. Wrócisz kodem pokoju i wybierzesz imię ponownie.</p>
                     <button id="leave-room-btn" class="btn btn-quiet w-full mt-3 text-owe">Opuść pokój</button>
                 </div>
             </div>
-
-            <button id="close-room-settings-btn" class="btn btn-dark w-full mt-4 flex-shrink-0">Gotowe</button>
         </div>
     </div>
 
-    <div id="new-bill-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-lg">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-2xl font-bold mb-4">Nowy rachunek</h3>
-
-            <label for="new-bill-name" class="block text-sm font-bold text-ink-3">Nazwa rachunku</label>
-            <input type="text" id="new-bill-name" class="field min-h-tap w-full mt-1.5 mb-4 p-2" placeholder="np. Lunch w piątek">
-
-            <div class="mb-3 flex items-center gap-2">
-                <span class="text-sm font-bold text-ink-3">Rachunek dla</span>
-                <button id="edit-participants-btn-modal" class="tap min-h-tap px-2 rounded-lg font-semibold text-ink">wszystkich</button>
+    <!-- NOWY RACHUNEK — jedyny arkusz z klasą `keeps-deck`: pasek zostaje na ekranie,
+         a koło [+] obraca się w krzyżyk i pełni rolę zamknięcia. Arkusz wyrasta NAD
+         paskiem, więc widać, skąd się wziął, i nic nie przenika w nic. -->
+    <div id="new-bill-modal" class="modal keeps-deck fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-lg">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Nowy rachunek</h3>
+                </div>
             </div>
-            <div id="participants-checklist-modal" class="hidden grid grid-cols-2 sm:grid-cols-3 gap-1 max-h-40 overflow-y-auto p-3 rounded-lg mb-4 bg-surface-2"></div>
 
-            <!-- Wybór „prosty / zaawansowany" zniknął z tego okna świadomie: wymuszał
-                 decyzję o kształcie rachunku, ZANIM ktokolwiek zobaczył paragon. Teraz jest
-                 jeden rachunek, który rośnie — zaczyna się od kwoty, a pozycje i koszty
-                 własne dopisuje się wtedy, gdy są potrzebne. Kwota nierozpisana dzieli się
-                 po równo, więc rachunek jest kompletny na każdym etapie. -->
-            <p class="block-quiet p-4 text-sm text-ink-2 mb-6">
-                Zacznij od samej kwoty. Pozycje z paragonu i koszty własne dopiszesz później —
-                to, czego nikt nie weźmie imiennie, podzieli się po równo.
-            </p>
+            <div class="sheet-body">
+                <label for="new-bill-name" class="block text-sm font-bold text-ink-3">Nazwa rachunku</label>
+                <input type="text" id="new-bill-name" class="field min-h-tap w-full mt-1.5 mb-4" placeholder="np. Lunch w piątek">
 
-            <div class="flex justify-end gap-2">
-                <button id="cancel-new-bill" class="btn btn-quiet">Anuluj</button>
-                <button id="confirm-create-bill-btn" class="btn btn-primary" disabled>
+                <div class="mb-2 flex items-center gap-2">
+                    <span class="text-sm font-bold text-ink-3">Rachunek dla</span>
+                    <button id="edit-participants-btn-modal" class="tap min-h-tap px-2 rounded-lg font-semibold text-ink underline decoration-ink-3 underline-offset-4">wszystkich</button>
+                </div>
+
+                <!-- WYBÓR OSÓB — ten sam wygląd, co przy pozycji paragonu i przy składzie
+                     rachunku: zdjęcie, imię, okrągły znacznik. Wcześniej stały tu systemowe
+                     kwadraciki bez twarzy, więc to samo pytanie „kto?" wyglądało w aplikacji
+                     na dwa sposoby. Lupa rozwija pole wyszukiwania: przy dwudziestu pięciu
+                     osobach (kryterium z PRODUCT.md) przewijanie jest wolniejsze od wpisania
+                     trzech liter. -->
+                <div id="new-bill-people" class="hidden mb-4">
+                    <div class="person-search mb-2" data-search-for="participants-checklist-modal">
+                        <button type="button" class="person-search-toggle tap w-11 h-11 rounded-full flex items-center justify-center bg-surface-2 text-ink-2 flex-shrink-0" aria-expanded="false" aria-label="Szukaj osoby" title="Szukaj osoby">
+                            <i class="fas fa-magnifying-glass"></i>
+                        </button>
+                        <input type="text" class="person-search-input field min-h-tap" placeholder="Szukaj imienia" autocomplete="off" spellcheck="false" aria-label="Szukaj osoby">
+                        <span class="person-search-count text-sm font-bold text-ink-3 flex-shrink-0"></span>
+                    </div>
+                    <!-- BEZ własnego paska przewijania. Lista wewnątrz przewijanego arkusza
+                         daje dwa zagnieżdżone obszary przewijania: palec nie wie, który
+                         złapał, a ostatni wiersz ucinał się w połowie tuż nad stopką.
+                         Jeden arkusz przewija się w jednym miejscu, w `sheet-body`. -->
+                    <div id="participants-checklist-modal" class="space-y-1"></div>
+                </div>
+
+                <!-- Wybór „prosty / zaawansowany" zniknął z tego okna świadomie: wymuszał
+                     decyzję o kształcie rachunku, ZANIM ktokolwiek zobaczył paragon. Teraz
+                     rachunek startuje podziałem po równo, a tryb „ze swoimi kosztami"
+                     włącza się na samym rachunku, gdy okaże się potrzebny. -->
+                <p class="block-quiet p-4 text-sm text-ink-2">
+                    Rachunek startuje podziałem po równo. Jeśli okaże się, że każdy jadł co innego, przełączysz go na rachunku jednym stuknięciem.
+                </p>
+            </div>
+
+            <div class="sheet-foot flex gap-2">
+                <button id="cancel-new-bill" class="btn btn-quiet flex-1">Anuluj</button>
+                <button id="confirm-create-bill-btn" class="btn btn-primary flex-1" disabled>
                     Stwórz rachunek
                 </button>
             </div>
         </div>
     </div>
 
-
     <div id="help-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet w-full max-w-lg flex flex-col" style="max-height:85vh">
-            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
-                <h3 class="font-display text-xl font-bold"><span id="help-modal-title">Pomoc</span></h3>
-                <button id="close-help-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
+        <div class="sheet w-full max-w-lg">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title"><span id="help-modal-title">Pomoc</span></h3>
+                    <button id="close-help-modal" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
             </div>
-            <div id="help-modal-body" class="p-5 overflow-y-auto text-ink-2 text-sm space-y-3"></div>
+            <div id="help-modal-body" class="sheet-body text-ink-2 text-sm space-y-3"></div>
         </div>
     </div>
 
     <div id="bill-members-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet w-full max-w-md flex flex-col" style="max-height:85vh">
-            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
-                <h3 class="font-display text-xl font-bold">Skład rachunku</h3>
-                <button id="close-bill-members-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Skład rachunku</h3>
+                    <button id="close-bill-members-modal" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+                <p class="sheet-lede">Zaznacz, kto bierze udział w tym rachunku. Płatnika nie da się wypisać z własnego rachunku.</p>
             </div>
-            <div class="p-5 overflow-y-auto">
-                <p class="text-sm text-ink-3 mb-4">Zaznacz, kto bierze udział w tym rachunku. Płatnika nie można usunąć.</p>
+            <div class="sheet-body">
+                <div class="person-search mb-2" data-search-for="bill-members-list">
+                    <button type="button" class="person-search-toggle tap w-11 h-11 rounded-full flex items-center justify-center bg-surface-2 text-ink-2 flex-shrink-0" aria-expanded="false" aria-label="Szukaj osoby" title="Szukaj osoby">
+                        <i class="fas fa-magnifying-glass"></i>
+                    </button>
+                    <input type="text" class="person-search-input field min-h-tap" placeholder="Szukaj imienia" autocomplete="off" spellcheck="false" aria-label="Szukaj osoby">
+                    <span class="person-search-count text-sm font-bold text-ink-3 flex-shrink-0"></span>
+                </div>
                 <div id="bill-members-list" class="space-y-1"></div>
             </div>
         </div>
@@ -946,12 +1026,15 @@ the verdict, and DESIGN.md
     <!-- URUGULUJ — moment, w którym pieniądze wracają. Kwota stoi tu nominałem,
          bo to ona jest przepisywana do aplikacji bankowej. -->
     <div id="settle-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet w-full max-w-md flex flex-col" style="max-height:85vh">
-            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
-                <h3 class="font-display text-xl font-bold">Ureguluj</h3>
-                <button id="close-settle-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Ureguluj</h3>
+                    <button id="close-settle-modal" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
             </div>
-            <div class="p-5 overflow-y-auto">
+            <div class="sheet-body">
                 <!-- Znak osoby przy kwocie, nie samo imię: w oknie o cudzych pieniądzach
                      ten sam kolor i to samo zdjęcie, po których rozpoznaje się kogoś
                      na liście rozliczeń, muszą potwierdzić, do kogo idzie przelew. -->
@@ -960,30 +1043,52 @@ the verdict, and DESIGN.md
                     <p class="text-sm font-bold text-ink-3 min-w-0"><span id="settle-name-label">Wpłata do</span> <b id="settle-name" class="text-ink block truncate text-lg">…</b></p>
                 </div>
                 <div class="flex items-center gap-2">
-                    <input id="settle-amount-input" type="text" inputmode="decimal" class="field min-h-tap w-36 p-2 text-2xl font-semibold">
+                    <input id="settle-amount-input" type="text" inputmode="decimal" class="field min-h-tap w-36 text-2xl font-semibold">
                     <span id="settle-currency" class="text-lg font-semibold text-ink-3">PLN</span>
-                    <button id="settle-copy-amount" class="copy-account-btn tap min-h-tap px-3 rounded-lg text-sm font-semibold text-ink ml-auto" title="Kopiuj kwotę">Kopiuj</button>
+                    <button id="settle-copy-amount" class="copy-account-btn tap min-h-tap px-3 rounded-full text-sm font-semibold text-ink bg-surface-2 ml-auto" title="Kopiuj kwotę">Kopiuj</button>
                 </div>
-                <p class="text-xs text-ink-3 mt-1.5 mb-4">Możesz wpisać część kwoty — spłata częściowa jest w porządku.</p>
+                <p class="text-xs text-ink-3 mt-1.5 mb-4">Możesz wpisać część kwoty. Spłata częściowa jest w porządku.</p>
                 <div id="settle-methods-wrap">
                     <div id="settle-methods" class="space-y-2"></div>
                 </div>
             </div>
-            <div class="p-5 border-t border-ink/10">
+            <div class="sheet-foot">
                 <button id="settle-record-btn" class="btn btn-dark w-full">Zapisz wpłatę</button>
-                <p id="settle-record-note" class="text-xs text-ink-3 mt-2 text-center">Zapisuje, że przelałeś tę kwotę — odbiorca potwierdzi.</p>
+                <p id="settle-record-note" class="text-xs text-ink-3 mt-2 text-center">Zapisuje, że przelałeś tę kwotę. Odbiorca ją potwierdzi.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- REJESTR WPŁAT — osobne miejsce, nie zwijana linijka w rozliczeniach.
+         Wcześniej rejestr był jednym wierszem „Rejestr wpłat (4)" z trójkącikiem,
+         który nie wyglądał na listę, a po rozwinięciu upychał datę, kierunek, kwotę
+         i stan w jedną linię z wielokropkiem. Tu każda wpłata dostaje pełny wiersz,
+         a dzień jest nagłówkiem grupy, tak samo jak na liście rachunków. -->
+    <div id="settlements-log-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet sheet-full w-full max-w-lg">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Rejestr wpłat</h3>
+                    <button id="close-settlements-log" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+                <p class="sheet-lede">Każda wpłata zapisana w tym pokoju, od najnowszej. Wpłatę potwierdza odbiorca i dopiero wtedy dług znika.</p>
+            </div>
+            <div class="sheet-body">
+                <div id="settlements-log-list" class="space-y-2"></div>
             </div>
         </div>
     </div>
 
     <div id="nudges-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet w-full max-w-md flex flex-col" style="max-height:85vh">
-            <div class="p-5 border-b border-ink/10">
-                <div class="flex items-center justify-between gap-2">
-                    <h3 class="font-display text-xl font-bold">Skrzynka</h3>
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Skrzynka</h3>
                     <div class="flex items-center gap-1 flex-shrink-0">
-                        <button id="nudges-readall-btn" class="tap hidden min-h-tap px-3 rounded-lg text-sm font-semibold text-ink-2">Oznacz wszystkie</button>
-                        <button id="close-nudges-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none" title="Zamknij">&times;</button>
+                        <button id="nudges-readall-btn" class="tap hidden min-h-tap px-3 rounded-full text-sm font-semibold text-ink-2 bg-surface-2">Oznacz wszystkie</button>
+                        <button id="close-nudges-modal" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
                     </div>
                 </div>
                 <!-- Dwa segmenty: „Dla Ciebie" to sprawy, które czekają na mój ruch
@@ -994,27 +1099,37 @@ the verdict, and DESIGN.md
                     <button data-inbox="all" class="inbox-mode-btn seg-btn" aria-pressed="false">Wszystko</button>
                 </div>
             </div>
-            <div class="p-5 overflow-y-auto">
+            <div class="sheet-body">
                 <div id="nudges-list" class="space-y-2"></div>
             </div>
         </div>
     </div>
 
     <div id="payment-methods-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet w-full max-w-lg flex flex-col" style="max-height:85vh">
-            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
-                <h3 class="font-display text-xl font-bold">Jak Ci oddać pieniądze</h3>
-                <button id="close-payment-methods-modal" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
+        <div class="sheet w-full max-w-lg">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Jak Ci oddać pieniądze</h3>
+                    <button id="close-payment-methods-modal" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+                <p class="sheet-lede">Ekipa zobaczy to przy Twoich należnościach. Dodaj ile chcesz: konto, telefon, Revolut, PayPal, Wise albo własne.</p>
             </div>
-            <div class="p-5 overflow-y-auto">
-                <p class="text-sm text-ink-3 mb-4">Widoczne dla znajomych przy Twoich należnościach. Dodaj ile chcesz — konto, telefon, Revolut, PayPal albo własne.</p>
+            <div class="sheet-body">
                 <div id="payment-methods-list" class="space-y-2 mb-5"></div>
                 <div class="border-t border-ink/10 pt-4">
-                    <p class="text-sm font-bold text-ink-3 mb-2">Dodaj metodę</p>
+                    <p class="text-sm font-bold text-ink-3 mb-2">Dodaj sposób płatności</p>
                     <div class="flex flex-col gap-2">
-                        <select id="pm-add-type" class="field min-h-tap p-2 text-sm"></select>
-                        <input id="pm-add-label" type="text" class="field min-h-tap hidden p-2 text-sm" placeholder="Nazwa metody (np. Wise)">
-                        <input id="pm-add-value" type="text" class="field min-h-tap p-2 text-sm" placeholder="Numer / adres / uchwyt">
+                        <!-- Wybór rodzaju idzie ARKUSZEM, nie listą systemową. Ostatni
+                             `select` w aplikacji znikł stąd 2026-08-15: na ciemnym ekranie
+                             rozwijał się białym prostokątem z niebieskim zaznaczeniem
+                             i cudzą czcionką (widać to na zrzucie właściciela). -->
+                        <button id="pm-add-type" class="field choice-field w-full" data-value="account">
+                            <span id="pm-add-type-label">Konto / IBAN</span>
+                            <i class="fas fa-chevron-down choice-field-chevron"></i>
+                        </button>
+                        <input id="pm-add-label" type="text" class="field min-h-tap hidden" placeholder="Nazwa metody, np. Wise">
+                        <input id="pm-add-value" type="text" class="field min-h-tap" placeholder="Numer / adres / uchwyt">
                         <button id="pm-add-btn" class="btn btn-dark w-full">Dodaj</button>
                     </div>
                 </div>
@@ -1024,120 +1139,184 @@ the verdict, and DESIGN.md
 
     <!-- OKNA POTWIERDZENIA — kasowanie jest nieodwracalne, więc przycisk potwierdzenia
          nosi kolor długu: to jedyne miejsce poza pieniędzmi, gdzie ta czerwień się pojawia,
-         i zawsze znaczy „stąd nie ma powrotu". -->
-    <!-- POTWIERDZENIE — jedno okno dla każdej decyzji nieodwracalnej. Treść wstawia
-         `openConfirm`. Kliknięcie w tło NIE zamyka (patrz CONFIRM_MODALS): przy takiej
-         decyzji przypadkowe muśnięcie ekranu nie może uchodzić za odpowiedź. -->
+         i zawsze znaczy „stąd nie ma powrotu".
+
+         Wszystkie noszą klasę `sheet-confirm`: BEZ uchwytu i BEZ krzyżyka. Kliknięcie
+         w tło też nie zamyka (patrz CONFIRM_MODALS w main.js). Z takiej decyzji wychodzi
+         się wyłącznie wskazując odpowiedź, a brak uchwytu mówi to, zanim ktokolwiek
+         zdąży spróbować zsunąć okno palcem. -->
     <div id="confirm-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md text-center">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 id="confirm-title" class="font-display text-2xl font-bold mb-3"></h3>
-            <p id="confirm-body" class="text-ink-2 mb-6"></p>
-            <div class="flex justify-center gap-2">
-                <button id="confirm-cancel-btn" class="btn btn-quiet">Anuluj</button>
-                <button id="confirm-ok-btn" class="btn btn-danger">Potwierdzam</button>
+        <div class="sheet sheet-confirm w-full max-w-md text-center">
+            <div class="sheet-head">
+                <div class="sheet-head-row justify-center">
+                    <h3 id="confirm-title" class="sheet-title"></h3>
+                </div>
+            </div>
+            <div class="sheet-body"><p id="confirm-body" class="text-ink-2"></p></div>
+            <div class="sheet-foot sheet-foot-plain flex justify-center gap-2">
+                <button id="confirm-cancel-btn" class="btn btn-quiet flex-1">Anuluj</button>
+                <button id="confirm-ok-btn" class="btn btn-danger flex-1">Potwierdzam</button>
             </div>
         </div>
     </div>
 
     <div id="delete-confirm-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md text-center">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-2xl font-bold mb-3">Na pewno usunąć?</h3>
-            <p class="text-ink-2 mb-6">Tej operacji nie można cofnąć. Wszystkie dane tego rachunku znikną na stałe.</p>
-            <div class="flex justify-center gap-2">
-                <button id="cancel-delete-bill" class="tap min-h-tap px-5 rounded-lg font-semibold text-ink-2">Anuluj</button>
-                <button id="confirm-delete-bill" class="btn btn-danger">Tak, usuń</button>
+        <div class="sheet sheet-confirm w-full max-w-md text-center">
+            <div class="sheet-head">
+                <div class="sheet-head-row justify-center">
+                    <h3 class="sheet-title">Na pewno usunąć?</h3>
+                </div>
+            </div>
+            <div class="sheet-body"><p class="text-ink-2">Tej operacji nie da się cofnąć. Wszystkie dane tego rachunku znikną na stałe.</p></div>
+            <div class="sheet-foot sheet-foot-plain flex justify-center gap-2">
+                <button id="cancel-delete-bill" class="btn btn-quiet flex-1">Anuluj</button>
+                <button id="confirm-delete-bill" class="btn btn-danger flex-1">Tak, usuń</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CZY TO TY WYŁOŻYŁEŚ PIENIĄDZE — pytanie zadane wskazanemu płatnikowi przy
+         wejściu na rachunek.
+
+         Do 2026-08-15 stał tu wyłącznie baner na górze ekranu rachunku z przyciskiem
+         „Potwierdzam". Baner przewijał się razem z treścią i dawał się przeoczyć,
+         a bez potwierdzenia płatnika rachunek nie wchodzi do rozliczeń — czyli
+         najważniejszy krok w całym rachunku był tym, który najłatwiej pominąć
+         (zgłoszenie właściciela: „można łatwo zignorować").
+
+         Dlatego jest to okno DECYZJI: bez uchwytu, bez krzyżyka, bez zamykania
+         kliknięciem w tło. Odpowiedź „Nie" jest pełnoprawna i czyści wskazanie
+         płatnika, więc nikt nie zostaje zamknięty w pytaniu bez wyjścia. -->
+    <div id="payer-claim-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet sheet-confirm w-full max-w-md text-center">
+            <div class="sheet-head">
+                <div class="sheet-head-row justify-center">
+                    <h3 class="sheet-title">Czy to Ty zapłaciłeś?</h3>
+                </div>
+            </div>
+            <div class="sheet-body">
+                <p class="text-ink-2"><span id="payer-claim-body"></span></p>
+                <p class="text-sm text-ink-3 mt-3">Dopóki płatnik nie potwierdzi, rachunek nie wchodzi do rozliczeń i nikt nie zobaczy, ile Ci oddać.</p>
+            </div>
+            <div class="sheet-foot sheet-foot-plain flex justify-center gap-2">
+                <button id="payer-claim-no" class="btn btn-quiet flex-1">Nie ja</button>
+                <button id="payer-claim-yes" class="btn btn-primary flex-1">Tak, ja</button>
             </div>
         </div>
     </div>
 
     <div id="takeover-name-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md text-center">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-xl font-bold mb-3">To imię jest już zajęte</h3>
-            <p class="text-ink-2 mb-6">Prawdopodobnie używasz aplikacji na innym urządzeniu. Przejąć sesję i pracować tutaj?</p>
-            <div class="flex justify-center gap-2">
-                <button id="cancel-takeover-name" class="tap min-h-tap px-5 rounded-lg font-semibold text-ink-2">Nie</button>
-                <button id="confirm-takeover-name" class="btn btn-danger">Tak, przejmij</button>
+        <div class="sheet sheet-confirm w-full max-w-md text-center">
+            <div class="sheet-head">
+                <div class="sheet-head-row justify-center">
+                    <h3 class="sheet-title">To imię jest już zajęte</h3>
+                </div>
+            </div>
+            <div class="sheet-body"><p class="text-ink-2">Prawdopodobnie używasz aplikacji na innym urządzeniu. Przejąć sesję i pracować tutaj?</p></div>
+            <div class="sheet-foot sheet-foot-plain flex justify-center gap-2">
+                <button id="cancel-takeover-name" class="btn btn-quiet flex-1">Nie</button>
+                <button id="confirm-takeover-name" class="btn btn-danger flex-1">Tak, przejmij</button>
             </div>
         </div>
     </div>
 
     <div id="photo-lightbox-modal" class="modal fixed inset-0 modal-scrim-strong items-center justify-center p-4 cursor-pointer">
         <div class="relative">
-            <!-- Adres zdjęcia wstawia showLightbox() w chwili otwarcia; okno do tego czasu
-                 jest ukryte (.modal bez .active), więc pusty src nigdy nie trafia na ekran. -->
-            <img id="lightbox-image" src="" alt="Zdjęcie paragonu" class="max-w-full max-h-[90vh] rounded-lg">
-            <button id="close-lightbox-btn" class="absolute -top-3 -right-3 bg-bg text-ink rounded-full w-11 h-11 flex items-center justify-center text-2xl font-bold">&times;</button>
+            <!-- Adres zdjęcia wstawia showLightbox() w chwili otwarcia. Do tego czasu stoi tu
+                 przezroczysty piksel, a nie pusty `src`: pusty adres to w przeglądarce
+                 żądanie do bieżącej strony i ikona zepsutego obrazka, gdyby okno kiedykolwiek
+                 pokazało się przed wstawieniem zdjęcia. -->
+            <img id="lightbox-image" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Zdjęcie paragonu" class="max-w-full max-h-[90vh] rounded-block">
+            <button id="close-lightbox-btn" class="tap absolute -top-3 -right-3 bg-bg text-ink rounded-full w-11 h-11 flex items-center justify-center" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
         </div>
     </div>
 
     <div id="delete-photo-confirm-modal" class="modal modal-top fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md text-center">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-xl font-bold mb-3">Usunąć zdjęcie?</h3>
-            <p class="text-ink-2 mb-6">Zdjęcie paragonu zniknie z tego rachunku na stałe.</p>
-            <div class="flex justify-center gap-2">
-                <button id="cancel-delete-photo" class="tap min-h-tap px-5 rounded-lg font-semibold text-ink-2">Anuluj</button>
-                <button id="confirm-delete-photo" class="btn btn-danger">Tak, usuń</button>
+        <div class="sheet sheet-confirm w-full max-w-md text-center">
+            <div class="sheet-head">
+                <div class="sheet-head-row justify-center">
+                    <h3 class="sheet-title">Usunąć zdjęcie?</h3>
+                </div>
+            </div>
+            <div class="sheet-body"><p class="text-ink-2">Zdjęcie paragonu zniknie z tego rachunku na stałe.</p></div>
+            <div class="sheet-foot sheet-foot-plain flex justify-center gap-2">
+                <button id="cancel-delete-photo" class="btn btn-quiet flex-1">Anuluj</button>
+                <button id="confirm-delete-photo" class="btn btn-danger flex-1">Tak, usuń</button>
             </div>
         </div>
     </div>
 
     <div id="shared-cost-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-lg">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 id="item-modal-title" class="font-display text-2xl font-bold mb-4">Dodaj pozycję</h3>
-            <label for="shared-cost-desc" class="block text-sm font-bold text-ink-3">Nazwa</label>
-            <input type="text" id="shared-cost-desc" class="field min-h-tap w-full mt-1.5 mb-4 p-2" placeholder="np. Pizza, Wino">
-            <div class="flex gap-3 mb-4">
-                <div class="w-20 flex-shrink-0">
-                    <label for="item-quantity" class="block text-sm font-bold text-ink-3">Ilość</label>
-                    <input type="number" id="item-quantity" min="1" step="1" value="1" class="field min-h-tap w-full mt-1.5 p-2 text-center">
-                </div>
-                <div class="flex-grow min-w-0">
-                    <label for="shared-cost-amount" class="block text-sm font-bold text-ink-3">Cena łączna, jak na paragonie</label>
-                    <div class="mt-1.5 flex items-center gap-2">
-                        <input type="text" inputmode="decimal" id="shared-cost-amount" class="field min-h-tap w-full min-w-0 p-2 text-right font-semibold" placeholder="0,00">
-                        <span id="item-amount-currency" class="text-ink-3 font-semibold flex-shrink-0">PLN</span>
-                    </div>
+        <div class="sheet w-full max-w-lg">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 id="item-modal-title" class="sheet-title">Dodaj pozycję</h3>
                 </div>
             </div>
-            <p class="text-sm font-bold text-ink-3 mb-2">Kto to wziął — można zostawić puste, każdy dopisze się sam</p>
-            <div id="shared-cost-participants" class="grid grid-cols-2 gap-1 max-h-48 overflow-y-auto"></div>
-            <!-- Kasowanie pozycji mieszka TUTAJ, nie przy linii paragonu. Przy linii
-                 stały dwa przyciski po 36 px obok siebie, więc obszary trafienia
-                 nachodziły na siebie i kasownik łapał stuknięcia w ołówek. Operacja
-                 nieodwracalna należy się i tak o jeden krok dalej niż edycja. -->
-            <div class="flex flex-wrap items-center gap-2 mt-6">
-                <button id="item-split-btn" class="btn btn-quiet hidden w-full" title="Rozbij na osobne sztuki, żeby każdą wziął kto inny">Podziel na sztuki</button>
-                <div class="flex gap-2 w-full">
-                    <button id="cancel-shared-cost" class="btn btn-quiet flex-1">Anuluj</button>
-                    <button id="save-shared-cost" class="btn btn-primary flex-1">Zapisz</button>
+
+            <div class="sheet-body">
+                <label for="shared-cost-desc" class="block text-sm font-bold text-ink-3">Nazwa</label>
+                <input type="text" id="shared-cost-desc" class="field min-h-tap w-full mt-1.5 mb-4" placeholder="np. Pizza, Wino">
+                <div class="flex gap-3 mb-4">
+                    <div class="w-20 flex-shrink-0">
+                        <label for="item-quantity" class="block text-sm font-bold text-ink-3">Ilość</label>
+                        <input type="number" id="item-quantity" min="1" step="1" value="1" class="field min-h-tap w-full mt-1.5 text-center">
+                    </div>
+                    <div class="flex-grow min-w-0">
+                        <label for="shared-cost-amount" class="block text-sm font-bold text-ink-3">Cena łączna, jak na paragonie</label>
+                        <div class="mt-1.5 flex items-center gap-2">
+                            <input type="text" inputmode="decimal" id="shared-cost-amount" class="field min-h-tap w-full min-w-0 text-right font-semibold" placeholder="0,00">
+                            <span id="item-amount-currency" class="text-ink-3 font-semibold flex-shrink-0">PLN</span>
+                        </div>
+                    </div>
                 </div>
-                <button id="item-delete-btn" class="remove-shared-cost-btn tap w-full min-h-tap rounded-full text-sm font-bold text-owe" data-cost-id="">Usuń pozycję</button>
+                <p class="text-sm font-bold text-ink-3 mb-2">Kto to wziął</p>
+                <p class="text-xs text-ink-3 mb-2">Można zostawić puste. Każdy dopisze się sam, stukając w linię na paragonie.</p>
+                <div class="person-search mb-2" data-search-for="shared-cost-participants">
+                    <button type="button" class="person-search-toggle tap w-11 h-11 rounded-full flex items-center justify-center bg-surface-2 text-ink-2 flex-shrink-0" aria-expanded="false" aria-label="Szukaj osoby" title="Szukaj osoby">
+                        <i class="fas fa-magnifying-glass"></i>
+                    </button>
+                    <input type="text" class="person-search-input field min-h-tap" placeholder="Szukaj imienia" autocomplete="off" spellcheck="false" aria-label="Szukaj osoby">
+                    <span class="person-search-count text-sm font-bold text-ink-3 flex-shrink-0"></span>
+                </div>
+                <!-- Bez własnego paska przewijania: patrz komentarz przy liście uczestników
+                     w oknie nowego rachunku. Jeden arkusz przewija się w jednym miejscu. -->
+                <div id="shared-cost-participants" class="space-y-1"></div>
+
+                <!-- Kasowanie pozycji mieszka TUTAJ, nie przy linii paragonu. Przy linii
+                     stały dwa przyciski po 36 px obok siebie, więc obszary trafienia
+                     nachodziły na siebie i kasownik łapał stuknięcia w ołówek. Operacja
+                     nieodwracalna należy się i tak o jeden krok dalej niż edycja. -->
+                <button id="item-split-btn" class="btn btn-quiet hidden w-full mt-4" title="Rozbij na osobne sztuki, żeby każdą wziął kto inny">Podziel na sztuki</button>
+                <button id="item-delete-btn" class="remove-shared-cost-btn tap w-full min-h-tap rounded-full text-sm font-bold text-owe mt-2" data-cost-id="">Usuń pozycję</button>
+            </div>
+
+            <div class="sheet-foot flex gap-2">
+                <button id="cancel-shared-cost" class="btn btn-quiet flex-1">Anuluj</button>
+                <button id="save-shared-cost" class="btn btn-primary flex-1">Zapisz</button>
             </div>
         </div>
     </div>
 
     <div id="receipt-preview-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet w-full max-w-2xl flex flex-col" style="max-height:88vh">
-            <div class="flex items-center justify-between gap-2 p-5 border-b border-ink/10">
-                <div class="min-w-0">
-                    <h3 class="font-display text-xl font-bold">Odczytane z paragonu</h3>
-                    <p class="text-xs text-ink-3 mt-0.5">Sprawdź i popraw — dopiero potem trafi do rachunku.</p>
+        <div class="sheet w-full max-w-2xl">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Odczytane z paragonu</h3>
+                    <button id="close-receipt-preview" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
                 </div>
-                <button id="close-receipt-preview" class="tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 text-3xl leading-none flex-shrink-0" title="Zamknij">&times;</button>
+                <p class="sheet-lede">Sprawdź i popraw. Do rachunku trafi dopiero to, co zatwierdzisz.</p>
             </div>
-            <div class="p-5 overflow-y-auto">
-                <div id="receipt-preview-warning" class="hidden mb-3 text-sm text-owe border border-owe/30 rounded-lg p-3"></div>
+            <div class="sheet-body">
+                <div id="receipt-preview-warning" class="hidden mb-3 text-sm text-owe bg-owe/10 rounded-block p-3"></div>
                 <div id="receipt-preview-items" class="space-y-1"></div>
                 <div id="receipt-preview-modifiers-wrap" class="hidden mt-5">
                     <div id="receipt-preview-modifiers" class="space-y-1"></div>
                 </div>
             </div>
-            <div class="p-5 border-t border-ink/10 flex items-center justify-between gap-3 flex-wrap">
+            <div class="sheet-foot flex items-center justify-between gap-3 flex-wrap">
                 <span id="receipt-preview-summary" class="text-sm text-ink-2"></span>
                 <button id="apply-receipt-btn" class="btn btn-dark">Dodaj do rachunku</button>
             </div>
@@ -1145,31 +1324,37 @@ the verdict, and DESIGN.md
     </div>
 
     <div id="global-cost-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet pt-2 p-5 md:p-6 w-full max-w-md">
-            <div class="sheet-grip" aria-hidden="true"></div>
-            <h3 class="font-display text-2xl font-extrabold tracking-tight mb-1">Dodaj koszt wspólny</h3>
-            <!-- Nazwa „koszt ogólny" nie mówiła nic o tym, jak się dzieli, więc ludzie
-                 musieli zgadywać. Zdanie pod nagłówkiem rozstrzyga to raz. -->
-            <p class="text-ink-2 mb-5">Doliczany do rachunku i dzielony <b class="text-ink">po równo między wszystkich uczestników</b>: napiwek, serwis, opłata za rezerwację.</p>
-
-            <label for="global-cost-type-select" class="block font-bold mb-2">Rodzaj kosztu</label>
-            <select id="global-cost-type-select" class="field mb-4">
-                <option value="Napiwek">Napiwek</option>
-                <option value="Serwis">Serwis</option>
-                <option value="Inne">Inne (wpisz ręcznie)</option>
-            </select>
-            <input type="text" id="global-cost-desc-other" class="field mb-4 hidden" placeholder="Wpisz opis, np. Opłata za rezerwację">
-
-            <p class="font-bold mb-2">Jak liczyć</p>
-            <div class="seg mb-4">
-                <!-- Cel dotykowy to CAŁA etykieta, nie samo 16-pikselowe kółko: min-h-tap
-                     na etykiecie daje 44 px w pionie, a kółko zostaje tylko znacznikiem. -->
-                <label class="seg-btn cursor-pointer flex items-center gap-2 min-h-tap"><input type="radio" name="global-cost-format" value="fixed" checked class="w-4 h-4 accent-ink">Kwota</label>
-                <label class="seg-btn cursor-pointer flex items-center gap-2 min-h-tap"><input type="radio" name="global-cost-format" value="percent" class="w-4 h-4 accent-ink">Procent</label>
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Dodaj koszt wspólny</h3>
+                </div>
+                <!-- Nazwa „koszt ogólny" nie mówiła nic o tym, jak się dzieli, więc ludzie
+                     musieli zgadywać. Zdanie pod nagłówkiem rozstrzyga to raz. -->
+                <p class="sheet-lede">Doliczany do rachunku i dzielony <b class="text-ink">po równo między wszystkich uczestników</b>: napiwek, serwis, opłata za rezerwację.</p>
             </div>
-            <input type="number" inputmode="decimal" id="global-cost-value" class="field" placeholder="np. 10 albo 15">
 
-            <div class="flex gap-2 mt-6">
+            <div class="sheet-body">
+                <p class="block font-bold mb-2">Rodzaj kosztu</p>
+                <!-- Arkusz zamiast listy systemowej — patrz DESIGN.md, „Wybór z listy". -->
+                <button id="global-cost-type-select" class="field choice-field w-full mb-4" data-value="Napiwek">
+                    <span id="global-cost-type-label">Napiwek</span>
+                    <i class="fas fa-chevron-down choice-field-chevron"></i>
+                </button>
+                <input type="text" id="global-cost-desc-other" class="field mb-4 hidden" placeholder="Wpisz opis, np. Opłata za rezerwację">
+
+                <p class="font-bold mb-2">Jak liczyć</p>
+                <div class="seg mb-4">
+                    <!-- Cel dotykowy to CAŁA etykieta, nie samo 16-pikselowe kółko: min-h-tap
+                         na etykiecie daje 44 px w pionie, a kółko zostaje tylko znacznikiem. -->
+                    <label class="seg-btn cursor-pointer flex items-center gap-2 min-h-tap"><input type="radio" name="global-cost-format" value="fixed" checked class="w-4 h-4 accent-ink">Kwota</label>
+                    <label class="seg-btn cursor-pointer flex items-center gap-2 min-h-tap"><input type="radio" name="global-cost-format" value="percent" class="w-4 h-4 accent-ink">Procent</label>
+                </div>
+                <input type="number" inputmode="decimal" id="global-cost-value" class="field" placeholder="np. 10 albo 15">
+            </div>
+
+            <div class="sheet-foot flex gap-2">
                 <button id="cancel-global-cost" class="btn btn-quiet flex-1">Anuluj</button>
                 <button id="save-global-cost" class="btn btn-primary flex-1">Zapisz</button>
             </div>

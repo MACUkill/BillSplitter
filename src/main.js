@@ -57,8 +57,8 @@
             connectFirestoreEmulator(db, '127.0.0.1', 8770);
             connectStorageEmulator(storage, '127.0.0.1', 9199);
             connectFunctionsEmulator(functions, '127.0.0.1', 5001);
-            console.info('[BillSplitter] Emulator Firebase (127.0.0.1) — żywe dane nietknięte.');
-            if (!env.DEV) console.warn('[BillSplitter] UWAGA: build produkcyjny podpięty do EMULATORA (VITE_USE_EMULATOR=true). To build testowy, nie do wdrożenia.');
+            console.info('[Billyada] Emulator Firebase (127.0.0.1) — żywe dane nietknięte.');
+            if (!env.DEV) console.warn('[Billyada] UWAGA: build produkcyjny podpięty do EMULATORA (VITE_USE_EMULATOR=true). To build testowy, nie do wdrożenia.');
         }
 
         // Globalne zmienne stanu
@@ -168,7 +168,7 @@
             // Błąd dostaje `role="alert"`, żeby czytnik ekranu przeczytał go od razu;
             // potwierdzenie idzie łagodniej i nie przerywa czytania.
             toast.setAttribute('role', isError ? 'alert' : 'status');
-            toast.className = `toast-in fixed bottom-28 left-4 right-4 sm:left-auto sm:right-5 sm:max-w-sm px-4 py-3 rounded-block z-50 font-semibold shadow-lift transition-opacity duration-300 ${isError ? 'bg-owe text-white' : 'bg-ink text-surface'}`;
+            toast.className = `toast-in toast-dock px-4 py-3 rounded-block font-semibold shadow-lift transition-opacity duration-300 ${isError ? 'bg-owe text-white' : 'bg-ink text-surface'}`;
             document.body.appendChild(toast);
             setTimeout(() => {
                 toast.style.opacity = '0';
@@ -176,34 +176,31 @@
             }, 3600);
         }
 
-        // --- MORFOWANIE: przycisk ROZRASTA SIĘ w arkusz ---------------------------
-        // Okno, które wyskakuje znikąd, nie mówi, skąd się wzięło. Tutaj limonkowe koło
-        // [+] rośnie w arkusz „nowy rachunek" i wraca do koła przy zamknięciu — jeden
-        // przedmiot w ruchu zamiast dwóch niezależnych zdarzeń.
+        // --- NOWY RACHUNEK: ARKUSZ WYRASTA NAD PASKIEM ----------------------------
         //
-        // Nazwa `view-transition-name` musi być w danej chwili unikatowa w całym
-        // dokumencie, więc nadajemy ją TYLKO na czas przejścia: staremu kształtowi przed
-        // zmianą DOM, nowemu w jej trakcie. Przeglądarki bez View Transitions API i tryb
-        // ograniczonego ruchu dostają zwykłe pojawienie — bez ubytku funkcji.
-        const MORPH_NAME = 'morph-sheet';
+        // Poprzednie rozwiązanie — morfowanie koła [+] w arkusz przez View Transitions
+        // API — zostało wyrzucone 2026-08-15 po testach właściciela na iPhonie i NIE
+        // WRACA. Trzy powody, wszystkie widoczne gołym okiem:
+        //
+        //   1. Limonkowe koło przenikało w BIAŁY arkusz. Między barwami o takiej różnicy
+        //      jasności przenikanie nie czyta się jako przemiana przedmiotu, tylko jako
+        //      mignięcie: „przycisk był seledynowy, a popup robi się biały".
+        //   2. Przy zamykaniu przeglądarka najpierw pokazywała wielki limonkowy kształt
+        //      ze znakiem [+] rozciągnięty na cały arkusz, a dopiero potem go zmniejszała.
+        //      Wersja właściciela: „w jednym momencie robi się duży seledynowy kształt
+        //      z plusem i się zmniejsza, bardzo nieestetycznie".
+        //   3. Safari ma to API dopiero od osiemnastki, więc na sporej części telefonów
+        //      i tak nie było żadnej animacji. Dopracowywaliśmy ruch, którego większość
+        //      ekipy nigdy nie widziała.
+        //
+        // Zamiast tego: PASEK ZOSTAJE NA EKRANIE (klasa `keeps-deck` na oknie), arkusz
+        // wyrasta tuż nad nim z punktem zaczepienia na dole, a koło [+] obraca się
+        // o 135° w krzyżyk i przez cały czas jest tym samym przedmiotem. Nie zamienia
+        // się w arkusz — otwiera go i zamyka. Nic nie przenika, nic nie zmienia koloru,
+        // droga powrotna jest dokładnie odwrotna do drogi otwarcia, a całość to zwykłe
+        // `transform` i `opacity`, więc działa wszędzie tak samo.
         const prefersReducedMotion = () =>
             !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-
-        const morphBetween = (fromEl, toEl, mutate) => {
-            if (!document.startViewTransition || prefersReducedMotion() || !fromEl || !toEl) {
-                mutate();
-                return;
-            }
-            fromEl.style.viewTransitionName = MORPH_NAME;
-            const transition = document.startViewTransition(() => {
-                fromEl.style.viewTransitionName = '';
-                toEl.style.viewTransitionName = MORPH_NAME;
-                mutate();
-            });
-            // Nazwę trzeba zdjąć po przejściu, inaczej zostaje na elemencie i następne
-            // przejście widzi dwa kształty o tej samej nazwie — wtedy pomija animację.
-            transition.finished.finally(() => { toEl.style.viewTransitionName = ''; });
-        };
 
         // Podświetla element, którego wartość właśnie się zmieniła. Wywoływane po zapisie,
         // żeby było widać, ŻE się zapisało — bez tego udany zapis wygląda identycznie jak
@@ -273,8 +270,27 @@
             unsubscribeSettlements = null;
 
             const urlParams = new URLSearchParams(window.location.search);
-            const groupId = urlParams.get('group');
-            
+            let groupId = urlParams.get('group');
+
+            // POWRÓT DO OSTATNIEGO POKOJU.
+            //
+            // Skrót PWA z ekranu początkowego iPhone'a startuje z `start_url` z manifestu,
+            // czyli bez `?group=…`, i lądował na liście pokoi za każdym razem. Na Androidzie
+            // to samo dzieje się po zamknięciu karty. Skoro aplikacja obsługuje jeden pokój
+            // naraz i prawie zawsze jest to ten sam pokój, otwieramy go od razu.
+            //
+            // Warunek jest jeden: nie robimy tego, gdy człowiek SAM wyszedł na listę pokoi
+            // (strzałka w nagłówku albo opuszczenie pokoju). Znacznik siedzi w pamięci
+            // SESJI, więc przetrwa przeładowanie po opuszczeniu pokoju, a zginie przy
+            // następnym uruchomieniu aplikacji — dokładnie tak, jak trzeba.
+            if (!groupId && !sessionStorage.getItem(SKIP_RESUME_KEY)) {
+                const last = getMyRooms().sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0))[0];
+                if (last && last.id) {
+                    groupId = last.id;
+                    history.replaceState(null, '', `?group=${groupId}`);
+                }
+            }
+
             currentGroupId = groupId;
 
             if (groupId) {
@@ -284,6 +300,26 @@
                 groupData = null;
                 billData = null;
             }
+        };
+
+        // Znacznik „człowiek chciał być na liście pokoi". Wyłącza automatyczny powrót
+        // do ostatniego pokoju do końca tej sesji przeglądarki.
+        const SKIP_RESUME_KEY = 'billsplitter_skip_resume';
+        const goToRoomsList = () => {
+            try { sessionStorage.setItem(SKIP_RESUME_KEY, '1'); } catch (_) {}
+            if (unsubscribeGroup) unsubscribeGroup();
+            if (unsubscribeBill) unsubscribeBill();
+            if (unsubscribeSettlements) unsubscribeSettlements();
+            if (unsubscribeNudges) unsubscribeNudges();
+            if (unsubscribeEvents) unsubscribeEvents();
+            unsubscribeGroup = unsubscribeBill = unsubscribeSettlements = null;
+            unsubscribeNudges = unsubscribeEvents = null;
+            currentGroupId = null;
+            currentBillId = null;
+            groupData = null;
+            billData = null;
+            history.pushState(null, '', window.location.pathname);
+            showScreen('start');
         };
 
         const startAppLogic = () => {
@@ -298,10 +334,118 @@
             handleUrlChange();
         };
 
+        // --- ARKUSZ ZSUWANY PALCEM ----------------------------------------------
+        // Uchwyt u góry arkusza obiecuje gest. Do 2026-08-15 niczego nie robił: był
+        // rysunkiem czterdziestu pikseli, po którym palec zjeżdżał w dół i nic się nie
+        // działo. To jest gorsze niż brak uchwytu — interfejs, który obiecuje i nie
+        // dowozi, uczy nie ufać reszcie znaków.
+        //
+        // Teraz uchwyt naprawdę zsuwa. Ciągniemy za NAGŁÓWEK (uchwyt plus tytuł), nie za
+        // całą powierzchnię: gdyby chwytać wszędzie, przewijanie listy w środku arkusza
+        // co chwilę kończyłoby się jego zamknięciem. Wyjątek: gdy treść jest przewinięta
+        // do samej góry, ciągnięcie po treści też zsuwa — tak działa arkusz systemowy
+        // i tego ludzie próbują odruchowo.
+        const SHEET_CLOSE_PX = 96;      // dystans, po którym arkusz się poddaje
+        const SHEET_CLOSE_VELOCITY = 0.6; // px/ms — szybkie machnięcie zamyka wcześniej
+
+        const wireSheetDrag = (modal) => {
+            const sheet = modal.querySelector('.sheet');
+            const head = modal.querySelector('.sheet-head');
+            const body = modal.querySelector('.sheet-body');
+            // Okno decyzji nieodwracalnej nie ma uchwytu i nie wolno go zsunąć.
+            if (!sheet || !head || sheet.classList.contains('sheet-confirm')) return;
+
+            let startY = 0, dy = 0, startedAt = 0, dragging = false, decided = false;
+
+            const reset = () => {
+                sheet.classList.remove('is-dragging');
+                sheet.style.transform = '';
+                dragging = false;
+                decided = false;
+                dy = 0;
+            };
+
+            const onDown = (e) => {
+                // Na szerokości tabletu arkusz stoi na środku ekranu, a nie przy dolnej
+                // krawędzi — nie ma go dokąd zsunąć, więc gest nie obowiązuje.
+                if (window.matchMedia('(min-width: 640px)').matches) return;
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                // Ciągnięcie po treści działa TYLKO przy liście przewiniętej na sam szczyt.
+                if (e.target.closest('.sheet-body') && body && body.scrollTop > 0) return;
+                // Pole tekstowe i przycisk zostawiamy w spokoju: tam palec ma inną robotę.
+                if (e.target.closest('input, textarea, button, a, [contenteditable]') && !e.target.closest('.sheet-head')) return;
+                // Czyścimy ślad po ewentualnym niedokończonym geście z poprzedniego razu.
+                sheet.style.transform = '';
+                startY = e.clientY;
+                startedAt = performance.now();
+                dragging = true;
+                decided = false;
+                dy = 0;
+            };
+
+            const onMove = (e) => {
+                if (!dragging) return;
+                const delta = e.clientY - startY;
+                if (!decided) {
+                    if (Math.abs(delta) < 8) return;
+                    // W górę arkusz nie jedzie — nad nim nie ma miejsca.
+                    if (delta < 0) { dragging = false; return; }
+                    decided = true;
+                    sheet.classList.add('is-dragging');
+                    try { sheet.setPointerCapture(e.pointerId); } catch (_) {}
+                }
+                // Opór przy dole: pierwsze piksele idą jeden do jednego, dalsze coraz
+                // wolniej. Bez tego arkusz odjeżdżał od palca i gubił wrażenie masy.
+                dy = delta <= SHEET_CLOSE_PX ? delta : SHEET_CLOSE_PX + (delta - SHEET_CLOSE_PX) * 0.4;
+                sheet.style.transform = `translateY(${dy}px)`;
+            };
+
+            const onUp = () => {
+                if (!dragging) return;
+                const velocity = dy / Math.max(1, performance.now() - startedAt);
+                const shouldClose = decided && (dy > SHEET_CLOSE_PX || velocity > SHEET_CLOSE_VELOCITY);
+                reset();
+                if (shouldClose) closeModal(modal);
+            };
+
+            head.addEventListener('pointerdown', onDown);
+            if (body) body.addEventListener('pointerdown', onDown);
+            sheet.addEventListener('pointermove', onMove);
+            sheet.addEventListener('pointerup', onUp);
+            sheet.addEventListener('pointercancel', onUp);
+        };
+
+        // Zamknięcie arkusza w jednym miejscu. `new-bill-modal` ma własną drogę wyjścia
+        // (koło [+] w pasku musi wrócić z krzyżyka do plusa), więc przechodzi przez
+        // własną funkcję. Przypisuje ją `addNewBillModalListeners`.
+        let closeNewBillSheet = () => {};
+        const closeModal = (modal) => {
+            if (!modal) return;
+            if (modal.id === 'new-bill-modal') { closeNewBillSheet(); return; }
+            modal.classList.remove('active');
+        };
+
         const init = () => {
             setupTheme();
             showScreen('loading');
-            
+
+            // ODZEW DOTKNIĘCIA NA iOS. Safari nie stosuje pseudoklasy `:active` do
+            // niczego, dopóki dokument nie ma choćby jednego nasłuchu dotyku. Bez tej
+            // jednej linijki CAŁY odzew wciśnięcia (`.btn:active`, `.tap:active`,
+            // `.person-row:active`) był na iPhonie martwy — i to jest odpowiedź na
+            // zgłoszenie „brakuje mi drobnego feedbacku przy kliknięciu, jest statycznie".
+            document.body.addEventListener('touchstart', () => {}, { passive: true });
+
+            // PRZYBLIŻANIE SZCZYPANIEM. iOS ignoruje `user-scalable=no` w atrybucie
+            // `viewport` od dziesiątej wersji, więc gest trzeba odrzucić wprost.
+            // `gesturestart` jest zdarzeniem wyłącznie Safari i wyłącznie o skalowaniu,
+            // więc nie odbiera niczego innego.
+            ['gesturestart', 'gesturechange', 'gestureend'].forEach((type) => {
+                document.addEventListener(type, (e) => e.preventDefault(), { passive: false });
+            });
+
+            document.querySelectorAll('.modal').forEach(wireSheetDrag);
+
             window.addEventListener('popstate', handleUrlChange);
 
             onAuthStateChanged(auth, (user) => {
@@ -323,6 +467,7 @@
             setupGlobalModalListeners();
             setupPwaInstallButton();
             setupDeckNav();
+            setupPersonSearch();
             registerServiceWorker();
 
             // Faza 5: wskaźnik offline (Firestore persistentLocalCache i tak kolejkuje zmiany).
@@ -352,6 +497,13 @@
         };
 
         // --- Faza 4: „Moje pokoje" — lista dołączonych pokoi (localStorage, przypięta do urządzenia) ---
+        //
+        // UWAGA PRZY ZMIANIE NAZWY PRODUKTU: przedrostek `billsplitter_` w kluczach
+        // pamięci lokalnej ZOSTAJE, mimo że aplikacja nazywa się teraz Billyada.
+        // Te klucze to jedyny ślad po pokojach, motywie i szablonach na urządzeniu.
+        // Zmiana przedrostka wyczyściłaby listę pokoi każdemu, kto już aplikacji używa,
+        // a odzyskanie pokoju wymagałoby kodu od kogoś innego. Nazwa klucza nikomu się
+        // nie wyświetla, więc nie ma tu nic do zyskania.
         const ROOMS_KEY = 'billsplitter_rooms';
         const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         const getMyRooms = () => { try { return JSON.parse(localStorage.getItem(ROOMS_KEY)) || []; } catch { return []; } };
@@ -364,81 +516,173 @@
         };
         const forgetRoom = (id) => saveMyRooms(getMyRooms().filter(r => r.id !== id));
 
+        // POKÓJ NA LIŚCIE: KASOWANIE PRZESUNIĘCIEM, NIE KRZYŻYKIEM.
+        //
+        // Do 2026-08-15 przy każdym pokoju stał krzyżyk. Leżał dokładnie tam, gdzie
+        // kciuk trzyma telefon, a jedno stuknięcie kasowało wpis — za tanio jak na
+        // „zniknij mi to z ekranu", zwłaszcza że w pokoju bez zapisanego linku powrót
+        // wymaga wtedy kodu od kogoś innego. Teraz kafelek przesuwa się palcem w lewo
+        // i dopiero wtedy odsłania czerwony kosz (decyzja właściciela 2026-08-15).
+        // Gest jest odwracalny: puszczenie przed połową drogi zwija kafelek z powrotem.
+        const SWIPE_REVEAL_PX = 88;
+
         const renderMyRooms = () => {
             const container = document.getElementById('my-rooms');
             if (!container) return;
             const rooms = getMyRooms().sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
             if (rooms.length === 0) { container.innerHTML = ''; return; }
             container.innerHTML = `
-                <h3 class="font-display text-2xl font-bold mb-3 text-left">Twoje pokoje</h3>
+                <h3 class="font-display text-2xl font-bold mb-1 text-left">Twoje pokoje</h3>
+                <p class="text-sm text-ink-3 mb-3">Przesuń kafelek w lewo, żeby usunąć pokój z listy na tym telefonie.</p>
                 <div class="space-y-2">
                     ${rooms.map(r => `
-                        <div class="flex items-center gap-2">
-                            <button class="enter-room-btn card tap flex-grow flex items-center justify-between gap-2 p-3 min-h-tap text-left" data-room-id="${r.id}">
+                        <div class="room-swipe">
+                            <button class="room-forget-btn room-swipe-delete" data-room-id="${r.id}" title="Usuń z listy na tym urządzeniu" aria-label="Usuń pokój ${escapeHtml(r.name)} z listy"><i class="fas fa-trash"></i></button>
+                            <button class="enter-room-btn room-swipe-face card tap w-full flex items-center justify-between gap-2 p-4 min-h-tap text-left" data-room-id="${r.id}">
                                 <span class="font-semibold truncate">${escapeHtml(r.name)}</span>
                                 <i class="fas fa-arrow-right text-ink-3 flex-shrink-0"></i>
                             </button>
-                            <button class="forget-room-btn tap w-11 h-11 rounded-lg flex items-center justify-center text-ink-3 flex-shrink-0" data-room-id="${r.id}" title="Usuń z listy (nie kasuje pokoju)"><i class="fas fa-times"></i></button>
                         </div>
                     `).join('')}
                 </div>
                 <div class="flex items-center my-6"><div class="flex-grow border-t border-ink/15"></div><span class="px-3 text-xs font-bold text-ink-3">albo nowy pokój</span><div class="flex-grow border-t border-ink/15"></div></div>
             `;
+            container.querySelectorAll('.room-swipe').forEach(wireRoomSwipe);
+        };
+
+        // Obsługa gestu. Trzymamy się wskaźników (`pointer*`), a nie zdarzeń dotyku:
+        // to jedno API na palec, rysik i mysz, więc na komputerze gest też działa.
+        const wireRoomSwipe = (row) => {
+            const face = row.querySelector('.room-swipe-face');
+            if (!face) return;
+            let startX = 0, startY = 0, dx = 0, dragging = false, decided = false, open = false;
+
+            const setX = (x) => { face.style.transform = `translateX(${x}px)`; };
+            const close = () => { open = false; face.classList.remove('is-dragging'); setX(0); };
+
+            face.addEventListener('pointerdown', (e) => {
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                startX = e.clientX; startY = e.clientY; dx = 0;
+                dragging = true; decided = false;
+            });
+
+            face.addEventListener('pointermove', (e) => {
+                if (!dragging) return;
+                const mx = e.clientX - startX;
+                const my = e.clientY - startY;
+                // Dopóki nie wiadomo, czy to przewijanie strony, czy przesuwanie kafelka,
+                // nie ruszamy niczego. Rozstrzyga pierwsze wyraźne 10 px: pion oddaje
+                // gest stronie, poziom zabiera go dla siebie.
+                if (!decided) {
+                    if (Math.abs(mx) < 10 && Math.abs(my) < 10) return;
+                    decided = true;
+                    if (Math.abs(my) > Math.abs(mx)) { dragging = false; return; }
+                    face.classList.add('is-dragging');
+                    face.setPointerCapture(e.pointerId);
+                }
+                // W prawo nic nie odsłaniamy — kosz jest tylko po jednej stronie.
+                dx = Math.max(-SWIPE_REVEAL_PX, Math.min(0, (open ? -SWIPE_REVEAL_PX : 0) + mx));
+                setX(dx);
+            });
+
+            const finish = () => {
+                if (!dragging) return;
+                dragging = false;
+                face.classList.remove('is-dragging');
+                if (!decided) return;
+                open = dx < -SWIPE_REVEAL_PX / 2;
+                setX(open ? -SWIPE_REVEAL_PX : 0);
+            };
+            face.addEventListener('pointerup', finish);
+            face.addEventListener('pointercancel', finish);
+
+            // Stuknięcie w odsłonięty kafelek zwija go z powrotem, zamiast wchodzić
+            // do pokoju: pierwszy ruch po odsłonięciu kosza to prawie zawsze „jednak nie".
+            face.addEventListener('click', (e) => {
+                if (decided) { e.preventDefault(); e.stopPropagation(); }
+                if (open) { e.preventDefault(); e.stopPropagation(); close(); }
+            }, true);
+
+            row.querySelector('.room-forget-btn').addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const id = row.querySelector('.room-forget-btn').dataset.roomId;
+                const name = (getMyRooms().find((r) => r.id === id) || {}).name || 'Pokój';
+                openConfirm({
+                    title: 'Usunąć z listy?',
+                    body: `„${name}" zniknie z listy na tym telefonie. Sam pokój, rachunki i rozliczenia zostają. Wrócisz do niego kodem albo linkiem.`,
+                    confirmLabel: 'Usuń z listy',
+                    onConfirm: async () => { forgetRoom(id); renderMyRooms(); showToast('Usunięto z listy.'); },
+                });
+                close();
+            });
         };
 
         // --- Faza 4: kontekstowy tutorial „?" per ekran ---
+        // Treści przejrzane 2026-08-15 pod kątem zgodności z tym, co aplikacja NAPRAWDĘ
+        // robi. Poprzednia wersja mówiła o imionach „po przecinku" (od dawna dodaje się
+        // je pojedynczo), o filtrze „Wszystkie / Ukryte" (filtrów jest pięć) i o ręcznym
+        // statusie uczestnika (już nie istnieje). Pomoc, która opisuje nieistniejący
+        // ekran, jest gorsza od braku pomocy: uczy szukać czegoś, czego nie ma.
         const HELP_CONTENT = {
             'start': {
                 title: 'Jak zacząć',
-                html: `<p>BillSplitter dzieli rachunki w grupie znajomych i liczy, kto komu ile jest winien.</p>
+                html: `<p>Billyada dzieli rachunki w grupie znajomych i liczy, kto komu ile jest winien.</p>
                     <ul class="list-disc pl-5 space-y-1">
-                        <li>Podaj nazwę grupy i imiona osób (po przecinku).</li>
-                        <li>Dostaniesz link — wyślij go znajomym. Każdy wybiera swoje imię z listy.</li>
-                        <li>Dodajecie rachunki, a apka sama liczy podział (grosze zawsze na korzyść płatnika).</li>
+                        <li>Nazwij grupę i dopisz osoby pojedynczo. Resztę ekipy dodasz później.</li>
+                        <li>Zaproś znajomych linkiem, kodem pokoju albo kodem QR. Każdy wybiera swoje imię z listy.</li>
+                        <li>Dodajecie rachunki, a aplikacja liczy podział. Grosze zawsze na korzyść płatnika.</li>
+                        <li>Masz kod pokoju od kogoś? Wpisz go w polu wyżej. Spacja i wielkość liter nie mają znaczenia.</li>
                     </ul>
-                    <p>Twoje pokoje zapiszą się na tym urządzeniu — wrócisz do nich z ekranu głównego.</p>`
+                    <p>Pokoje zapisują się na tym telefonie. Przy następnym uruchomieniu aplikacja otworzy ten, w którym byłeś ostatnio.</p>`
             },
             'join': {
                 title: 'Dołączanie do grupy',
                 html: `<ul class="list-disc pl-5 space-y-1">
-                        <li>Wybierz swoje imię z listy, aby dołączyć.</li>
-                        <li>Szare imię = już zajęte. Jeśli to Ty na innym urządzeniu — możesz przejąć sesję.</li>
-                        <li>Po wejściu ustawisz swój kolor profilu i numer konta.</li>
+                        <li>Wybierz swoje imię z listy, żeby dołączyć.</li>
+                        <li>Wygaszone imię jest już zajęte. Jeśli to Ty na innym urządzeniu, możesz przejąć sesję.</li>
+                        <li>Po wejściu ustawisz swoje zdjęcie, kolor znaku i sposoby płatności.</li>
                     </ul>`
             },
             'group-dashboard': {
-                title: 'Pokój — co gdzie jest',
+                title: 'Pokój: co gdzie jest',
                 html: `<p>Pasek na dole to cztery miejsca w pokoju i jeden przycisk akcji pośrodku.</p>
                     <ul class="list-disc pl-5 space-y-1">
-                        <li><b>Bilans</b> — ile jesteś na plusie albo na minusie. To jedna liczba, po którą tu wchodzisz.</li>
-                        <li><b>Kto komu</b> — kto komu ile oddaje. „Ureguluj" zapisuje wpłatę, a odbiorca ją potwierdza.</li>
-                        <li><b>[+]</b> pośrodku — nowy rachunek.</li>
-                        <li><b>Rachunki</b> — wszystkie rachunki pokoju, z filtrem Wszystkie / Ukryte.</li>
-                        <li><b>Ty</b> — Twoje zdjęcie, kolor, sposoby płatności i ustawienia aplikacji.</li>
+                        <li><b>Bilans</b>: ile jesteś na plusie albo na minusie. To jedna liczba, po którą tu wchodzisz.</li>
+                        <li><b>Kto komu ile</b>: kto komu ile oddaje. „Ureguluj" zapisuje wpłatę, a odbiorca ją potwierdza. Stamtąd wchodzi się też do rejestru wpłat.</li>
+                        <li><b>[+]</b> pośrodku: nowy rachunek. Po otwarciu ten sam przycisk zamienia się w krzyżyk i zamyka okno.</li>
+                        <li><b>Rachunki</b>: wszystkie rachunki pokoju z pięcioma filtrami, od „Czekają na Ciebie" po „Ukryte".</li>
+                        <li><b>Ty</b>: Twoje zdjęcie, kolor znaku, sposoby płatności i ustawienia aplikacji.</li>
                     </ul>
-                    <p><b>Nazwa pokoju u góry</b> otwiera ustawienia pokoju: kod, link do zaproszenia i miejsce na zdjęcia. Kod przydaje się, gdy ktoś wchodzi z cudzego telefonu.</p>`
+                    <p><b>Nazwa pokoju u góry</b> otwiera ustawienia pokoju: kod, link, kod QR, waluta domyślna, skład grupy i wyjście z pokoju.</p>
+                    <p><b>Strzałka w lewo</b> obok nazwy wraca do listy Twoich pokoi. Nie zwalnia imienia, tylko wychodzi z pokoju.</p>`
             },
             'profile': {
                 title: 'Ty i aplikacja',
                 html: `<ul class="list-disc pl-5 space-y-1">
-                        <li><b>Imię, zdjęcie i kolor znaku</b> — tak widzi Cię grupa przy pozycjach rachunku.</li>
-                        <li><b>Sposoby płatności</b> (konto, telefon, Revolut, PayPal, własne) — znajomi zobaczą je przy Twoich należnościach.</li>
+                        <li><b>Imię, zdjęcie i kolor znaku</b>: tak widzi Cię ekipa przy pozycjach rachunku.</li>
+                        <li><b>Sposoby płatności</b>: konto, telefon, Revolut, PayPal, Wise albo własna nazwa. Znajomi zobaczą je przy Twoich należnościach, a te, które da się otworzyć, dostaną przycisk otwierający aplikację.</li>
                         <li><b>Aplikacja</b> to ustawienia tego telefonu: powiadomienia o zaległościach, motyw jasny albo ciemny, instalacja na ekranie początkowym.</li>
-                        <li><b>Ile kto wydał</b> pokazuje, ile każdy wyłożył i ile skonsumował.</li>
-                    </ul>`
+                    </ul>
+                    <p>Ile kto wydał w tym pokoju znajdziesz w ustawieniach pokoju, pod nazwą grupy.</p>`
             },
             'bill': {
                 title: 'Rachunek',
-                html: `<p><b>Jeden rachunek, który rośnie.</b> Zacznij od samej kwoty — reszta jest opcjonalna i dopisujesz ją wtedy, gdy jest potrzebna.</p>
+                html: `<p><b>Jeden rachunek, który rośnie.</b> Zacznij od samej kwoty. Reszta jest opcjonalna i dopisujesz ją wtedy, gdy jest potrzebna.</p>
+                    <p><b>Jak dzielimy</b> to jedyna decyzja o kształcie rachunku:</p>
                     <ul class="list-disc pl-5 space-y-1">
-                        <li><b>Kwota nierozpisana dzieli się po równo</b> między uczestników. Sam wpis kwoty wystarcza, żeby rachunek był kompletny.</li>
-                        <li><b>Pozycje z paragonu</b> — zrób zdjęcie i odczytaj je, a potem <b>stuknij linie, które jadłeś</b>. Cena pozycji dzieli się po równo między wszystkich, którzy ją stuknęli, a ich zdjęcia pojawiają się na linii.</li>
-                        <li>Pozycję o ilości większej niż 1 możesz <b>podzielić na sztuki</b> (ołówek → „Podziel na sztuki"), gdy każdą sztukę wziął kto inny.</li>
-                        <li><b>Koszty wspólne</b> — np. napiwek albo serwis, doliczane do całości i dzielone.</li>
-                        <li><b>Koszty własne</b> — to, co ktoś zamówił wyłącznie dla siebie.</li>
-                        <li><b>Suma pozycji</b> pilnuje, żeby wpisy nie przekroczyły kwoty rachunku. Niedobór nie jest błędem — to właśnie kwota, która idzie po równo.</li>
-                        <li>Grosze zaokrąglane w górę, żeby płatnik nigdy nie był stratny.</li>
-                        <li>Wybierz płatnika i potwierdź płatność.</li>
+                        <li><b>Po równo</b>: cała kwota dzieli się na uczestników i nikt niczego nie uzupełnia.</li>
+                        <li><b>Ze swoimi kosztami</b>: każdy stuka swoje pozycje i wpisuje koszty własne. Wszystko, czego nikt nie weźmie imiennie, i tak dzieli się po równo.</li>
+                    </ul>
+                    <p>Status „uzupełnione" liczy się sam z tego, co stoi w rachunku. Nie trzeba go nigdzie ustawiać.</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li><b>Pozycje z paragonu</b>: zrób zdjęcie i odczytaj je, a potem <b>stuknij linie, które jadłeś</b>. Cena pozycji dzieli się po równo między wszystkich, którzy ją stuknęli, a ich zdjęcia pojawiają się na linii na żywo.</li>
+                        <li>Pozycję o ilości większej niż 1 możesz <b>podzielić na sztuki</b> (ołówek, potem „Podziel na sztuki"), gdy każdą sztukę wziął kto inny.</li>
+                        <li><b>Koszt wspólny</b> to napiwek albo serwis. Dolicza się do całości i dzieli po równo, niezależnie od trybu.</li>
+                        <li><b>Koszt tylko Twój</b> to coś, co zamówiłeś wyłącznie dla siebie.</li>
+                        <li><b>Suma pozycji</b> pilnuje, żeby wpisy nie przekroczyły kwoty rachunku. Niedobór nie jest błędem: to właśnie ta część, która idzie po równo.</li>
+                        <li>Grosze zaokrąglają się w górę, żeby płatnik nigdy nie był stratny.</li>
+                        <li>Na koniec wskaż płatnika i potwierdź, że to on wyłożył pieniądze.</li>
                     </ul>`
             }
         };
@@ -496,6 +740,12 @@
             });
             const meBtn = document.getElementById('nav-me');
             if (meBtn) meBtn.onclick = () => { renderProfile(); renderPushToggle(); showScreen('profile'); };
+
+            // Wyjście z pokoju na listę pokoi. Strzałka w lewo znaczy w tej aplikacji
+            // „o poziom wyżej" — tak samo jak na ekranie rachunku. Nie myl tego
+            // z „Opuść pokój": tam zwalniamy imię, tu tylko wychodzimy.
+            const roomsBtn = document.getElementById('back-to-rooms-btn');
+            if (roomsBtn) roomsBtn.onclick = () => goToRoomsList();
         };
 
         const showScreen = (screenName) => {
@@ -699,6 +949,10 @@
                 latestSettlements = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 renderSettlements();
                 renderBalancePanel();
+                // Rejestr otwarty na ekranie musi widzieć cudze potwierdzenie od razu —
+                // to jedyne miejsce, w którym ktoś czeka na ruch drugiej osoby.
+                const logModal = document.getElementById('settlements-log-modal');
+                if (logModal && logModal.classList.contains('active')) renderSettlementsLog();
             });
 
             const nudgesQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`), orderBy('createdAt', 'desc'));
@@ -728,7 +982,7 @@
                 // ma działać dalej z pustą historią, a nie sypać błędami w konsoli.
                 latestEvents = [];
                 renderBillHistory();
-                console.warn('[BillSplitter] Dziennik aktywności niedostępny:', error.code || error);
+                console.warn('[Billyada] Dziennik aktywności niedostępny:', error.code || error);
             });
 
             document.getElementById('copy-group-link-btn').onclick = () => {
@@ -778,6 +1032,14 @@
                     ],
                     onPick: async (value) => {
                         await updateDoc(groupDocRef, { defaultCurrency: value });
+                        // USTERKA NAPRAWIONA 2026-08-15: etykietę waluty ustawiało wyłącznie
+                        // `openRoomSettings`, więc po wyborze arkusz zamykał się, a pole nadal
+                        // pokazywało starą walutę. Zapis szedł do bazy poprawnie, ale ekran
+                        // mówił, że nic się nie stało — stąd zgłoszenie „nie mogę zmienić
+                        // waluty domyślnej, gdy są już rachunki". Zmiana ZAWSZE była możliwa;
+                        // niewidoczna była tylko jej odpowiedź.
+                        const label = document.getElementById('room-currency-label');
+                        if (label) label.textContent = value;
                         showToast('Nowe rachunki będą w ' + value + '.');
                     },
                 });
@@ -793,6 +1055,48 @@
             showScreen('group-dashboard');
         };
         
+        // --- TRYB PODZIAŁU RACHUNKU ------------------------------------------------
+        //
+        // Do 2026-08-15 każdy uczestnik ustawiał sobie status ręcznie: Nieuzupełnione /
+        // Uzupełnione / Mnie nie dotyczy. To było pytanie do człowieka o rzecz, którą
+        // aplikacja i tak wie — czy dopisał swoje pozycje. Efekt: rachunek pokazywał
+        // „Nieuzupełnione" komuś, kto wszystko już odkliknął, i „Uzupełnione" komuś, kto
+        // tylko przestawił pole. Status kłamał, a kłamiący status przy pieniądzach jest
+        // gorszy niż jego brak.
+        //
+        // Teraz rachunek ma JEDEN przełącznik trybu, a status liczy się sam:
+        //   'even' (Po równo)          — kwota dzieli się na uczestników, nie ma czego
+        //                                uzupełniać, więc wszyscy są gotowi od razu.
+        //   'own'  (Ze swoimi kosztami) — gotowy jest ten, kto stuknął choć jedną pozycję
+        //                                albo wpisał koszt własny.
+        // „Mnie nie dotyczy" odpadło jako WYBÓR: od wypisania kogoś z rachunku jest
+        // edycja składu. Sama WARTOŚĆ `not_applicable` zostaje w bazie, bo to na niej
+        // stoi wykluczanie z podziału w `functions/calc.js` i noszą ją stare rachunki.
+        const PARTICIPANT_IN = 'in';
+        const PARTICIPANT_OUT = 'not_applicable';
+
+        const billSplitMode = (bill) => {
+            if (bill && (bill.splitMode === 'even' || bill.splitMode === 'own')) return bill.splitMode;
+            // Rachunki sprzed wprowadzenia przełącznika nie mają tego pola. Odczytujemy
+            // tryb z tego, co w nich jest: skoro ktoś rozpisał pozycje albo wpisał koszt
+            // własny, to rachunek jest „ze swoimi kosztami" i przestawienie go na „po
+            // równo" po cichu przy pierwszym otwarciu byłoby zmianą cudzych kwot.
+            const items = (bill && bill.sharedCosts) || [];
+            const anyOwn = Object.values((bill && bill.participants) || {})
+                .some((p) => Number(p && p.individualAmount) > 0);
+            return (items.length > 0 || anyOwn) ? 'own' : 'even';
+        };
+
+        // Czy udział tej osoby jest już opisany. W trybie „po równo" zawsze tak.
+        const participantReady = (bill, participantId) => {
+            if (!bill || !participantId) return false;
+            const p = (bill.participants || {})[participantId];
+            if (!p || p.status === PARTICIPANT_OUT) return false;
+            if (billSplitMode(bill) === 'even') return true;
+            if (Number(p.individualAmount) > 0) return true;
+            return ((bill.sharedCosts) || []).some((it) => isPicked(it, participantId));
+        };
+
         const getBillSummaryHtml = (bill, myMember, myParticipant) => {
             if (!myParticipant || myParticipant.status === 'not_applicable') {
                 return `<p class="text-ink-3">Nie dotyczy Cię</p>`;
@@ -810,8 +1114,8 @@
                 return `<p class="text-info font-semibold">Uzupełnij kwotę</p>`;
             }
 
-            if (bill.type === 'advanced' && myParticipant.status === 'incomplete') {
-                return `<p class="text-info font-semibold">Uzupełnij swoje koszty</p>`;
+            if (!participantReady(bill, myMember.id)) {
+                return `<p class="text-info font-semibold">Stuknij, co Twoje</p>`;
             }
 
             const calculations = calculateAllForBill(bill);
@@ -865,7 +1169,9 @@
                     : make('wait', `Czeka na ${escapeHtml(memberName(bill.payerId))}`);
             }
             if (!bill.totalAmount || bill.totalAmount <= 0) return make('action', 'Uzupełnij kwotę');
-            if (bill.type === 'advanced' && myParticipant.status === 'incomplete') return make('action', 'Uzupełnij swoje koszty');
+            // W trybie „po równo" nikt niczego nie uzupełnia, więc ten stan tam nie
+            // istnieje — i to jest cała różnica między dwoma trybami rachunku.
+            if (!participantReady(bill, myMember.id)) return make('action', 'Stuknij, co Twoje');
 
             const calculations = calculateAllForBill(bill);
             const myCalc = calculations.participantTotals.find(pt => pt.participant.id === myMember.id);
@@ -914,14 +1220,83 @@
 
         // --- Faza 4/5-bridge: metody płatności per osoba (wiele: konto, telefon, Revolut, PayPal, własne) ---
         const PAYMENT_TYPES = {
-            account: { label: 'Konto / IBAN', icon: 'fa-university', placeholder: 'Numer konta / IBAN' },
-            phone:   { label: 'Telefon (BLIK/Revolut)', icon: 'fa-mobile-screen-button', placeholder: 'Numer telefonu' },
-            revolut: { label: 'Revolut @tag / link', icon: 'fa-at', placeholder: '@nick lub revolut.me/...' },
-            paypal:  { label: 'PayPal', icon: 'fa-paypal', brand: true, placeholder: 'paypal.me/... lub email' },
+            account: { label: 'Konto / IBAN', icon: 'fa-building-columns', placeholder: 'Numer konta / IBAN' },
+            phone:   { label: 'Telefon (BLIK / Revolut)', icon: 'fa-mobile-screen-button', placeholder: 'Numer telefonu' },
+            revolut: { label: 'Revolut', icon: 'fa-at', placeholder: '@nick albo revolut.me/nick' },
+            paypal:  { label: 'PayPal', icon: 'fa-paypal', brand: true, placeholder: 'paypal.me/nick albo e-mail' },
+            wise:    { label: 'Wise', icon: 'fa-globe', placeholder: 'nick albo wise.com/pay/me/nick' },
             other:   { label: 'Inne (własna nazwa)', icon: 'fa-money-bill-wave', placeholder: 'Numer / adres / uchwyt' },
         };
         const paymentIconClass = (type) => { const t = PAYMENT_TYPES[type] || PAYMENT_TYPES.other; return `${t.brand ? 'fab' : 'fas'} ${t.icon}`; };
         const paymentLabel = (m) => (m && m.type === 'other' && m.label) ? m.label : (PAYMENT_TYPES[(m && m.type)] || PAYMENT_TYPES.other).label;
+
+        // --- SPOSÓB PŁATNOŚCI JAKO ODNOŚNIK -----------------------------------------
+        //
+        // Do 2026-08-15 uchwyt Revoluta był tekstem do skopiowania i tyle: człowiek
+        // kopiował „@macu", wychodził z aplikacji, szukał Revoluta, wklejał. Trzy ruchy
+        // na coś, co telefon potrafi zrobić jednym. Teraz uchwyt, który da się otworzyć,
+        // dostaje przycisk otwierający aplikację albo stronę, a kopiowanie zostaje OBOK,
+        // bo część ludzi i tak woli wkleić sobie sama.
+        //
+        // Numer konta i telefon zostają przy kopiowaniu (telefon dodatkowo przy dzwonieniu):
+        // nie ma dokąd ich „otworzyć", a udawanie, że jest, kończy się pustym ekranem.
+        //
+        // Adres składamy WYŁĄCznie z uchwytu i znanej domeny — nigdy nie wstawiamy
+        // cudzego tekstu jako adresu, bo pole wpisuje dowolna osoba z pokoju, a `href`
+        // przyjmujący czyjś tekst to otwarta furtka na `javascript:`.
+        const paymentHandle = (value) => String(value || '')
+            .trim()
+            .replace(/^https?:\/\//i, '')
+            .replace(/^(www\.)?(revolut\.me|paypal\.me|wise\.com\/pay\/me)\//i, '')
+            .replace(/^@/, '')
+            .replace(/[^A-Za-z0-9._-]/g, '');
+
+        const paymentLink = (m) => {
+            if (!m || !m.value) return null;
+            const raw = String(m.value).trim();
+            if (m.type === 'phone') {
+                const digits = raw.replace(/[^\d+]/g, '');
+                return digits.length >= 6 ? { href: `tel:${digits}`, label: 'Zadzwoń', icon: 'fa-phone' } : null;
+            }
+            if (m.type === 'revolut') {
+                const h = paymentHandle(raw);
+                return h ? { href: `https://revolut.me/${h}`, label: 'Otwórz Revolut', icon: 'fa-arrow-up-right-from-square' } : null;
+            }
+            if (m.type === 'paypal') {
+                // Adres e-mail nie ma postaci linku płatniczego — zostaje do skopiowania.
+                if (raw.includes('@') && !/^@/.test(raw)) return null;
+                const h = paymentHandle(raw);
+                return h ? { href: `https://paypal.me/${h}`, label: 'Otwórz PayPal', icon: 'fa-arrow-up-right-from-square' } : null;
+            }
+            if (m.type === 'wise') {
+                const h = paymentHandle(raw);
+                return h ? { href: `https://wise.com/pay/me/${h}`, label: 'Otwórz Wise', icon: 'fa-arrow-up-right-from-square' } : null;
+            }
+            if (m.type === 'other') {
+                // Własna metoda bywa po prostu linkiem. Przyjmujemy TYLKO http(s) —
+                // żadnego `javascript:` ani `data:` z cudzego pola.
+                const url = /^https:\/\/[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(raw) ? raw
+                    : (/^http:\/\/[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(raw) ? raw : null);
+                return url ? { href: url, label: 'Otwórz', icon: 'fa-arrow-up-right-from-square' } : null;
+            }
+            return null;
+        };
+
+        // Wiersz metody płatności w oknie „Ureguluj". Dwie drogi obok siebie: otwórz
+        // albo skopiuj. `rel="noopener"` obowiązkowo — obce okno nie ma prawa sięgnąć
+        // do naszego przez `window.opener`.
+        const paymentMethodRowHtml = (m) => {
+            const link = paymentLink(m);
+            return `<div class="pay-method">
+                <i class="${paymentIconClass(m.type)} text-ink-3 w-5 text-center flex-shrink-0"></i>
+                <div class="flex-grow min-w-0">
+                    <p class="text-xs font-bold text-ink-3">${escapeHtml(paymentLabel(m))}</p>
+                    <p class="text-sm credential truncate">${escapeHtml(m.value)}</p>
+                </div>
+                ${link ? `<a class="pay-method-open tap" href="${escapeHtml(link.href)}" target="_blank" rel="noopener noreferrer"><i class="fas ${link.icon}"></i>${escapeHtml(link.label)}</a>` : ''}
+                <button class="copy-account-btn tap min-h-tap px-3 rounded-full text-sm font-bold text-ink bg-surface flex-shrink-0" data-account="${escapeHtml(m.value)}" title="Kopiuj">Kopiuj</button>
+            </div>`;
+        };
         // Backward-compat: stare pojedyncze accountNumber czytane jako jedna metoda „konto".
         const getPaymentMethods = (member) => {
             if (!member) return [];
@@ -929,6 +1304,22 @@
             if (member.accountNumber) return [{ type: 'account', value: member.accountNumber }];
             return [];
         };
+        // Rodzaj dodawanej metody. Trzymany w `data-value` przycisku, nie w `<select>`:
+        // to była OSTATNIA lista systemowa w aplikacji i wyglądała dokładnie tak, jak
+        // opisuje DESIGN.md („Wybór z listy"): biały prostokąt z niebieskim zaznaczeniem
+        // i cudzą czcionką na ciemnym ekranie. Widać to na zrzucie właściciela.
+        const setPaymentAddType = (type) => {
+            const btn = document.getElementById('pm-add-type');
+            const label = document.getElementById('pm-add-type-label');
+            const t = PAYMENT_TYPES[type] || PAYMENT_TYPES.other;
+            if (btn) btn.dataset.value = type;
+            if (label) label.textContent = t.label;
+            const labelInput = document.getElementById('pm-add-label');
+            if (labelInput) labelInput.classList.toggle('hidden', type !== 'other');
+            const valueInput = document.getElementById('pm-add-value');
+            if (valueInput) valueInput.placeholder = t.placeholder;
+        };
+
         // Edytor metod płatności (modal). Pracuje na kopii roboczej, zapisuje całą tablicę do Firestore.
         const savePaymentMethods = async () => {
             if (!paymentEditMemberId || !currentGroupId) return;
@@ -959,13 +1350,9 @@
             paymentEditMemberId = myMember.id;
             paymentEditMethods = getPaymentMethods(myMember).map(m => ({ ...m }));
             renderPaymentEditor();
-            const typeSel = document.getElementById('pm-add-type');
-            typeSel.value = 'account';
+            setPaymentAddType('account');
             document.getElementById('pm-add-label').value = '';
-            document.getElementById('pm-add-label').classList.add('hidden');
-            const valInput = document.getElementById('pm-add-value');
-            valInput.value = '';
-            valInput.placeholder = PAYMENT_TYPES.account.placeholder;
+            document.getElementById('pm-add-value').value = '';
             document.getElementById('payment-methods-modal').classList.add('active');
         };
 
@@ -978,13 +1365,40 @@
         // w referencjach — przy kolumnie kwot różnica w czytelności jest natychmiastowa.
         // `withCurrency` wyłączamy tam, gdzie waluta jest już powiedziana raz na całą listę
         // (kafelki pozycji, rozpiska udziałów) — dwadzieścia razy „PLN" to szum, nie informacja.
-        const denominationHtml = (amountG, currency, toneClass, { withCurrency = true } = {}) => {
+        //
+        // USTERKA NAPRAWIONA 2026-08-15: ta funkcja wypisywała klasy `denomination`,
+        // `denomination-relief`, `denomination-fraction` i `denomination-currency` —
+        // nazwy z odrzuconego świata „druku zabezpieczonego". W arkuszu stylów tych klas
+        // NIE MA (są `amount`, `amount-fraction`, `amount-currency`), więc kwota bilansu
+        // renderowała się jako goły tekst: bez kroju kwot, bez cichszych groszy i bez
+        // odstępu przed walutą. Stąd „120,80PLN" sklejone w jedno słowo, dotykające
+        // krawędzi limonkowego bloku. Cicha awaria po zmianie nazw w CSS bez zmiany
+        // w JavaScripcie — nic nie zgłaszało błędu, bo brakująca klasa nie jest błędem.
+        const amountHtml = (amountG, currency, toneClass, { withCurrency = true } = {}) => {
             const sign = amountG < 0 ? '−' : '';
             const abs = Math.abs(Number(amountG) || 0);
             const whole = Math.floor(abs / 100).toLocaleString('pl-PL');
             const fraction = String(abs % 100).padStart(2, '0');
-            const cur = withCurrency ? `<span class="denomination-currency">${escapeHtml(currency)}</span>` : '';
-            return `<span class="denomination denomination-relief ${toneClass}">${sign}${whole}<span class="denomination-fraction">,${fraction}</span>${cur}</span>`;
+            const cur = withCurrency ? `<span class="amount-currency">${escapeHtml(currency)}</span>` : '';
+            return `<span class="amount ${toneClass}">${sign}${whole}<span class="amount-fraction">,${fraction}</span>${cur}</span>`;
+        };
+
+        // Nominał bilansu. Osobna funkcja, bo tu waluta stoi POD kwotą, a stopień pisma
+        // zależy od tego, ile znaków ma liczba: przy „1 234 567,00" stały stopień wypychał
+        // cyfry poza blok. Cztery stopnie ze skali z DESIGN.md i ani jednego więcej.
+        const heroAmountHtml = (amountG, currency, toneClass) => {
+            const sign = amountG < 0 ? '−' : '';
+            const abs = Math.abs(Number(amountG) || 0);
+            const whole = Math.floor(abs / 100).toLocaleString('pl-PL');
+            const fraction = String(abs % 100).padStart(2, '0');
+            // Liczymy znaki tego, co realnie stanie w wierszu: złotówki, przecinek i grosze.
+            // Grosze mają 0,55 stopnia, więc liczą się za pół znaku każdy.
+            const width = whole.length + 2;
+            const size = width <= 7 ? '3rem' : width <= 10 ? '1.875rem' : '1.25rem';
+            return `<div>
+                <span class="amount amount-hero ${toneClass}" style="--amount-size:${size}">${sign}${whole}<span class="amount-fraction">,${fraction}</span></span>
+                <span class="amount-hero-unit">${escapeHtml(currency)}</span>
+            </div>`;
         };
 
         // Moje należności i zobowiązania w jednym miejscu — to jest liczba, po którą
@@ -1018,7 +1432,6 @@
                 const serial = document.getElementById('balance-empty-serial');
                 if (serial) serial.textContent = formatSerial(currentGroupId);
             }
-            renderBalanceCrew();
             renderBalanceWaiting();
 
             const { rows } = myLedgerRows();
@@ -1027,7 +1440,13 @@
                 const bucket = byCurrency[r.currency] || (byCurrency[r.currency] = { owe: 0, due: 0 });
                 bucket[r.dir] += r.amountG;
             });
+            // WALUTA WIODĄCA TO TA O NAJWIĘKSZYM SALDZIE, nie ta pierwsza alfabetycznie.
+            // Salda walut nigdy się nie sumują (PRODUCT.md), więc bohaterem bloku zostaje
+            // liczba, która najbardziej waży, a reszta schodzi wiersz niżej mniejszym
+            // stopniem. Przy jednej walucie zachowanie jest dokładnie takie, jak było.
             const currencies = Object.keys(byCurrency).sort((a, b) => {
+                const netOf = (c) => Math.abs(byCurrency[c].due - byCurrency[c].owe);
+                if (netOf(b) !== netOf(a)) return netOf(b) - netOf(a);
                 const ia = CURRENCY_ORDER.indexOf(a), ib = CURRENCY_ORDER.indexOf(b);
                 return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || (a < b ? -1 : 1);
             });
@@ -1037,7 +1456,8 @@
                 // z rachunkami to SUKCES („wszystko rozliczone"), a w pokoju bez
                 // rachunków — po prostu początek. Jeden podpis na oba stany kłamał
                 // w świeżym pokoju i kłócił się z zachętą poniżej.
-                amountsEl.innerHTML = `<p class="amount text-5xl">0,00</p>`;
+                const cur = (groupData && groupData.defaultCurrency) || 'PLN';
+                amountsEl.innerHTML = heroAmountHtml(0, cur, 'text-brand-ink');
                 captionEl.textContent = latestBills.length === 0
                     ? 'Jeszcze nic nie policzone.'
                     : 'Wszystko rozliczone. Nikt nikomu nic nie jest winien.';
@@ -1048,18 +1468,29 @@
             // Kwota w bloku marki jest CZARNA, a kierunek niesie podpis pod nią. Czerwień
             // i zieleń na limonce byłyby nieczytelne, a kolor marki nie może znaczyć
             // „winien" ani „dostajesz" — od tego są wiersze ludzi na białych kartach.
-            amountsEl.innerHTML = currencies.map((cur) => {
-                const net = byCurrency[cur].due - byCurrency[cur].owe;
-                return `<p class="text-6xl md:text-7xl">${denominationHtml(net, cur, 'text-brand-ink')}</p>`;
+            const netOf = (cur) => byCurrency[cur].due - byCurrency[cur].owe;
+            amountsEl.innerHTML = currencies.map((cur, i) => {
+                if (i === 0) return heroAmountHtml(netOf(cur), cur, 'text-brand-ink');
+                // Kolejne waluty: własny wiersz, mniejszy stopień, skrót obok kwoty.
+                // Bez znaku plus między nimi — plus sugerowałby jedną sumę do zapłaty,
+                // a te salda domyka się osobnymi przelewami.
+                return `<p class="amount amount-second text-brand-ink">${amountHtml(netOf(cur), cur, 'text-brand-ink')}</p>`;
             }).join('');
 
             const oweRows = rows.filter((r) => r.dir === 'owe');
             const dueRows = rows.filter((r) => r.dir === 'due');
             const people = (n) => (n === 1 ? '1 osobie' : `${n} osobom`);
             const peopleFrom = (n) => (n === 1 ? '1 osoby' : `${n} osób`);
+            // Liczymy LUDZI, nie wiersze. Ktoś, komu jestem winien i w złotówkach,
+            // i w euro, to nadal jedna osoba — a „winien jesteś 2 osobom" przy jednym
+            // dłużniku byłoby po prostu nieprawdą.
+            const uniquePeople = (list) => new Set(list.map((r) => r.other)).size;
+            const oweCount = uniquePeople(oweRows);
+            const dueCount = uniquePeople(dueRows);
             const parts = [];
-            if (oweRows.length) parts.push(`winien jesteś ${people(oweRows.length)}`);
-            if (dueRows.length) parts.push(`dostajesz od ${peopleFrom(dueRows.length)}`);
+            if (oweCount) parts.push(`winien jesteś ${people(oweCount)}`);
+            if (dueCount) parts.push(`dostajesz od ${peopleFrom(dueCount)}`);
+            if (currencies.length > 1) parts.push(`${currencies.length} waluty, każda rozliczana osobno`);
             captionEl.textContent = parts.join(' · ');
 
             // Akcja pierwszorzędna celuje w największą pozycję — to ona blokuje rozliczenie.
@@ -1183,8 +1614,8 @@
                         ? 'Jeszcze jeden przelew w grupie'
                         : `Jeszcze ${others.length} ${plural(others.length, 'przelew', 'przelewy', 'przelewów')} w grupie`;
                     html += `<details class="mt-2"><summary class="settle-others-summary">
-                        <i class="fas fa-chevron-down settle-others-chevron" aria-hidden="true"></i>
                         <span>${othersLabel}</span>
+                        <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
                     </summary><div class="settle-rows space-y-2 mt-2">`;
                     others.forEach(t => {
                         html += `<div class="block-quiet p-3.5">
@@ -1204,30 +1635,95 @@
                 html += `</div>`;
             });
 
-            // Historia wpłat (transparentność + undo własnej pomyłki)
-            let historyHtml = '';
-            if (latestSettlements.length) {
-                historyHtml = `<details class="mt-4"><summary class="text-sm text-ink-2 cursor-pointer select-none min-h-tap flex items-center">Rejestr wpłat (${latestSettlements.length})</summary><div class="mt-2 space-y-1.5">`
-                    + latestSettlements.map(s => {
-                        const canDelete = s.createdBy === currentUser.uid;
-                        const canConfirm = !s.confirmed && s.to === myId;
-                        const when = (s.createdAt && s.createdAt.toDate) ? s.createdAt.toDate().toLocaleDateString('pl-PL') : '';
-                        // Potwierdzenie to jedyny mechanizm zaufania w rozliczeniach, więc dostaje
-                        // stempel foliowy — najmocniejszy znak, jakim dysponuje ten świat.
-                        const badge = s.confirmed
-                            ? `<span class="chip text-due px-1.5 py-0.5 text-[0.6rem] font-bold whitespace-nowrap">Potwierdzona</span>`
-                            : `<span class="text-[0.65rem] text-ink-3 whitespace-nowrap uppercase tracking-wider">Czeka</span>`;
-                        return `<div class="flex items-center justify-between gap-2 text-sm p-3 card">
-                            <span class="min-w-0 truncate"><b>${escapeHtml(memberName(s.from))}</b> → ${escapeHtml(memberName(s.to))} · ${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}${when ? ` · <span class="text-ink-3">${when}</span>` : ''} · ${badge}</span>
-                            <span class="flex items-center gap-2 flex-shrink-0">
-                                ${canConfirm ? `<button class="confirm-settle-btn tap min-h-tap px-2 text-info text-xs font-semibold" data-id="${s.id}">Potwierdź</button>` : ''}
-                                ${canDelete ? `<button class="settle-delete-btn tap min-h-tap min-w-tap text-ink-3" data-id="${s.id}" title="Usuń wpłatę"><i class="fas fa-trash"></i></button>` : ''}
-                            </span>
-                        </div>`;
-                    }).join('')
-                    + `</div></details>`;
+            container.innerHTML = html || nothing;
+
+            // Wejście do rejestru wpłat. Sam rejestr mieszka w osobnym arkuszu
+            // pełnoekranowym — patrz `renderSettlementsLog`.
+            const logBtn = document.getElementById('open-settlements-log');
+            const logCount = document.getElementById('settlements-log-count');
+            if (logBtn) logBtn.classList.toggle('hidden', latestSettlements.length === 0);
+            if (logCount) logCount.textContent = latestSettlements.length
+                ? `${latestSettlements.length} ${plural(latestSettlements.length, 'wpłata', 'wpłaty', 'wpłat')}`
+                : '';
+        };
+
+        // --- REJESTR WPŁAT ----------------------------------------------------------
+        //
+        // Do 2026-08-15 rejestr był zwiniętą linijką „Rejestr wpłat (4)" doklejoną pod
+        // rozliczeniami. Nie wyglądał na listę, a po rozwinięciu upychał nadawcę,
+        // odbiorcę, kwotę, datę i stan potwierdzenia w jeden wiersz z wielokropkiem.
+        // Teraz to osobne miejsce z pełnym wierszem na wpłatę i nagłówkiem dnia —
+        // tym samym, co na liście rachunków, więc czyta się bez uczenia się nowego.
+        //
+        // KASOWANIE: tylko WŁASNA wpłata i tylko dopóki odbiorca jej nie potwierdził
+        // (decyzja właściciela 2026-08-15). To naprawa własnej pomyłki sprzed minuty,
+        // a nie kasowanie historii — po potwierdzeniu wpis jest dowodem dla dwóch stron
+        // i znika wyłącznie wpłatą w drugą stronę. Reguły Firestore pilnują tego samego.
+        const renderSettlementsLog = () => {
+            const list = document.getElementById('settlements-log-list');
+            if (!list) return;
+            const myId = (myMemberNow() || {}).id || null;
+
+            if (latestSettlements.length === 0) {
+                list.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">Nikt jeszcze nie zapisał żadnej wpłaty.</p>`;
+                return;
             }
-            container.innerHTML = (html || nothing) + historyHtml;
+
+            const dayLabel = (date) => {
+                if (!date) return 'Bez daty';
+                const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+                const days = Math.round((startOfDay(new Date()) - startOfDay(date)) / 86400000);
+                if (days === 0) return 'Dzisiaj';
+                if (days === 1) return 'Wczoraj';
+                const sameYear = date.getFullYear() === new Date().getFullYear();
+                return date.toLocaleDateString('pl-PL', sameYear
+                    ? { day: 'numeric', month: 'long' }
+                    : { day: 'numeric', month: 'long', year: 'numeric' });
+            };
+
+            let html = '';
+            let lastDay = null;
+            latestSettlements.forEach((s) => {
+                const at = (s.createdAt && s.createdAt.toDate) ? s.createdAt.toDate() : null;
+                const key = at ? `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}` : 'brak';
+                if (key !== lastDay) {
+                    lastDay = key;
+                    html += `<p class="bills-day-title mt-4 mb-2 first:mt-0">${escapeHtml(dayLabel(at))}</p>`;
+                }
+                const time = at ? at.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' }) : '';
+                const canConfirm = !s.confirmed && s.to === myId;
+                const canDelete = s.createdBy === currentUser.uid && !s.confirmed;
+                const badge = s.confirmed
+                    ? `<span class="chip text-due"><i class="fas fa-check"></i>Potwierdzona</span>`
+                    : `<span class="chip text-info"><i class="fas fa-hourglass-half"></i>Czeka na potwierdzenie</span>`;
+                // Kierunek niosą DWA znaki naraz: układ wiersza (od kogo, strzałka, do kogo)
+                // i twarze obu stron. Przy cudzych pieniądzach jeden nośnik to za mało.
+                html += `<div class="log-row">
+                    <span class="flex items-center gap-1.5 flex-shrink-0">
+                        ${avatarHtml(memberName(s.from), s.from, 'w-9 h-9 text-xs')}
+                        <i class="fas fa-arrow-right log-arrow"></i>
+                        ${avatarHtml(memberName(s.to), s.to, 'w-9 h-9 text-xs')}
+                    </span>
+                    <span class="min-w-0 flex-grow">
+                        <span class="block text-sm truncate"><b>${escapeHtml(memberName(s.from))}</b> dla <b>${escapeHtml(memberName(s.to))}</b></span>
+                        <span class="block font-bold text-lg leading-tight">${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}</span>
+                        <span class="mt-1 flex items-center gap-2 flex-wrap">
+                            ${badge}
+                            ${time ? `<span class="text-xs text-ink-3">${escapeHtml(time)}</span>` : ''}
+                        </span>
+                        ${(canConfirm || canDelete) ? `<span class="mt-2 flex items-center gap-2">
+                            ${canConfirm ? `<button class="confirm-settle-btn btn btn-primary" data-id="${escapeHtml(s.id)}">Potwierdzam</button>` : ''}
+                            ${canDelete ? `<button class="settle-delete-btn tap min-h-tap px-3 rounded-full text-sm font-bold text-owe" data-id="${escapeHtml(s.id)}">Usuń wpis</button>` : ''}
+                        </span>` : ''}
+                    </span>
+                </div>`;
+            });
+            list.innerHTML = html;
+        };
+
+        const openSettlementsLog = () => {
+            renderSettlementsLog();
+            document.getElementById('settlements-log-modal').classList.add('active');
         };
 
         // mode: 'send' = ja płacę (Ureguluj, do potwierdzenia) | 'receive' = ja otrzymałem (od razu potwierdzone)
@@ -1247,7 +1743,7 @@
                 : '<i class="fas fa-check mr-2"></i>Zapisz wpłatę';
             document.getElementById('settle-record-note').textContent = mode === 'receive'
                 ? 'Potwierdzasz, że otrzymałeś tę kwotę.'
-                : 'Zapisuje, że przelałeś tę kwotę — odbiorca potwierdzi.';
+                : 'Zapisuje, że przelałeś tę kwotę. Odbiorca ją potwierdzi.';
             // Metody płatności pokazujemy tylko gdy JA płacę (send).
             const methodsWrap = document.getElementById('settle-methods-wrap');
             if (mode === 'receive') {
@@ -1256,16 +1752,8 @@
                 methodsWrap.classList.remove('hidden');
                 const methods = getPaymentMethods((groupData && groupData.members && groupData.members[otherId]) || null);
                 document.getElementById('settle-methods').innerHTML = methods.length === 0
-                    ? `<p class="text-sm text-ink-3">Odbiorca nie zapisał metod płatności.</p>`
-                    : methods.map(m => `
-                        <div class="card flex items-center gap-2 p-2">
-                            <i class="${paymentIconClass(m.type)} text-ink-3 w-4 text-center"></i>
-                            <div class="flex-grow min-w-0">
-                                <p class="text-sm font-bold text-ink-3">${escapeHtml(paymentLabel(m))}</p>
-                                <p class="text-sm credential">${escapeHtml(m.value)}</p>
-                            </div>
-                            <button class="copy-account-btn tap min-h-tap px-3 rounded-lg text-sm font-semibold text-ink flex-shrink-0" data-account="${escapeHtml(m.value)}">Kopiuj</button>
-                        </div>`).join('');
+                    ? `<p class="text-sm text-ink-3">Odbiorca nie zapisał jeszcze żadnego sposobu płatności. Dogadajcie się poza aplikacją.</p>`
+                    : `<p class="text-sm font-bold text-ink-3 mb-2">Gdzie przelać</p>` + methods.map(paymentMethodRowHtml).join('');
             }
             document.getElementById('settle-modal').classList.add('active');
         };
@@ -1418,7 +1906,7 @@
             // sprawą dwóch osób. Blokujemy wyłącznie wciśnięcie przycisku w kółko,
             // czyli przypadkowe albo złośliwe walenie co sekundę.
             if (hasRecentNudge(withMs, my.id, toId, Date.now(), NUDGE_GATE_MS)) {
-                showToast('Chwila — przypomnienie właśnie poszło.');
+                showToast('Chwila, przypomnienie właśnie poszło.');
                 return;
             }
             await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`), {
@@ -1485,7 +1973,7 @@
                     return inboxRowHtml({
                         icon: 'fa-hand-holding-dollar', tone: 'is-due',
                         title: `<b>${escapeHtml(memberName(x.from))}</b> zgłosił/a wpłatę${amount ? ` <b>${amount}</b>` : ''}.`,
-                        subtitle: 'Czeka na Twoje potwierdzenie — bez niego dług zostaje otwarty.',
+                        subtitle: 'Czeka na Twoje potwierdzenie. Bez niego dług zostaje otwarty.',
                         actionsHtml: `<button class="inbox-confirm-btn btn btn-primary" data-id="${escapeHtml(x.id)}">Potwierdzam</button>`,
                     });
                 }
@@ -1519,25 +2007,12 @@
             renderInboxForYou(list);
         };
 
-        // Twarze ekipy pod nominałem. Sam nominał nie mówi, kogo dotyczy — przy
-        // dwunastu osobach rząd zdjęć jest szybszą odpowiedzią na „czy wszyscy już są?"
-        // niż lista imion w ustawieniach. Rząd przewija się w poziomie, żeby bilans
-        // został bohaterem ekranu.
-        const renderBalanceCrew = () => {
-            const wrap = document.getElementById('balance-crew');
-            if (!wrap || !groupData) return;
-            const order = groupData.memberOrder || Object.keys(groupData.members || {});
-            if (order.length <= 1) { wrap.classList.add('hidden'); wrap.innerHTML = ''; return; }
-            wrap.classList.remove('hidden');
-            wrap.innerHTML = `<div class="crew-row">${order.map((id) => {
-                const m = groupData.members[id];
-                if (!m) return '';
-                return `<span class="crew-face" title="${escapeHtml(m.name)}">
-                    ${avatarHtml(m.name, id, 'w-10 h-10 text-sm')}
-                    <span class="crew-name">${escapeHtml(m.name)}</span>
-                </span>`;
-            }).join('')}</div>`;
-        };
+        // Rząd twarzy całej ekipy pod nominałem został usunięty 2026-08-15 na wniosek
+        // właściciela. Powód jest prosty i wart zapisania, żeby nie wrócił: rząd
+        // odpowiadał na pytanie „kto jest w pokoju", którego na Bilansie nikt nie zadaje,
+        // a zabierał wysokość pierwszego ekranu tuż pod kwotą, po którą ludzie tu wchodzą.
+        // Skład grupy mieszka w ustawieniach pokoju i jest tam pełniejszy: widać, kto ma
+        // sposób płatności, a kto jeszcze nie zajął swojego imienia.
 
         // „Wszystko" — rejestr zdarzeń, które da się odtworzyć z danych, jakie już mamy:
         // przypomnienia i wpłaty. Pełna Aktywność (kto co odkliknął, edycje pozycji)
@@ -1633,7 +2108,10 @@
             if (!m) return;
             const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId);
             if (include) {
-                const activeStatus = billData.type === 'advanced' ? 'incomplete' : 'unpaid';
+                // Jedna wartość na „jest w rachunku". Wcześniej były trzy („incomplete",
+                // „unpaid", „completed") i wszystkie znaczyły dla matmy dokładnie to samo,
+                // bo `functions/calc.js` czyta wyłącznie „not_applicable".
+                const activeStatus = PARTICIPANT_IN;
                 // dotted updates: tworzą/aktualizują wpis bez kasowania np. individualAmount
                 await updateDoc(billDocRef, {
                     [`participants.${id}.id`]: id,
@@ -1670,9 +2148,102 @@
 
         // Odczyt zaznaczenia z listy wierszy — jedno miejsce, żeby trzy listy nie
         // rozjechały się w sposobie pytania „kto jest zaznaczony".
+        // `:not(.is-filtered)` NIE wchodzi tu celowo: ukrycie wiersza przez wyszukiwarkę
+        // jest zmianą widoku, nie odznaczeniem. Gdyby filtr wypisywał ludzi z rachunku,
+        // wpisanie trzech liter kasowałoby cały wcześniejszy wybór.
         const selectedPersonIds = (containerId) =>
             [...document.querySelectorAll(`#${containerId} .person-row[aria-pressed="true"]`)]
                 .map((el) => el.dataset.id);
+
+        // --- WYSZUKIWANIE OSOBY -------------------------------------------------
+        // Kryterium projektowe z PRODUCT.md to grupa 12–25 osób. Przy takiej liście
+        // znalezienie jednego imienia przewijaniem jest wolniejsze niż wpisanie trzech
+        // liter, a przy pozycji paragonu robi się to w pośpiechu, przy stole.
+        // Lupa stoi zwinięta i rozwija pole dopiero po stuknięciu: w grupie pięciu osób
+        // lista mieści się na ekranie i pole byłoby tylko kolejnym rzędem do minięcia.
+        //
+        // Filtr NIE kasuje wierszy z DOM, tylko je ukrywa klasą `is-filtered`. Dzięki
+        // temu zaznaczenie osoby, której akurat nie widać, przeżywa wpisywanie.
+        const personSearchNormalize = (s) => String(s || '')
+            .toLocaleLowerCase('pl-PL')
+            // Ktoś szukający „lukasz" ma znaleźć „Łukasz". Rozkładamy znaki diakrytyczne
+            // i zdejmujemy je; „ł" nie ma postaci rozłożonej, więc idzie osobno.
+            .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ł/g, 'l');
+
+        const personSearchList = (wrap) => {
+            const box = wrap && wrap.querySelector('.person-search');
+            const id = box && box.dataset.searchFor;
+            return id ? document.getElementById(id) : null;
+        };
+
+        const syncPersonSearchCount = (wrap) => {
+            const box = wrap && wrap.querySelector('.person-search');
+            const list = personSearchList(wrap);
+            if (!box || !list) return;
+            const counter = box.querySelector('.person-search-count');
+            if (!counter) return;
+            const picked = list.querySelectorAll('.person-row[aria-pressed="true"]').length;
+            const total = list.querySelectorAll('.person-row').length;
+            counter.textContent = total ? `${picked}/${total}` : '';
+        };
+
+        const applyPersonFilter = (wrap) => {
+            const box = wrap && wrap.querySelector('.person-search');
+            const list = personSearchList(wrap);
+            if (!box || !list) return;
+            const needle = personSearchNormalize((box.querySelector('.person-search-input') || {}).value);
+            let visible = 0;
+            list.querySelectorAll('.person-row').forEach((row) => {
+                const hit = !needle || personSearchNormalize(row.textContent).includes(needle);
+                row.classList.toggle('hidden', !hit);
+                if (hit) visible++;
+            });
+            // Stan pusty mówi, czego szukano — inaczej lista wygląda na zepsutą.
+            let empty = list.querySelector('.person-search-empty');
+            if (visible === 0 && needle) {
+                if (!empty) {
+                    empty = document.createElement('p');
+                    empty.className = 'person-search-empty';
+                    list.appendChild(empty);
+                }
+                empty.textContent = 'Nikt taki nie jest w tym pokoju.';
+                empty.classList.remove('hidden');
+            } else if (empty) {
+                empty.classList.add('hidden');
+            }
+        };
+
+        const resetPersonSearch = (wrap) => {
+            const box = wrap && wrap.querySelector('.person-search');
+            if (!box) return;
+            const input = box.querySelector('.person-search-input');
+            if (input) input.value = '';
+            box.classList.remove('is-open');
+            const toggle = box.querySelector('.person-search-toggle');
+            if (toggle) toggle.setAttribute('aria-expanded', 'false');
+            applyPersonFilter(wrap);
+            syncPersonSearchCount(wrap);
+        };
+
+        // Jedna delegacja na cały dokument: wyszukiwarek jest kilka, a zachowanie jedno.
+        const setupPersonSearch = () => {
+            document.addEventListener('click', (e) => {
+                const toggle = e.target.closest('.person-search-toggle');
+                if (!toggle) return;
+                const box = toggle.closest('.person-search');
+                const willOpen = !box.classList.contains('is-open');
+                box.classList.toggle('is-open', willOpen);
+                toggle.setAttribute('aria-expanded', String(willOpen));
+                const input = box.querySelector('.person-search-input');
+                if (willOpen) { if (input) input.focus(); }
+                else if (input) { input.value = ''; applyPersonFilter(box.parentElement); }
+            });
+            document.addEventListener('input', (e) => {
+                const input = e.target.closest('.person-search-input');
+                if (!input) return;
+                applyPersonFilter(input.closest('.person-search').parentElement);
+            });
+        };
 
         // WYBÓR JEDNOKROTNY — jeden arkusz dla każdej listy (waluta, płatnik).
         // `options`: [{ value, label, hint?, avatarHtml? }].
@@ -1701,23 +2272,8 @@
             modal.classList.add('active');
         };
 
-        // STATUS UCZESTNIKA — arkusz z trzema opcjami. Wywołanie podaje bieżący stan
-        // i domknięcie, które ma zapisać wybór; arkusz nie wie nic o bazie.
-        const openStatusSheet = (participantId, currentStatus, onPick) => {
-            const modal = document.getElementById('status-modal');
-            if (!modal) return;
-            modal.querySelectorAll('.status-option').forEach((btn) => {
-                const selected = btn.dataset.status === currentStatus;
-                btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
-                const check = btn.querySelector('.status-option-check');
-                if (check) check.classList.toggle('hidden', !selected);
-                btn.onclick = async () => {
-                    modal.classList.remove('active');
-                    if (btn.dataset.status !== currentStatus) await onPick(btn.dataset.status);
-                };
-            });
-            modal.classList.add('active');
-        };
+        // Arkusz „Twój status" (`openStatusSheet`) został usunięty 2026-08-15 razem
+        // z ręcznym wyborem statusu. Historia w komentarzu przy `billSplitMode`.
 
         // --- DZIENNIK AKTYWNOŚCI ----------------------------------------------------
         // Przy grupie 12–25 osób ślad „kto zmienił kwotę" jest mechanizmem zaufania,
@@ -1743,7 +2299,7 @@
                     createdAt: serverTimestamp(),
                 });
             } catch (e) {
-                console.warn('[BillSplitter] Nie udało się dopisać zdarzenia:', e);
+                console.warn('[Billyada] Nie udało się dopisać zdarzenia:', e);
             }
         };
 
@@ -1776,16 +2332,58 @@
             list.innerHTML = events.map(eventRowHtml).join('');
         };
 
+        // Który rachunek już zapytał mnie o to, czy jestem płatnikiem. Zerowane przy
+        // wejściu na rachunek, żeby pytanie padło raz na wizytę, a nie raz na render.
+        let payerClaimAskedFor = null;
+
+        const openPayerClaim = () => {
+            const modal = document.getElementById('payer-claim-modal');
+            if (!modal || !billData) return;
+            const body = document.getElementById('payer-claim-body');
+            if (body) {
+                body.textContent = `Ktoś wskazał Ciebie jako osobę, która wyłożyła pieniądze za rachunek „${billData.billName}".`;
+            }
+            const billId = currentBillId;
+            const billRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, billId);
+
+            document.getElementById('payer-claim-yes').onclick = async () => {
+                modal.classList.remove('active');
+                await updateDoc(billRef, { payerConfirmed: true });
+                showToast('Potwierdzone. Ekipa widzi już, ile Ci oddać.');
+                logEvent({ type: 'bill-payer-confirm', billId, label: `potwierdził/a, że zapłacił/a za rachunek „${billData.billName}"` });
+            };
+
+            // „Nie ja" jest pełnoprawną odpowiedzią i czyści wskazanie, zamiast tylko
+            // zamykać okno. Inaczej ktoś błędnie wskazany zostawałby z pytaniem, które
+            // wraca przy każdym wejściu, i bez sposobu, żeby to naprostować.
+            document.getElementById('payer-claim-no').onclick = async () => {
+                modal.classList.remove('active');
+                await updateDoc(billRef, { payerId: null, payerConfirmed: false });
+                showToast('Wskazanie płatnika wyczyszczone.');
+                logEvent({ type: 'bill-payer', billId, label: `zaprzeczył/a, że zapłacił/a za rachunek „${billData.billName}"` });
+            };
+
+            modal.classList.add('active');
+        };
+
         // POTWIERDZENIE DECYZJI NIEODWRACALNEJ — jedno okno dla całej aplikacji.
         // Osobne okno na każdą taką decyzję kończyło się trzema wyglądami tego samego
         // pytania i trzema różnymi drogami wyjścia.
-        const openConfirm = ({ title, body, confirmLabel = 'Potwierdzam', onConfirm }) => {
+        //
+        // `tone` rozstrzyga KOLOR przycisku potwierdzenia i nie jest ozdobą. Czerwień
+        // długu ma w tej aplikacji jedno znaczenie: „stąd nie ma powrotu" (DESIGN.md,
+        // reguła rozdziału kolorów). Okno pytające, czy to Ty wyłożyłeś pieniądze, nic
+        // nie kasuje — czerwony przycisk mówiłby wtedy nieprawdę i po kilku takich
+        // oknach czerwień przestałaby cokolwiek znaczyć. Dlatego domyślnie 'danger'
+        // (bo większość tych okien naprawdę kasuje), a decyzje odwracalne proszą o 'brand'.
+        const openConfirm = ({ title, body, confirmLabel = 'Potwierdzam', tone = 'danger', onConfirm }) => {
             const modal = document.getElementById('confirm-modal');
             if (!modal) return;
             document.getElementById('confirm-title').textContent = title;
             document.getElementById('confirm-body').textContent = body;
             const ok = document.getElementById('confirm-ok-btn');
             const cancel = document.getElementById('confirm-cancel-btn');
+            ok.className = tone === 'brand' ? 'btn btn-primary flex-1' : 'btn btn-danger flex-1';
             ok.textContent = confirmLabel;
             ok.onclick = async () => {
                 modal.classList.remove('active');
@@ -1838,7 +2436,7 @@
                 const methods = getPaymentMethods(m).length;
                 // „Wolne" znaczy: imię nikim nie zajęte, więc ktoś może je przejąć,
                 // wchodząc do pokoju kodem. To jest informacja o dostępie, nie ozdoba.
-                const note = isMe ? 'to Ty' : (m.claimedBy ? '' : 'wolne — nikt jeszcze nie zajął');
+                const note = isMe ? 'to Ty' : (m.claimedBy ? '' : 'wolne, nikt jeszcze nie zajął');
                 const pay = methods > 0
                     ? `${methods} ${plural(methods, 'sposób płatności', 'sposoby płatności', 'sposobów płatności')}`
                     : 'brak sposobu płatności';
@@ -1891,6 +2489,10 @@
                     forgetRoom(currentGroupId);
                     document.getElementById('room-settings-modal').classList.remove('active');
                     showToast('Pokój opuszczony.');
+                    // Bez tego znacznika przeładowanie po opuszczeniu pokoju wpadłoby
+                    // w automatyczny powrót i wrzuciło człowieka do NASTĘPNEGO pokoju
+                    // z listy — dokładnie wtedy, gdy właśnie chciał z pokoju wyjść.
+                    try { sessionStorage.setItem(SKIP_RESUME_KEY, '1'); } catch (_) {}
                     window.location.href = window.location.origin + window.location.pathname;
                 },
             });
@@ -2193,6 +2795,9 @@
             // Wchodzimy na gotowy paragon, więc nic nie ma prawa animować przy otwarciu —
             // ruch tłumaczy ZMIANĘ, a pierwszy render żadnej zmiany nie pokazuje.
             lastPickersByItem = new Map();
+            // Nowe wejście na rachunek to nowa okazja, żeby zapytać wskazanego płatnika,
+            // czy to naprawdę on zapłacił.
+            payerClaimAskedFor = null;
             
             if (!groupData) {
                 const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, groupId);
@@ -2252,17 +2857,11 @@
 
         // Model wpłat: rachunek = KONSUMPCJA. Status = tylko członkostwo/uzupełnienie,
         // BEZ opłacone/nieopłacone (rozliczenie żyje w „Rozliczeniach", nie na rachunku).
-        const getStatusHtml = (status, isMe, isPayer, participantId = null, billType = 'advanced') => {
-            // Status mówi o UDZIALE w rachunku, nie o pieniądzach — dlatego chodzi tonami
-            // atramentu, a jedyny kolor („informacja") dostaje stan, który czegoś od
-            // człowieka chce. Czerwień i zieleń zostają zarezerwowane dla długu i należności.
-            const statuses = {
-                incomplete: { text: "Nieuzupełnione", icon: "fa-question-circle", color: "text-info", bg: "bg-surface-2" },
-                completed: { text: "Uzupełnione", icon: "fa-user-check", color: "text-ink-2", bg: "bg-surface-2" },
-                not_applicable: { text: "Nie dotyczy", icon: "fa-ban", color: "text-ink-3", bg: "bg-surface-2" },
-            };
-            const active = { text: "W rachunku", icon: "fa-user", color: "text-ink-2", bg: "bg-surface-2" };
-            const current = statuses[status] || active; // legacy unpaid/paid → „w rachunku"
+        // Status jest teraz ODCZYTEM, nie kontrolką: nikt go nie ustawia, bo aplikacja
+        // wie sama (patrz `participantReady`). Dlatego to zwykły podpis, a nie przycisk
+        // otwierający arkusz — kontrolka, którą da się kliknąć, obiecuje decyzję,
+        // a tu żadnej decyzji do podjęcia nie ma.
+        const getStatusHtml = (isMe, isPayer, participantId) => {
             const isPayerConfirmed = billData.payerConfirmed === true;
 
             if (isPayer) {
@@ -2272,24 +2871,17 @@
                 return `<span class="text-sm font-semibold text-ink-2">Płatnik</span>`;
             }
 
-            if (isMe) {
-                // NIE `<select>`. Rozwinięta lista systemowa wypada z tego świata:
-                // biała ramka, niebieskie podświetlenie i systemowa czcionka lądują na
-                // ciemnym ekranie jako obcy przedmiot, a wyglądu listy nie da się
-                // ostylować w żadnej przeglądarce. Stąd przycisk + arkusz z opcjami,
-                // czyli ten sam język, co reszta wyborów w aplikacji.
-                return `
-                    <button class="status-select-wrapper status-select ${current.bg}" data-participant-id="${participantId}" data-status="${status}" aria-haspopup="dialog" title="Zmień swój status">
-                        <i class="fas ${current.icon} ${current.color}"></i>
-                        <span class="font-semibold ${current.color}">${current.text}</span>
-                    </button>`;
+            const ready = participantReady(billData, participantId);
+            if (ready) {
+                return `<span class="text-sm font-semibold text-ink-2 flex items-center gap-1.5"><i class="fas fa-check"></i>Uzupełnione</span>`;
             }
-
-            return `<span class="font-semibold ${current.color} flex items-center"><i class="fas ${current.icon} mr-2"></i>${current.text}</span>`;
+            // Ton „informacja" znaczy w tej aplikacji „coś czeka na ruch". U siebie
+            // mówimy, CO zrobić; u kogoś innego stwierdzamy fakt, bo nie ma tam nic
+            // do zrobienia przeze mnie.
+            return isMe
+                ? `<span class="text-sm font-semibold text-info flex items-center gap-1.5"><i class="fas fa-hand-pointer"></i>Stuknij swoje pozycje niżej</span>`
+                : `<span class="text-sm font-semibold text-info flex items-center gap-1.5"><i class="fas fa-hourglass-half"></i>Jeszcze nie uzupełnił/a</span>`;
         };
-
-        // Model wpłat: status rachunku to tylko członkostwo/uzupełnienie (bez opłacone/paidAmount/śladu).
-        const buildStatusUpdate = (bill, participantId, newStatus) => ({ [`participants.${participantId}.status`]: newStatus });
 
         // --- Faza 7A: pozycje paragonu jako kafelki ---
         // Kafelek = element sharedCosts. Stuknięcie dopisuje/wypisuje MNIE z pozycji,
@@ -2316,7 +2908,7 @@
                     tx.update(billRef, { sharedCosts: mutate(fresh) });
                 });
             } catch (err) {
-                console.warn('[BillSplitter] Transakcja pozycji nieudana — zapis awaryjny:', err);
+                console.warn('[Billyada] Transakcja pozycji nieudana — zapis awaryjny:', err);
                 await updateDoc(billRef, { sharedCosts: mutate(billData.sharedCosts || []) });
             }
         };
@@ -2345,7 +2937,7 @@
                 // Odstęp pod listą MUSI zostać także w stanie pustym: przyciski akcji
                 // stoją zaraz pod nią i bez tego dotykają kafelka.
                 list.className = 'mb-3';
-                list.innerHTML = `<p class="block-quiet p-5 text-sm text-ink-2">Brak pozycji. Dodaj zdjęcie paragonu niżej i odczytaj je — albo dopisz pozycję ręcznie. Potem każdy stuknie to, co jadł.</p>`;
+                list.innerHTML = `<p class="block-quiet p-5 text-sm text-ink-2">Brak pozycji. Dodaj zdjęcie paragonu niżej i odczytaj je albo dopisz pozycję ręcznie. Potem każdy stuknie to, co jadł.</p>`;
                 return;
             }
 
@@ -2402,7 +2994,7 @@
                         </span>
                     </span>
                     <span class="flex items-center gap-2 flex-shrink-0">
-                        <span class="amount text-xl">${denominationHtml(amountG, cur, 'text-ink', { withCurrency: false })}</span>
+                        <span class="text-xl">${amountHtml(amountG, cur, 'text-ink', { withCurrency: false })}</span>
                         <button class="item-edit-btn w-11 h-11 rounded-full flex items-center justify-center text-ink-3 flex-shrink-0" data-item-id="${it.id}" title="Edytuj pozycję" aria-label="Edytuj pozycję"><i class="fas fa-pen text-xs"></i></button>
                     </span>
                 </div>`;
@@ -2463,7 +3055,7 @@
             const count = (billData && billData.photos || []).length;
             btn.classList.toggle('hidden', count === 0);
             note.textContent = count === 0 ? '' : (count === 1
-                ? 'AI przepisze paragon na pozycje — zawsze możesz je poprawić.'
+                ? 'Model przepisze paragon na pozycje. Zawsze możesz je poprawić przed dodaniem.'
                 : `${count} zdjęcia zostaną potraktowane jako jeden paragon.`);
         };
 
@@ -2495,7 +3087,7 @@
                 renderReceiptPreview();
                 document.getElementById('receipt-preview-modal').classList.add('active');
             } catch (err) {
-                console.error('[BillSplitter] Odczyt paragonu nieudany:', err);
+                console.error('[Billyada] Odczyt paragonu nieudany:', err);
                 showToast(err && err.message ? err.message : 'Nie udało się odczytać paragonu.', true);
             } finally {
                 btn.disabled = false;
@@ -2580,7 +3172,7 @@
                     tx.update(billRef, buildUpdates(snap.data()));
                 });
             } catch (err) {
-                console.warn('[BillSplitter] Transakcja paragonu nieudana — zapis awaryjny:', err);
+                console.warn('[Billyada] Transakcja paragonu nieudana — zapis awaryjny:', err);
                 await updateDoc(billRef, buildUpdates(billData));
             }
             document.getElementById('receipt-preview-modal').classList.remove('active');
@@ -2634,7 +3226,7 @@
                 logEvent({
                     type: 'item-remove',
                     billId: currentBillId,
-                    label: `usunął/ęła pozycję „${removed ? removed.description : '—'}"`,
+                    label: `usunął/ęła pozycję „${removed ? removed.description : 'bez nazwy'}"`,
                 });
             };
 
@@ -2707,7 +3299,7 @@
                 ${row('Koszty wspólne', pt.globalCostsAmount)}
                 <div class="flex items-baseline justify-between gap-2 pt-2">
                     <span class="text-sm font-bold text-ink-3">Łącznie</span>
-                    <span class="text-2xl">${denominationHtml(toGrosze(pt.total), cur, 'text-ink')}</span>
+                    <span class="text-2xl">${amountHtml(toGrosze(pt.total), cur, 'text-ink')}</span>
                 </div>
                 <div class="text-right text-xs text-ink-3">${getPlnConversionHtml(pt.total, cur, billData.exchangeRatePLN)}</div>
                 ${paymentInfo}
@@ -2728,6 +3320,17 @@
             // FIX: Allow payer to edit main fields even after confirmation.
             const canEditMainFields = !isPayerConfirmed || isCurrentUserThePayer;
             const canConfirm = isCurrentUserThePayer && !isPayerConfirmed;
+
+            // PYTANIE DO WSKAZANEGO PŁATNIKA, zadane raz przy wejściu na rachunek.
+            // Baner na górze ekranu zostaje jako przypomnienie, ale to okno jest tym,
+            // czego nie da się przewinąć obok. Bez potwierdzenia rachunek nie wchodzi
+            // do rozliczeń, więc pytanie musi być trudniejsze do przeoczenia niż sam
+            // rachunek. Pytamy RAZ na wejście: przy każdym przerysowaniu (a te lecą
+            // po każdym cudzym stuknięciu w paragon) okno wracałoby jak czkawka.
+            if (canConfirm && payerClaimAskedFor !== currentBillId) {
+                payerClaimAskedFor = currentBillId;
+                openPayerClaim();
+            }
 
             document.getElementById('bill-name').textContent = billData.billName;
             
@@ -2769,7 +3372,7 @@
             } else if (isPayerConfirmed) {
                 const payerName = billData.participants[billData.payerId]?.name || '...';
                 const bannerText = isCurrentUserThePayer
-                    ? `Wyłożyłeś/aś pieniądze za ten rachunek — kwotę wciąż możesz poprawić.`
+                    ? `Wyłożyłeś/aś pieniądze za ten rachunek. Kwotę wciąż możesz poprawić.`
                     : `Główne pola rachunku zablokował/a <strong>${escapeHtml(payerName)}</strong>.`;
                 // Stempel foliowy znaczy „potwierdzone" — tu potwierdzone jest, kto wyłożył pieniądze.
                 confirmationBanner.innerHTML = `
@@ -2781,8 +3384,62 @@
                 confirmationBanner.innerHTML = '';
             }
 
+            // TRYB PODZIAŁU. Jedna decyzja o kształcie rachunku, podejmowana wtedy, gdy
+            // paragon już leży na stole. Zastąpiła ręczny status uczestnika — historia
+            // i uzasadnienie przy `billSplitMode`.
+            const mode = billSplitMode(billData);
+            const activeParticipants = Object.values(billData.participants || {})
+                .filter((p) => p.status !== PARTICIPANT_OUT);
+            document.querySelectorAll('.bill-mode-btn').forEach((btn) => {
+                btn.setAttribute('aria-pressed', String(btn.dataset.mode === mode));
+            });
+            const modeHint = document.getElementById('bill-mode-hint');
+            const modeNote = document.getElementById('bill-mode-note');
+            if (modeHint) {
+                modeHint.textContent = mode === 'even'
+                    ? 'Cała kwota dzieli się równo między uczestników i nikt niczego nie uzupełnia. Chcesz rozpisać paragon na pozycje? Przełącz na „Ze swoimi kosztami".'
+                    : 'Każdy stuka swoje pozycje i wpisuje koszty własne. To, czego nikt nie weźmie imiennie, i tak podzieli się po równo.';
+            }
+
+            // W trybie „po równo" cała maszyneria rozpisywania schodzi z ekranu. Nie chodzi
+            // o oszczędność miejsca, tylko o prawdę: jeśli rachunek dzieli się po równo,
+            // to lista pozycji i odczyt paragonu nie mają czego zmienić, a stojąc na ekranie
+            // sugerowałyby, że jednak mają. Wejście w rozpisywanie jest JEDNO: przełącznik.
+            const itemsSection = document.getElementById('items-section');
+            if (itemsSection) itemsSection.classList.toggle('hidden', mode === 'even');
+            const receiptSection = document.getElementById('receipt-photos-section');
+            if (receiptSection) receiptSection.classList.toggle('hidden', mode === 'even');
+
+            // Powrót do „po równo" jest możliwy tylko wtedy, gdy nie ma czego zgubić.
+            // Przy rozpisanych pozycjach przełączenie kasowałoby czyjś wybór bez pytania,
+            // więc zamiast tego mówimy wprost, co stoi na przeszkodzie.
+            const hasItems = ((billData.sharedCosts) || []).length > 0;
+            const hasOwn = activeParticipants.some((p) => Number(p.individualAmount) > 0);
+            const evenBtn = document.getElementById('bill-mode-even');
+            if (evenBtn) {
+                const locked = mode === 'own' && (hasItems || hasOwn);
+                evenBtn.disabled = locked;
+                evenBtn.classList.toggle('opacity-40', locked);
+                evenBtn.title = locked
+                    ? 'Rachunek ma już rozpisane pozycje albo koszty własne. Usuń je, żeby wrócić do podziału po równo.'
+                    : 'Cała kwota po równo na uczestników';
+            }
+            if (modeNote) {
+                const people = activeParticipants.length;
+                if (mode === 'even' && people > 0 && billData.totalAmount > 0) {
+                    modeNote.textContent = `${fmtMoney(Math.ceil(toGrosze(billData.totalAmount) / people), billData.currency)} na osobę`;
+                } else if (mode === 'own') {
+                    const pending = activeParticipants.filter((p) => !participantReady(billData, p.id)).length;
+                    modeNote.textContent = pending === 0
+                        ? 'wszyscy uzupełnili'
+                        : `${pending} ${plural(pending, 'osoba', 'osoby', 'osób')} do uzupełnienia`;
+                } else {
+                    modeNote.textContent = '';
+                }
+            }
+
             const calculations = calculateAll(billData);
-            
+
             const controlSumEl = document.getElementById('control-sum');
             const controlStatusEl = document.getElementById('control-status');
             const control = calculations.control;
@@ -2803,7 +3460,7 @@
             // wyjdzie na osobę — a nie straszyć, że ktoś czegoś nie wpisał.
             if (control.status === 'over') {
                 controlSumEl.classList.add('control-sum-bad');
-                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-bad'); controlStatusEl.textContent = `Nadwyżka ${diffText(control.diff)} — ktoś przeliczył albo pozycja jest podwójna`; }
+                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-bad'); controlStatusEl.textContent = `Nadwyżka ${diffText(control.diff)}. Ktoś przeliczył albo pozycja jest podwójna`; }
             } else if (control.status === 'under') {
                 if (controlStatusEl) {
                     controlStatusEl.textContent = calculations.perPersonUnallocated > 0
@@ -2854,7 +3511,7 @@
                     paymentInfo = `<p class="text-sm text-ink-3">Wyłożył/a całość: ${Number(billData.totalAmount || 0).toFixed(2).replace('.', ',')} ${billData.currency}</p>`;
                 }
 
-                const statusDisplayHtml = getStatusHtml(p.status, isMe, isPayer, p.id, 'advanced');
+                const statusDisplayHtml = getStatusHtml(isMe, isPayer, p.id);
 
                 let participantHTML;
                 if (isMe) {
@@ -2888,8 +3545,13 @@
                         </div>
                     `;
 
+                    // TWÓJ UDZIAŁ NA LIMONCE. Zgłoszenie właściciela: na rachunku wszystko
+                    // ma podobny kolor i zlewa się mój udział z kwotą rachunku i pozycjami.
+                    // Limonka znaczy w tym świecie „to jest twoje" i dokładnie tak działa
+                    // już na twojej linii paragonu — więc to nie nowy język, tylko ten sam
+                    // kolor w tej samej roli, o piętro wyżej.
                     participantHTML = `
-                    <div class="card p-4" data-participant-id="${p.id}">
+                    <div class="card-mine p-4" data-participant-id="${p.id}">
                         <div class="flex items-center justify-between gap-2">
                             <div class="flex items-center min-w-0">
                                 ${avatarHtml(p.name, p.id)}
@@ -2898,10 +3560,10 @@
                                     ${statusDisplayHtml}
                                 </div>
                             </div>
-                            <span class="chip text-due text-[0.55rem] font-bold px-2 py-1 flex-shrink-0">Ty</span>
+                            <span class="chip flex-shrink-0">Ty</span>
                         </div>
 
-                        <div class="mt-3">
+                        <div class="mt-3 ${mode === 'even' ? 'hidden' : ''}">
                             <p class="text-sm font-bold text-ink-3 mb-1.5">Koszt tylko Twój</p>
                             ${yourSumContainerHTML}
                             ${calculatorTotalContainerHTML}
@@ -2950,11 +3612,8 @@
             const participantsLabel = document.getElementById('participants-summary-label');
             if (participantsLabel) {
                 const others = calculations.participantTotals.filter(pt => pt.participant.id !== myGroupMember.id);
-                const pending = others.filter(pt => {
-                    const p = billData.participants[pt.participant.id];
-                    return p && p.status === 'incomplete';
-                }).length;
-                const people = others.length === 1 ? '1 osoba' : `${others.length} osoby`;
+                const pending = others.filter(pt => !participantReady(billData, pt.participant.id)).length;
+                const people = `${others.length} ${plural(others.length, 'osoba', 'osoby', 'osób')}`;
                 participantsLabel.textContent = pending > 0
                     ? `Ekipa: ${people} · ${pending} do uzupełnienia`
                     : `Ekipa: ${people} · wszystko uzupełnione`;
@@ -3035,35 +3694,50 @@
                             avatarHtml: avatarHtml(p.name, p.id),
                         })),
                     ],
-                    onPick: (value) => setBillPayer(value || null),
+                    onPick: (value) => askBeforeSettingPayer(value || null),
                 });
             };
 
-            const setBillPayer = async (newPayerId) => {
-                const oldPayerId = billData.payerId;
+            // WSKAZANIE PŁATNIKA JEST DECYZJĄ O CUDZYCH PIENIĄDZACH, więc nie wchodzi
+            // w życie samym stuknięciem w listę. Pytamy raz, wprost i z imieniem.
+            const askBeforeSettingPayer = (newPayerId) => {
+                if (newPayerId === billData.payerId) return;
+                const me = myMemberNow();
+                const isMe = !!me && newPayerId === me.id;
 
-                if (newPayerId === oldPayerId) return;
-
-                const updates = { 
-                    payerId: newPayerId,
-                    payerConfirmed: false
-                };
-
-                if (newPayerId) {
-                    const newPayer = billData.participants[newPayerId];
-                    if (newPayer) {
-                        const newStatus = newPayer.individualAmount > 0 ? 'completed' : 'incomplete';
-                        updates[`participants.${newPayerId}.status`] = newStatus;
-                    }
-                }
-                if (oldPayerId) {
-                    const oldPayer = billData.participants[oldPayerId];
-                    if (oldPayer && (oldPayer.status === 'completed' || oldPayer.status === 'incomplete')) {
-                        updates[`participants.${oldPayerId}.status`] = 'unpaid';
-                    }
+                if (!newPayerId) {
+                    openConfirm({
+                        title: 'Usunąć płatnika?',
+                        body: `Rachunek „${billData.billName}" zostanie bez wskazanego płatnika i wypadnie z rozliczeń, dopóki ktoś nie zostanie wskazany ponownie.`,
+                        confirmLabel: 'Usuń płatnika',
+                        onConfirm: () => setBillPayer(null, false),
+                    });
+                    return;
                 }
 
-                await updateDoc(billDocRef, updates);
+                openConfirm({
+                    title: isMe ? 'To Ty wyłożyłeś pieniądze?' : `Płatnikiem jest ${memberName(newPayerId)}?`,
+                    body: isMe
+                        ? `Zapiszemy, że za rachunek „${billData.billName}" zapłaciłeś Ty. Od tej chwili ekipa zobaczy, ile ma Ci oddać.`
+                        : `${memberName(newPayerId)} dostanie pytanie o potwierdzenie przy wejściu na ten rachunek. Do tego czasu rachunek nie wchodzi do rozliczeń.`,
+                    confirmLabel: 'Potwierdzam',
+                    // Wskazanie płatnika da się cofnąć jednym stuknięciem, więc przycisk
+                    // nie nosi czerwieni długu — ta znaczy tu wyłącznie „stąd nie ma powrotu".
+                    tone: 'brand',
+                    // Wskazując SIEBIE, potwierdzam to w tej samej chwili: dwa pytania
+                    // o tę samą rzecz pod rząd to jedno pytanie za dużo. Wskazując kogoś
+                    // innego, zostawiam potwierdzenie jemu, bo to on wie, czy zapłacił.
+                    onConfirm: () => setBillPayer(newPayerId, isMe),
+                });
+            };
+
+            const setBillPayer = async (newPayerId, confirmed = false) => {
+                if (newPayerId === billData.payerId) return;
+
+                // Sam wybór płatnika nie rusza już żadnego statusu: status liczy się
+                // z zawartości rachunku (`participantReady`), a wskazanie, kto wyłożył
+                // pieniądze, nie zmienia tego, co kto zjadł.
+                await updateDoc(billDocRef, { payerId: newPayerId, payerConfirmed: !!confirmed });
                 logEvent({
                     type: 'bill-payer',
                     billId: currentBillId,
@@ -3072,6 +3746,24 @@
                         : `usunął/ęła płatnika z rachunku „${billData.billName}"`,
                 });
             };
+
+            // Przełącznik trybu podziału. Zapisujemy go w dokumencie rachunku, bo to
+            // decyzja o rachunku, a nie ustawienie tego telefonu — cała ekipa musi
+            // widzieć ten sam kształt.
+            document.querySelectorAll('.bill-mode-btn').forEach((btn) => {
+                btn.onclick = async () => {
+                    const next = btn.dataset.mode;
+                    if (next === billSplitMode(billData)) return;
+                    await updateDoc(billDocRef, { splitMode: next });
+                    logEvent({
+                        type: 'bill-mode',
+                        billId: currentBillId,
+                        label: next === 'even'
+                            ? `przestawił/a rachunek „${billData.billName}" na podział po równo`
+                            : `przestawił/a rachunek „${billData.billName}" na własne koszty`,
+                    });
+                };
+            });
 
             document.getElementById('delete-bill-btn-advanced').onclick = () => deleteBillWithUndo();
 
@@ -3084,22 +3776,6 @@
 
                     const calcBtn = e.target.closest('.calculator-toggle-btn');
                     const addBtn = e.target.closest('.add-amount-btn');
-                    const statusBtn = e.target.closest('.status-select');
-
-                    // Status otwiera arkusz z trzema opcjami — zamiana za rozwijaną
-                    // listę systemową, której nie da się ostylować (patrz szablon statusu).
-                    if (statusBtn) {
-                        openStatusSheet(participantId, statusBtn.dataset.status, async (newStatus) => {
-                            const updates = buildStatusUpdate(billData, participantId, newStatus);
-                            if (newStatus === 'not_applicable') {
-                                updates[`participants.${participantId}.individualAmount`] = 0;
-                                updates[`participants.${participantId}.individualAmounts`] = [];
-                                updates[`participants.${participantId}.calculatorActive`] = false;
-                            }
-                            await updateDoc(billDocRef, updates);
-                        });
-                        return;
-                    }
 
                     if (calcBtn) {
                         const newCalculatorState = !participant.calculatorActive;
@@ -3142,34 +3818,26 @@
                     if (!participant) return;
 
                     const updates = {};
-                    let statusShouldChange = false;
                     let newTotal = participant.individualAmount;
-                    
+
                     if (target.id.startsWith('your-sum-input-')) {
                         newTotal = parseLocalFloat(target.value);
-                        statusShouldChange = true;
                     } else if (target.classList.contains('individual-amount-component')) {
                         const container = document.getElementById(`calculator-inputs-container-${participantId}`);
                         const newAmounts = Array.from(container.querySelectorAll('.individual-amount-component')).map(input => parseLocalFloat(input.value)).filter(val => val > 0);
                         while (newAmounts.length < 2) newAmounts.push(0);
                         updates[`participants.${participantId}.individualAmounts`] = newAmounts;
                         newTotal = newAmounts.reduce((sum, val) => sum + val, 0);
-                        statusShouldChange = true;
                     } else {
                         return;
                     }
-                    
-                    updates[`participants.${participantId}.individualAmount`] = newTotal;
 
-                    if (statusShouldChange) {
-                        const isPayer = participant.id === billData.payerId;
-                        if (isPayer) {
-                            updates[`participants.${participantId}.status`] = newTotal > 0 ? 'completed' : 'incomplete';
-                        } else if (participant.status === 'incomplete' || participant.status === 'completed') {
-                            updates[`participants.${participantId}.status`] = 'unpaid';
-                        }
-                    }
-                    
+                    updates[`participants.${participantId}.individualAmount`] = newTotal;
+                    // Statusu już nie zapisujemy. Wcześniej ta sama zmiana kwoty własnej
+                    // przestawiała pole `status` na trzy różne sposoby zależnie od tego,
+                    // czy jestem płatnikiem — i to była główna przyczyna, dla której
+                    // status na ekranie mówił co innego niż stan rachunku. Teraz liczy
+                    // go `participantReady` z tego, co realnie stoi w rachunku.
                     await updateDoc(billDocRef, updates);
                 };
             }
@@ -3192,7 +3860,7 @@
                     logEvent({
                         type: 'item-pick',
                         billId: currentBillId,
-                        label: `${wasMine ? 'zdjął/ęła się z pozycji' : 'odkliknął/ęła pozycję'} „${before ? before.description : '—'}"`,
+                        label: `${wasMine ? 'zdjął/ęła się z pozycji' : 'odkliknął/ęła pozycję'} „${before ? before.description : 'bez nazwy'}"`,
                     });
                 };
             });
@@ -3258,11 +3926,32 @@
                 receiptDraft.modifiers[Number(t.dataset.i)].__use = t.checked;
                 renderReceiptPreview();
             };
-            document.getElementById('global-cost-type-select').addEventListener('change', (e) => {
-                document.getElementById('global-cost-desc-other').classList.toggle('hidden', e.target.value !== 'Inne');
-            });
+            // Rodzaj kosztu wspólnego: arkusz zamiast listy systemowej (DESIGN.md,
+            // „Wybór z listy"). `onclick`, nie `addEventListener` — ta funkcja biegnie
+            // przy KAŻDYM przerysowaniu rachunku, więc nasłuch dokładany za każdym razem
+            // narastał i po dziesiątej zmianie kwoty jedno stuknięcie wywoływało dziesięć
+            // reakcji.
+            const gcTypeBtn = document.getElementById('global-cost-type-select');
+            const setGlobalCostType = (value) => {
+                gcTypeBtn.dataset.value = value;
+                document.getElementById('global-cost-type-label').textContent = value === 'Inne' ? 'Inne (wpisz nazwę)' : value;
+                document.getElementById('global-cost-desc-other').classList.toggle('hidden', value !== 'Inne');
+            };
+            gcTypeBtn.onclick = () => {
+                openChoiceSheet({
+                    title: 'Rodzaj kosztu wspólnego',
+                    current: gcTypeBtn.dataset.value || 'Napiwek',
+                    options: [
+                        { value: 'Napiwek', label: 'Napiwek', hint: 'dla obsługi, dzielony po równo' },
+                        { value: 'Serwis', label: 'Serwis', hint: 'opłata doliczana przez lokal' },
+                        { value: 'Inne', label: 'Inne (wpisz nazwę)', hint: 'np. opłata za rezerwację' },
+                    ],
+                    onPick: (value) => setGlobalCostType(value),
+                });
+            };
+
             setupModal('global-cost-modal', 'add-global-cost-btn', 'cancel-global-cost', 'save-global-cost', async () => {
-                let description = document.getElementById('global-cost-type-select').value;
+                let description = gcTypeBtn.dataset.value || 'Napiwek';
                 if (description === 'Inne') description = document.getElementById('global-cost-desc-other').value.trim();
                 const type = document.querySelector('input[name="global-cost-format"]:checked').value;
                 const value = parseLocalFloat(document.getElementById('global-cost-value').value);
@@ -3271,9 +3960,8 @@
                 }
                 if (!description || isNaN(value) || value <= 0) { showToast("Wypełnij wszystkie pola poprawnie.", true); return; }
                 await updateDoc(billDocRef, { globalCosts: arrayUnion({ id: generateId(), description, type, value }) });
-                document.getElementById('global-cost-type-select').value = 'Napiwek';
+                setGlobalCostType('Napiwek');
                 document.getElementById('global-cost-desc-other').value = '';
-                document.getElementById('global-cost-desc-other').classList.add('hidden');
                 document.getElementById('global-cost-value').value = '';
             });
         };
@@ -3296,7 +3984,7 @@
                     await navigator.serviceWorker.ready;
                     setupPush();
                 } catch (err) {
-                    console.warn('[BillSplitter] Rejestracja service workera nieudana:', err);
+                    console.warn('[Billyada] Rejestracja service workera nieudana:', err);
                 }
             });
         };
@@ -3352,7 +4040,7 @@
                 serviceWorkerRegistration: swRegistration || undefined,
             });
             pushTokenSaved = false;
-            console.info('[BillSplitter] Token FCM tego urządzenia:', pushToken);
+            console.info('[Billyada] Token FCM tego urządzenia:', pushToken);
             await savePushToken();
             return pushToken;
         };
@@ -3365,7 +4053,7 @@
                 await acquirePushToken();
                 showToast('Powiadomienia włączone.');
             } catch (err) {
-                console.warn('[BillSplitter] Push — nie udało się pobrać tokenu:', err);
+                console.warn('[Billyada] Push — nie udało się pobrać tokenu:', err);
                 showToast('Nie udało się włączyć powiadomień.', true);
             }
             renderPushToggle();
@@ -3387,7 +4075,7 @@
                 if (Notification.permission === 'granted') await acquirePushToken();
                 renderPushToggle();
             } catch (err) {
-                console.warn('[BillSplitter] Push — inicjalizacja nieudana:', err);
+                console.warn('[Billyada] Push — inicjalizacja nieudana:', err);
             }
         };
 
@@ -3419,7 +4107,7 @@
                 // Kod pokoju w kroku po instalacji: skrót z ekranu początkowego otwiera
                 // aplikację bez adresu grupy, więc bez kodu użytkownik ląduje w pustce.
                 const serial = document.getElementById('install-room-serial');
-                if (serial) serial.textContent = currentGroupId ? formatSerial(currentGroupId) : '—';
+                if (serial) serial.textContent = currentGroupId ? formatSerial(currentGroupId) : 'brak';
                 modal.classList.add('active');
             };
 
@@ -3458,10 +4146,9 @@
                     const id = enter.dataset.roomId;
                     history.pushState(null, '', `?group=${id}`);
                     handleGroupJoin(id);
-                    return;
                 }
-                const forget = e.target.closest('.forget-room-btn');
-                if (forget) { forgetRoom(forget.dataset.roomId); renderMyRooms(); }
+                // Kasowanie obsługuje `wireRoomSwipe` przy konkretnym wierszu — tam,
+                // gdzie żyje stan odsłonięcia kosza.
             });
 
             // WEJŚCIE KODEM. Kod czyta się z cudzego telefonu albo z kartki, więc
@@ -3581,7 +4268,7 @@
 
                 // Komunikat mówi, CZEGO brakuje — „wypełnij wszystkie pola" zostawiało
                 // szukanie na użytkowniku.
-                if (!groupName) { showToast('Nazwij grupę — po niej znajdziesz ją później.', true); return; }
+                if (!groupName) { showToast('Nazwij grupę, po niej znajdziesz ją później.', true); return; }
                 if (memberNames.length === 0) { showToast('Dodaj choć jedną osobę do grupy.', true); return; }
                 const newGroupId = generateId();
                 const membersMap = {};
@@ -3649,12 +4336,12 @@
             if (existing) existing.remove();
             const toast = document.createElement('div');
             toast.id = toastId;
-            toast.className = 'fixed bottom-24 left-4 right-4 sm:left-auto sm:right-5 sm:max-w-sm p-3 rounded-lg z-50 bg-ink text-surface flex items-center gap-4';
+            toast.className = 'toast-in toast-dock px-4 py-3 rounded-block bg-ink text-surface flex items-center gap-4 shadow-lift';
             const span = document.createElement('span');
             span.textContent = message;
             const btn = document.createElement('button');
             btn.textContent = 'Cofnij';
-            btn.className = 'tap min-h-tap px-3 rounded-lg font-semibold underline whitespace-nowrap flex-shrink-0';
+            btn.className = 'tap min-h-tap px-3 rounded-full font-bold underline whitespace-nowrap flex-shrink-0';
             btn.onclick = () => { toast.remove(); onUndo(); };
             toast.append(span, btn);
             document.body.appendChild(toast);
@@ -3706,7 +4393,16 @@
             //
             // Wyjątkiem są okna potwierdzeń nieodwracalnych: tam przypadkowe muśnięcie
             // tła nie może uchodzić za odpowiedź, więc trzeba wskazać wprost.
-            const CONFIRM_MODALS = new Set(['delete-confirm-modal', 'delete-photo-confirm-modal', 'confirm-modal']);
+            const CONFIRM_MODALS = new Set([
+                'delete-confirm-modal',
+                'delete-photo-confirm-modal',
+                'confirm-modal',
+                'takeover-name-modal',
+                // Pytanie „czy to Ty zapłaciłeś" ma dwie prawidłowe odpowiedzi i żadna
+                // z nich nie brzmi „muśnięcie ekranu". Bez potwierdzenia rachunek nie
+                // wchodzi do rozliczeń, więc wyjście bokiem tylnym byłoby cichym „nie wiem".
+                'payer-claim-modal',
+            ]);
             const openModals = () => [...document.querySelectorAll('.modal.active')];
             const closeTopModal = () => {
                 const top = openModals().pop();
@@ -3741,17 +4437,19 @@
             const pmModal = document.getElementById('payment-methods-modal');
             document.getElementById('close-payment-methods-modal').onclick = () => pmModal.classList.remove('active');
             pmModal.onclick = (e) => { if (e.target === pmModal) pmModal.classList.remove('active'); };
-            const pmTypeSel = document.getElementById('pm-add-type');
-            pmTypeSel.innerHTML = Object.entries(PAYMENT_TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('');
+            const pmTypeBtn = document.getElementById('pm-add-type');
             const pmLabelInput = document.getElementById('pm-add-label');
             const pmValueInput = document.getElementById('pm-add-value');
-            pmTypeSel.onchange = () => {
-                const t = PAYMENT_TYPES[pmTypeSel.value] || PAYMENT_TYPES.other;
-                pmLabelInput.classList.toggle('hidden', pmTypeSel.value !== 'other');
-                pmValueInput.placeholder = t.placeholder;
+            pmTypeBtn.onclick = () => {
+                openChoiceSheet({
+                    title: 'Rodzaj sposobu płatności',
+                    current: pmTypeBtn.dataset.value || 'account',
+                    options: Object.entries(PAYMENT_TYPES).map(([value, t]) => ({ value, label: t.label, hint: t.placeholder })),
+                    onPick: (value) => setPaymentAddType(value),
+                });
             };
             document.getElementById('pm-add-btn').onclick = async () => {
-                const type = pmTypeSel.value;
+                const type = pmTypeBtn.dataset.value || 'account';
                 const value = pmValueInput.value.trim();
                 const label = pmLabelInput.value.trim();
                 if (!value) { showToast('Podaj numer / adres.', true); return; }
@@ -3813,6 +4511,17 @@
                     return;
                 }
 
+            });
+
+            // REJESTR WPŁAT — osobne miejsce. Potwierdzanie i kasowanie mieszka tutaj,
+            // bo tutaj widać pełny wiersz wpłaty: kto, komu, ile, kiedy i czy potwierdzona.
+            const logModal = document.getElementById('settlements-log-modal');
+            const openLogBtn = document.getElementById('open-settlements-log');
+            if (openLogBtn) openLogBtn.onclick = openSettlementsLog;
+            document.getElementById('close-settlements-log').onclick = () => logModal.classList.remove('active');
+            document.getElementById('settlements-log-list').addEventListener('click', async (e) => {
+                const settleRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
+
                 const conf = e.target.closest('.confirm-settle-btn');
                 if (conf) {
                     await updateDoc(settleRef(conf.dataset.id), { confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp() });
@@ -3822,8 +4531,17 @@
 
                 const del = e.target.closest('.settle-delete-btn');
                 if (del) {
-                    await deleteDoc(settleRef(del.dataset.id));
-                    showToast('Usunięto wpłatę.');
+                    const id = del.dataset.id;
+                    const rec = latestSettlements.find((s) => s.id === id);
+                    openConfirm({
+                        title: 'Usunąć wpis o wpłacie?',
+                        body: `Wpłata ${rec ? fmtMoney(toGrosze(rec.amount || 0), rec.currency || 'PLN') : ''} zniknie z rejestru, a dług wróci do poprzedniej wysokości. Zrób to tylko wtedy, gdy zapisałeś ją przez pomyłkę.`,
+                        confirmLabel: 'Usuń wpis',
+                        onConfirm: async () => {
+                            await deleteDoc(settleRef(id));
+                            showToast('Usunięto wpis z rejestru.');
+                        },
+                    });
                 }
             });
             const settleModal = document.getElementById('settle-modal');
@@ -3942,8 +4660,6 @@
             };
             const closeColorBtn = document.getElementById('close-color-picker-btn');
             if (closeColorBtn) closeColorBtn.onclick = () => document.getElementById('color-picker-modal').classList.remove('active');
-            const closeStatusBtn = document.getElementById('close-status-modal');
-            if (closeStatusBtn) closeStatusBtn.onclick = () => document.getElementById('status-modal').classList.remove('active');
             const closeChoiceBtn = document.getElementById('close-choice-modal');
             if (closeChoiceBtn) closeChoiceBtn.onclick = () => document.getElementById('choice-modal').classList.remove('active');
             // Zdjęcie profilowe
@@ -4022,41 +4738,66 @@
                 createBtn.disabled = newBillState.name.trim() === '';
             };
             
+            const addBtn = document.getElementById('create-new-bill-btn');
+            const peopleWrap = document.getElementById('new-bill-people');
+
             const updateParticipantsButton = () => {
                 const allMemberIds = Object.keys(groupData.members || {});
                 const areAllSelected = allMemberIds.length === newBillState.participantIds.length && allMemberIds.every(id => newBillState.participantIds.includes(id));
                 editParticipantsBtn.textContent = areAllSelected ? 'wszystkich' : `wybranych (${newBillState.participantIds.length})`;
             };
 
-            document.getElementById('create-new-bill-btn').onclick = () => {
+            // WYBÓR OSÓB TYM SAMYM WIERSZEM, CO WSZĘDZIE INDZIEJ.
+            // Do 2026-08-15 stały tu systemowe kwadraciki z samym imieniem, a przy pozycji
+            // paragonu — wiersz ze zdjęciem i okrągłym znacznikiem. To samo pytanie „kto?"
+            // miało w aplikacji dwie twarze, i to ta gorsza stała w miejscu, przez które
+            // przechodzi każdy nowy rachunek.
+            const renderNewBillPeople = () => {
+                const order = groupData.memberOrder || Object.keys(groupData.members || {});
+                participantsChecklist.innerHTML = order.map((id) => {
+                    const m = (groupData.members || {})[id];
+                    if (!m) return '';
+                    return personRowHtml({ id, name: m.name, selected: newBillState.participantIds.includes(id) });
+                }).join('');
+                syncPersonSearchCount(peopleWrap);
+            };
+
+            participantsChecklist.onclick = (e) => {
+                const row = e.target.closest('.person-row');
+                if (!row) return;
+                const selected = row.getAttribute('aria-pressed') !== 'true';
+                row.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                newBillState.participantIds = selectedPersonIds('participants-checklist-modal');
+                updateParticipantsButton();
+                syncPersonSearchCount(peopleWrap);
+            };
+
+            const openNewBillSheet = () => {
                 if (!groupData) return;
                 newBillState = { name: '', type: 'advanced', participantIds: Object.keys(groupData.members || {}) };
                 nameInput.value = '';
-
-                participantsChecklist.innerHTML = '';
-                Object.values(groupData.members || {}).forEach(member => {
-                    const label = document.createElement('label');
-                    label.className = "tap flex items-center gap-2 p-2 min-h-tap rounded-lg cursor-pointer";
-                    label.innerHTML = `<input type="checkbox" class="modal-participant-checkbox w-5 h-5 accent-ink" value="${escapeHtml(member.id)}" checked><span class="truncate">${escapeHtml(member.name)}</span>`;
-                    participantsChecklist.appendChild(label);
-                });
-                
-                participantsChecklist.onchange = (e) => {
-                    if (e.target.classList.contains('modal-participant-checkbox')) {
-                        newBillState.participantIds = Array.from(document.querySelectorAll('.modal-participant-checkbox:checked')).map(cb => cb.value);
-                        updateParticipantsButton();
-                    }
-                };
-
+                renderNewBillPeople();
                 updateParticipantsButton();
-                participantsChecklist.classList.add('hidden');
+                peopleWrap.classList.add('hidden');
+                resetPersonSearch(peopleWrap);
                 checkCreateButtonState();
-                // Koło [+] rozrasta się w arkusz zamiast go wystrzelić.
-                morphBetween(
-                    document.getElementById('create-new-bill-btn'),
-                    modal.querySelector('.sheet'),
-                    () => modal.classList.add('active'),
-                );
+                modal.classList.add('active');
+                // Koło [+] jest teraz przyciskiem zamknięcia i mówi to obrotem w krzyżyk.
+                addBtn.setAttribute('aria-expanded', 'true');
+                addBtn.setAttribute('aria-label', 'Zamknij okno nowego rachunku');
+            };
+
+            closeNewBillSheet = () => {
+                modal.classList.remove('active');
+                addBtn.setAttribute('aria-expanded', 'false');
+                addBtn.setAttribute('aria-label', 'Nowy rachunek');
+            };
+
+            // Jeden przycisk, dwa stany. Otwiera i zamyka to samo okno, więc nie ma
+            // sytuacji, w której arkusz stoi otwarty, a [+] dalej wygląda jak „dodaj".
+            addBtn.onclick = () => {
+                if (modal.classList.contains('active')) closeNewBillSheet();
+                else openNewBillSheet();
             };
 
             nameInput.addEventListener('input', (e) => {
@@ -4065,23 +4806,19 @@
             });
 
             editParticipantsBtn.addEventListener('click', () => {
-                participantsChecklist.classList.toggle('hidden');
+                const willShow = peopleWrap.classList.contains('hidden');
+                peopleWrap.classList.toggle('hidden', !willShow);
+                if (willShow) renderNewBillPeople();
+                else resetPersonSearch(peopleWrap);
             });
 
-            // Zamknięcie odtwarza to samo wstecz: arkusz zbiega się z powrotem do koła.
-            const closeNewBillModal = () => morphBetween(
-                modal.querySelector('.sheet'),
-                document.getElementById('create-new-bill-btn'),
-                () => modal.classList.remove('active'),
-            );
-            cancelBtn.onclick = closeNewBillModal;
-            // `stopPropagation`, bo globalny strażnik tła zamyka okna zwykłym zdjęciem
-            // klasy. Gdyby dobiegł pierwszy, arkusza nie byłoby już na ekranie w chwili
-            // robienia zdjęcia „przed" i morfowanie nie miałoby z czego wyjść.
+            cancelBtn.onclick = () => closeNewBillSheet();
+            // `stopPropagation`, bo globalny strażnik tła zdejmuje klasę wprost, a tutaj
+            // trzeba jeszcze cofnąć obrót koła [+] w pasku.
             modal.addEventListener('click', (e) => {
                 if (e.target !== modal) return;
                 e.stopPropagation();
-                closeNewBillModal();
+                closeNewBillSheet();
             });
 
             createBtn.onclick = async () => {
@@ -4094,11 +4831,11 @@
                 const participantsMap = {};
 
                 // Każdy rachunek powstaje w jednym kształcie i rośnie w miarę potrzeb.
-                // Status 'incomplete' znaczy „nie rozpisano jeszcze wszystkiego", a nie
-                // „rachunek zepsuty": kwota nierozpisana i tak dzieli się po równo.
+                // Pole `status` niesie już tylko członkostwo: „in" albo „not_applicable".
+                // To drugie jest jedyną wartością, którą czyta matma w functions/calc.js.
                 Object.values(allMembersMap).forEach(m => {
                     const isIncluded = newBillState.participantIds.includes(m.id);
-                    participantsMap[m.id] = { id: m.id, name: m.name, individualAmount: 0, individualAmounts: [], calculatorActive: false, status: isIncluded ? 'incomplete' : 'not_applicable' };
+                    participantsMap[m.id] = { id: m.id, name: m.name, individualAmount: 0, individualAmounts: [], calculatorActive: false, status: isIncluded ? PARTICIPANT_IN : PARTICIPANT_OUT };
                 });
 
                 const baseBill = {
@@ -4106,6 +4843,10 @@
                     // Pole `type` zostaje w dokumencie dla zgodności ze starymi rachunkami
                     // w bazie, ale nie rozgałęzia już ani obliczeń, ani ekranów.
                     type: 'advanced',
+                    // Nowy rachunek startuje podziałem po równo: to jest przypadek,
+                    // który zdarza się najczęściej i wymaga zero pracy od ekipy.
+                    // Rozpisywanie włącza się przełącznikiem, gdy okaże się potrzebne.
+                    splitMode: 'even',
                     createdAt: serverTimestamp(),
                     // Waluta domyślna pokoju (ustawienia pokoju). Rachunek i tak można
                     // przestawić osobno — kurs zapisuje się w dniu dodania.
@@ -4120,7 +4861,7 @@
                 };
 
                 const newBillRef = await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`), baseBill);
-                modal.classList.remove('active');
+                closeNewBillSheet();
                 joinBill(currentGroupId, newBillRef.id);
             };
         };

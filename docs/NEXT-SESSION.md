@@ -1,7 +1,35 @@
-# Brief na następną sesję — pełny redesign
+# Brief na następną sesję
 
-Napisane 2026-08-05, zaktualizowane 2026-08-06 po sześciu partiach redesignu.
+Napisane 2026-08-05, zaktualizowane **2026-08-15** po siódmej partii (poprawki po
+pierwszych testach na telefonie właściciela).
 **Zacznij od tego pliku.** Potem `docs/UI-UX.md`, `DESIGN.md`, `PRODUCT.md`.
+
+---
+
+## Co zmieniło się 2026-08-15 (partia 7) — przeczytaj, zanim cokolwiek ruszysz
+
+Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kodem:
+
+- **Produkt nazywa się Billyada.** Klucze `localStorage` zostają z przedrostkiem
+  `billsplitter_` i **nie wolno ich zmieniać** — to jedyny ślad po pokojach na urządzeniu.
+- **Ręczny status uczestnika nie istnieje.** Rachunek ma `splitMode` (`'even'` / `'own'`),
+  a gotowość liczy `participantReady`. Wartość `not_applicable` ZOSTAJE w bazie, bo na niej
+  stoi wykluczanie z podziału w `functions/calc.js`.
+- **Arkusze mają jedną budowę** (`sheet-head` / `sheet-body` / `sheet-foot`) i jedną regułę:
+  uchwyt = zsuwa się palcem, krzyżyk tylko gdy w stopce nie ma „Anuluj", okno decyzji
+  nieodwracalnej nie ma ani uchwytu, ani krzyżyka. Nie dokładaj klas `p-*` do `.sheet`.
+- **Pułapka, która zabiła dwa odstępy:** reguła w `@layer` przegrywa z klasą narzędziową
+  Tailwinda w znacznikach. Odstępy liczone z `env(safe-area-inset-bottom)` stoją poza
+  warstwami. Objaw: przyciski tuż nad paskiem gestów iPhone'a.
+- **View Transitions API zniknęło z aplikacji** i nie wraca (powody w §19.6).
+- **`<select>` nie ma już ani jednego.** Każdy wybór jednokrotny idzie przez `openChoiceSheet`.
+- `tools/audit-layout.mjs` odfiltrowuje teraz treść zwiniętego `<details>` i elementy
+  wyprzewinięte poza kontener. Blok `AUDIT` w tym pliku jest szablonem znakowym: apostrof
+  odwrotny w komentarzu wywala cały skrypt.
+
+**Czeka na decyzję właściciela:** `docs/animacje-nowego-rachunku.html` — pięć wariantów
+animacji otwierania arkusza nowego rachunku. W aplikacji stoi wariant 1 („nad paskiem").
+Podmiana to jedna sekcja w `src/tailwind.css`.
 
 ---
 
@@ -44,14 +72,19 @@ wykonanie opisane w `docs/UI-UX.md` §11–§16.
 
 **Co zostaje otwarte:**
 
-1. **Nazwa produktu i logo** — decyzja właściciela. Nazwa musi być angielska
-   (`docs/UI-UX.md` §2).
-2. **Font Awesome** — ikony do wymiany na własny zestaw (§6). Jedyne zgłoszenie detektora
-   poza znanym `broken-image`.
+1. ~~Nazwa produktu i logo~~ — **ZAMKNIĘTE 2026-08-15**: produkt nazywa się **Billyada**,
+   znak to rachunek przedarty na pół (`public/icons/icon.svg`). Wcześniejszy wymóg
+   „nazwa musi być angielska" właściciel unieważnił własnym wyborem.
+2. **Font Awesome** — ikony do wymiany na własny zestaw (§6). Nie blokuje niczego.
 3. **Konta zamiast tożsamości przypiętej do urządzenia** — domknęłoby ryzyko podmiany
    cudzego numeru konta ORAZ granicę prywatności treści przypomnień (reguły Firestore
    nie ukryją pojedynczego pola przed resztą grupy).
 4. **Zdjęcia po przekroczeniu 4,5 GB** — świadomie odłożone do wersji monetyzacyjnej.
+5. **Wybór animacji nowego rachunku** — pole testowe w `docs/animacje-nowego-rachunku.html`.
+6. **Odczyt paragonu na wydanej wersji** — na zrzucie właściciela z 2026-08-15 usługa
+   zwróciła **401**. To nie jest usterka interfejsu: funkcja `parseReceipt` odpowiada
+   „brak autoryzacji" po stronie OpenRoutera, czyli sekret w Secret Managerze projektu
+   `billsplitter-push-test` jest nieważny albo wyczerpany. Do sprawdzenia kluczem, nie kodem.
 
 **Research — obowiązkowy, nie opcjonalny.** Właściciel powiedział
     wprost 2026-08-05: *„nie jestem bogiem co wie wszystko; stworzyłem aplikację, która
@@ -247,11 +280,15 @@ dopiero przy wycofywaniu V1 — nigdy „przy okazji".
 
 1. **Push na telefonie** — kod jest (FCM, service worker, VAPID), ale nigdy nie było
    testu na fizycznym urządzeniu po redesignie.
-2. **Odczyt paragonu na wydanej wersji** — działa dopiero po wdrożeniu funkcji z sekretem.
+2. **Odczyt paragonu na wydanej wersji** — zrzut właściciela z 2026-08-15 pokazuje
+   błąd **401**, czyli odrzucony klucz OpenRoutera. Do sprawdzenia w Secret Managerze
+   projektu `billsplitter-push-test`, nie w kodzie.
 3. **Praca kilku osób naraz** — żywy paragon i salda sprawdzał wyłącznie automat,
    nigdy dwa telefony równocześnie.
-4. **Morfowanie [+]** — `View Transitions API` działa w Safari od 18; niżej zwykłe
-   pojawienie arkusza (degradacja bez ubytku funkcji).
+4. **Zsuwanie arkusza palcem i przesuwanie kafelka pokoju** — obsługa stoi na zdarzeniach
+   wskaźnika, więc automat ich nie dotyka. Do sprawdzenia kciukiem na iPhonie.
+5. **Mrożone szkło paska nawigacji** — `backdrop-filter` w zrzutach z puppeteera wychodzi
+   inaczej niż na urządzeniu.
 
 ### PWA na iPhonie — co wiadomo
 

@@ -1,7 +1,7 @@
 {
-  "name": "BillSplitter - Rozliczaj się ze znajomymi",
-  "short_name": "BillSplitter",
-  "description": "Aplikacja do łatwego rozliczania rachunków w grupie znajomych.",
+  "name": "Billyada",
+  "short_name": "Billyada",
+  "description": "Rachunek dzieli cała ekipa naraz. Bez kont i bez logowania.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0C0D11",

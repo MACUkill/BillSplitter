@@ -1,9 +1,9 @@
 {
-  "name": "billsplitter",
+  "name": "billyada",
   "private": true,
   "version": "2.0.0",
   "type": "module",
-  "description": "BillSplitter — rozliczenia ze znajomymi (super-wersja V2)",
+  "description": "Billyada: rozliczenia ze znajomymi (V2)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -75,6 +75,10 @@ const run = async () => {
   await wait(800);
   await page.evaluate(() => { const el = document.getElementById('total-bill-amount'); el.value = '300'; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await wait(900);
+  // Rachunek startuje podziałem PO RÓWNO i wtedy sekcja pozycji jest schowana:
+  // w tym trybie nie ma czego rozpisywać. Przełączamy na „ze swoimi kosztami".
+  await click('#bill-mode-own');
+  await wait(900);
   await click('#add-shared-cost-btn');
   await wait(500);
   await type('#shared-cost-desc', 'Pozycja testowa');

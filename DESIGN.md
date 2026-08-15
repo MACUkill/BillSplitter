@@ -1,5 +1,5 @@
 ---
-name: BillSplitter
+name: Billyada
 description: Rozliczenia grupowe — jeden rachunek, który rośnie, dzielony przez całą ekipę naraz.
 colors:
   bg: "#F5F6F8"
@@ -129,11 +129,15 @@ components:
     padding: "4px 10px"
 ---
 
-# Design System: BillSplitter
+# Design System: Billyada
 
-> Stan na 2026-08-05. Świat przypięty referencjami właściciela z `Referencje/`.
+> Stan na 2026-08-15. Świat przypięty referencjami właściciela z `Referencje/`.
 > Poprzedni kierunek („druk zabezpieczony": banknot, gilosz, mikrodruk, Bodoni) został
 > odrzucony w całości i jest **anty-referencją** — nic z niego nie wraca.
+>
+> Nazwa produktu **Billyada** rozstrzygnięta 2026-08-15. Znak: rachunek przedarty na pół,
+> limonka na atramencie, źródło w `public/icons/icon.svg`, rasteryzacja przez
+> `node tools/make-icons.mjs`.
 
 ## Overview
 
@@ -239,12 +243,45 @@ język odrzuconego świata; podpis pola jest zwykłym tekstem o grubej wadze.
 ## Layout
 
 Jedna kolumna, `max-width: 56rem`, margines 16 px na telefonie. Rytm pionowy: 24 px między
-sekcjami, 20 px w karcie, 8 px między wierszami listy. Dół dokumentu ma 144 px zapasu pod
+sekcjami, 20 px w karcie, 8 px między wierszami listy. Dół dokumentu ma 112 px zapasu pod
 pływające elementy plus `env(safe-area-inset-bottom)`.
 
+**Reguła strefy bezpiecznej.** Odległości od dolnej krawędzi liczy `env(safe-area-inset-bottom)`,
+nigdy stała. Warunkiem, żeby ta funkcja w ogóle zwracała coś innego niż zero, jest
+`viewport-fit=cover` w atrybucie `viewport` — bez niego iPhone raportuje zera i cała
+obsługa paska gestów jest martwym kodem.
+
+**Reguła pierwszeństwa nad warstwami.** Odstęp liczony z `env()` NIE MOŻE mieszkać
+w `@layer base` ani `@layer components`: klasa narzędziowa Tailwinda w znacznikach
+(`p-4`, `p-5`) leży w warstwie wyższej i wygrywa bez śladu w konsoli. Taka reguła stoi
+poza warstwami. Ten błąd zdarzył się w tym projekcie dwa razy i za każdym razem objawiał
+się przyciskami stojącymi tuż nad paskiem gestów.
+
+**Przybliżanie szczypaniem jest wyłączone.** Układ jest jedną kolumną, która skaluje się
+sama, więc przybliżenie nic nie odsłania, a zostawia człowieka w widoku, z którego nie wie,
+jak wrócić. Trzy warstwy, bo dwie pierwsze iOS ignoruje: atrybut `viewport`,
+`touch-action: pan-x pan-y`, blokada zdarzenia `gesturestart`.
+
+### Arkusz — jedna budowa i jedna obietnica gestu
+
 Wszystkie okna są **arkuszami wjeżdżającymi od dołu** na telefonie i wracają na środek
-od 640 px. Każdy arkusz ma uchwyt u góry i zamyka się kliknięciem w tło albo klawiszem
-Escape — z wyjątkiem potwierdzeń nieodwracalnych.
+od 640 px. Budowa jest stała: `sheet-head` (uchwyt i tytuł, nie przewija się),
+`sheet-body` (treść, przewija, `overscroll-behavior: contain`), `sheet-foot` (przyciski,
+nie odjeżdżają z treścią).
+
+**Reguła obietnicy gestu.** Uchwyt u góry arkusza znaczy „zsuń mnie palcem" i naprawdę
+zsuwa. Uchwyt, który nie zsuwa, jest gorszy niż jego brak: obiecuje gest, którego nie ma,
+i uczy nie ufać pozostałym znakom w interfejsie. Stąd trzy konsekwencje:
+
+- Arkusz, z którego wolno wyjść, ma uchwyt. Ciągnie się za nagłówek; ciągnięcie po treści
+  działa tylko przy liście przewiniętej na sam szczyt.
+- **Krzyżyk stoi w nagłówku wtedy i tylko wtedy, gdy w stopce nie ma „Anuluj"** — inaczej
+  jedno okno miałoby dwa przyciski o tym samym znaczeniu.
+- **Okno decyzji nieodwracalnej nie ma ani uchwytu, ani krzyżyka** i nie zamyka się
+  kliknięciem w tło. Brak uchwytu mówi to, zanim ktokolwiek spróbuje.
+
+Od 640 px uchwyt znika: arkusz stoi na środku ekranu, nie przy krawędzi, więc nie ma go
+dokąd zsunąć i nie ma czego obiecywać.
 
 ### Kontrakt responsywności
 
@@ -270,12 +307,26 @@ zostaje 48 px na akcji i 44 px na kontrolce na **każdej** szerokości; tablet t
 w dłoniach tak samo jak telefon.
 
 **Reguła paska w dłoni.** Pasek nawigacji zostaje dolny i pływający na każdej szerokości,
-wyśrodkowany, `max-width: 28rem`. Na dużym ekranie nie przenosi się do góry ani na bok —
-to samo miejsce, ten sam gest, jedna nauka.
+wyśrodkowany, `width: min(21.25rem, 100vw - 2rem)`. Na dużym ekranie nie przenosi się do
+góry ani na bok — to samo miejsce, ten sam gest, jedna nauka. Odsunięcie od dołu to
+1,5 rem **ponad** `env(safe-area-inset-bottom)`, nie zamiast niego: na iPhonie z paskiem
+gestów pasek nawigacji siadał wcześniej praktycznie na nim i stuknięcie w skrajną zakładkę
+bywało wyjściem do ekranu początkowego.
 
-**Typografia przy zmianie szerokości.** Nominał bilansu 3 rem do 767 px, 3,75 rem od
-768 px. Żaden inny stopień skali się nie zmienia — osiem stopni obowiązuje na wszystkich
-szerokościach.
+**Typografia przy zmianie szerokości.** Skala ośmiu stopni obowiązuje na wszystkich
+szerokościach i nic w niej nie zależy od rozmiaru ekranu.
+
+**Reguła dopasowanego nominału.** Nominał bilansu jest JEDYNYM stopniem dobieranym do
+treści, a nie do ekranu: liczba znaków kwoty wybiera jeden z trzech stopni skali
+(3 rem / 1,875 rem / 1,25 rem). Powód jest prosty: „0,00" i „1 234 567,00" to ta sama rola
+i ten sam blok, ale nie ten sam rozmiar — przy stałym stopniu druga z tych liczb wychodziła
+poza limonkowy blok. Skrót waluty stoi wtedy POD liczbą, nie obok: obok zjadał szerokość
+potrzebną samym cyfrom.
+
+**Waluty nie sumują się w bilansie.** Gdy w pokoju żyją dwie waluty, bohaterem bloku
+zostaje ta o największym saldzie, a pozostałe schodzą wiersz niżej mniejszym stopniem.
+Nigdy nie łączy ich znak plus: plus sugerowałby jedną kwotę do zapłaty, a te salda domyka
+się osobnymi przelewami.
 
 **Weryfikacja jest częścią kontraktu.** Każdy ekran przechodzi audyt układu na czterech
 szerokościach: **360** (mały telefon), **390** (odniesienie), **834** (tablet) i **1280**
@@ -322,8 +373,10 @@ twarzy. Pozycja niczyja: cichy blok z zachętą „Stuknij, jeśli to Twoje".
 niebieskim zaznaczeniem i cudzą czcionką, a jej wyglądu nie da się ustawić w żadnej
 przeglądarce — na ciemnym ekranie jest ciałem obcym.
 
-- **Wybór jednokrotny** (waluta, płatnik, status): `choice-field` — pole wyglądające jak
-  `field`, z chevronem po prawej — otwiera arkusz z opcjami. W kodzie: `openChoiceSheet`.
+- **Wybór jednokrotny** (waluta rachunku, waluta domyślna pokoju, płatnik, rodzaj sposobu
+  płatności, rodzaj kosztu wspólnego): `choice-field` — pole wyglądające jak `field`,
+  z chevronem po prawej — otwiera arkusz z opcjami. W kodzie: `openChoiceSheet`.
+  Od 2026-08-15 w aplikacji nie ma już **ani jednego** znacznika `<select>`.
 - **Wybór osób** (skład rachunku, uczestnicy nowego rachunku, „kto to wziął"): wiersz
   `person-row` — zdjęcie albo znak, imię, okrągły znacznik po prawej. Promień `block`,
   zaznaczenie przez `aria-pressed`, nigdy przez systemowy kwadracik. W kodzie:
@@ -338,11 +391,44 @@ Mieszanie 14 px, 20 px i pigułki w jednej kolumnie widać gołym okiem.
 Pływająca pigułka o **stałej szerokości**, cztery zakładki **samymi ikonami** i koło
 akcji dokładnie na środku. Zakładki mają równe kolumny (`deck-side` po dwie), więc nic
 nie przesuwa się przy zmianie miejsca. Aktywna zakładka to jasne koło (`--surface`
-w motywie jasnym, `--ink` w ciemnym), nie kolor ikony.
+w motywie jasnym, `--ink` w ciemnym), nie kolor ikony. Cel dotykowy zakładki i koła
+akcji to 56 px — 44 px było minimum, nie wygodą.
+
+**Mrożone szkło.** Pasek ma krycie 0,78 i `backdrop-filter: blur(24px) saturate(1.8)`.
+Przy kryciu 0,94 rozmycie było niewidoczne i pasek czytał się jak ciemna listwa doklejona
+do dołu okna. Prześwit mówi, że treść płynie POD paskiem, a nie kończy się na nim.
+Nasycenie w górę, bo rozmycie samo wypłukuje kolor. Przeglądarka bez `backdrop-filter`
+dostaje pełne krycie: półprzezroczysty pasek bez rozmycia to szara mgła na treści.
 
 Nazwa miejsca **nie stoi w pasku** — pada raz, jako `view-title` na górze otwartej
 zakładki. Podpis w pasku i tytuł na ekranie to ta sama informacja podana dwa razy,
 a na wąskim telefonie podpis urywał się wielokropkiem.
+
+### Trzy warstwy ekranu rachunku
+Rachunek niesie trzy różne rodzaje informacji i każdy ma własny nośnik, bo bez tego
+wszystko było białą kartą na chłodnym podłożu i zlewało się w jedno:
+
+- **Kwota rachunku** — biała karta (`card`). Fakt o rachunku.
+- **Pozycje** — paragon (`receipt`): wiersze na wspólnej karcie, rozdzielone włoskiem.
+  Czyta się jak wydruk, bo tym jest.
+- **Twój udział** — blok limonkowy (`card-mine`). Limonka znaczy „to jest twoje" i tak
+  samo działa już na twojej linii paragonu. Zero nowego języka: ten sam kolor w tej samej
+  roli, o piętro wyżej.
+
+### Wyszukiwanie osoby
+Listy wyboru ludzi dostają **lupę** rozwijającą pole wyszukiwania. Kryterium projektowe
+to grupa 12–25 osób, przy której przewijanie jest wolniejsze od wpisania trzech liter.
+Lupa stoi zwinięta, bo w grupie pięciu osób lista mieści się na ekranie i pole byłoby
+tylko kolejnym rzędem do minięcia. Filtr **ukrywa** wiersze, nigdy ich nie kasuje:
+zaznaczenie osoby, której akurat nie widać, musi przeżyć wpisywanie.
+
+### Sposób płatności: dwie drogi w jednym wierszu
+Jedna metoda, dwa zamiary: „otwórz mi to w aplikacji" i „skopiuję sobie sam". Metody
+z uchwytem (Revolut, PayPal, Wise) i numer telefonu dostają przycisk otwierający obok
+kopiowania; numer konta zostaje przy samym kopiowaniu, bo nie ma dokąd go otworzyć.
+Adres składa się **wyłącznie** z oczyszczonego uchwytu i znanej domeny — nigdy z cudzego
+tekstu, bo pole wypełnia dowolna osoba w pokoju, a `href` przyjmujący czyjś tekst to
+otwarta furtka na `javascript:`.
 
 ## Motion
 
@@ -352,9 +438,24 @@ Jedna krzywa: `cubic-bezier(0.2, 0, 0, 1)`. Trzy dozwolone role i nic poza nimi:
    z zatrzymaniem na szóstym elemencie.
 2. **Cudze działanie** — twarz lądująca na paragonie (320 ms), przetaczana kwota (260 ms).
 3. **Potwierdzenie** — podświetlenie zmienionej kwoty (700 ms), wjazd nowego elementu,
-   wyjazd usuwanego, toast, potrząśnięcie przy błędzie.
+   wyjazd usuwanego, toast, potrząśnięcie przy błędzie, **odzew wciśnięcia**.
 
 Wszystko znika przy `prefers-reduced-motion`. Ozdobnik bez jednej z trzech ról nie wchodzi.
+
+**Reguła dwóch nośników przy wciśnięciu.** Odzew dotknięcia niesie i skala (0,97),
+i przyciemnienie wypełnienia (4 %). Sama skala nie wystarcza: palec zasłania środek
+przycisku dokładnie w chwili, gdy ten się kurczy, więc jedyne, co widać, to obrzeże.
+Czas w dół 90 ms, w górę 220 ms — szybko przyjmuje, wolniej oddaje, jak rzecz sprężysta.
+Na iOS to wszystko jest MARTWE, dopóki dokument nie ma choćby jednego nasłuchu dotyku;
+`main.js` zakłada pusty nasłuch `touchstart` na `body` i to on odblokowuje cały odzew.
+
+**Nowy rachunek: arkusz wyrasta nad paskiem.** Pasek zostaje na ekranie, arkusz rośnie
+tuż nad nim z zaczepieniem na dole, a koło [+] obraca się o 135° w krzyżyk i jest
+przyciskiem zamknięcia. Morfowanie koła w arkusz przez View Transitions API zostało
+**odrzucone i nie wraca**: limonka przenikała w biel (mignięcie, nie przemiana), zamknięcie
+pokazywało wielki limonkowy kształt rozciągnięty na cały arkusz, a Safari ma to API dopiero
+od osiemnastki, więc większość ekipy nigdy tej animacji nie widziała. Obecne rozwiązanie
+to zwykłe `transform` i `opacity`, więc wygląda tak samo wszędzie.
 
 ## Do's and Don'ts
 
@@ -366,6 +467,9 @@ Wszystko znika przy `prefers-reduced-motion`. Ozdobnik bez jednej z trzech ról 
 - **Do** trzymaj cele dotykowe na 44 px, akcje na 48 px.
 - **Do** podawaj kolor z bazy atrybutem `style`, nigdy klasą sklejaną ze stringu.
 
+- **Do** dawaj uchwyt tylko arkuszom, które naprawdę zsuwają się palcem.
+- **Do** licz odstępy od dolnej krawędzi z `env(safe-area-inset-bottom)`, poza warstwami CSS.
+
 ### Don't
 - **Don't** barw całych kart tożsamością człowieka — kolor niesie STAN, nie osobę.
 - **Don't** używaj wersalików z rozstrzeleniem ani powtarzanych pasków tekstu.
@@ -373,3 +477,10 @@ Wszystko znika przy `prefers-reduced-motion`. Ozdobnik bez jednej z trzech ról 
 - **Don't** wciągaj krojów, ikon ani skryptów z cudzego serwera.
 - **Don't** animuj bez jednej z trzech ról.
 - **Don't** duplikuj wejścia do tej samej rzeczy w dwóch miejscach ekranu.
+- **Don't** rysuj znaku sugerującego gest, którego nie ma (uchwyt bez zsuwania, chevron
+  bez rozwijania, ołówek bez edycji).
+- **Don't** pytaj człowieka o stan, który aplikacja może policzyć sama — status, który
+  bywa nieprawdziwy, jest gorszy niż brak statusu.
+- **Don't** dawaj czerwieni długu decyzji, którą da się cofnąć; ona znaczy „stąd nie ma
+  powrotu" i traci to znaczenie po trzecim użyciu na czymś odwracalnym.
+- **Don't** wstawiaj tekstu z bazy do atrybutu `href`.

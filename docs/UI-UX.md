@@ -1036,3 +1036,225 @@ chowanie paska przy otwartym arkuszu i odsunięcie treści spod paska offline.
 
 Degradacja jest wszędzie bezstratna funkcjonalnie: brak View Transitions oznacza brak
 animacji, a nie brak arkusza.
+
+> **Nieaktualne od 2026-08-15 (§19.6).** Wiersz „Morfowanie `[+]` w arkusz" w tabeli wyżej
+> opisuje rozwiązanie, którego już nie ma. View Transitions API zostało z aplikacji
+> wyrzucone; animacja otwierania arkusza stoi teraz na zwykłym `transform` i `opacity`,
+> więc działa jednakowo we wszystkich trzech przeglądarkach z tabeli.
+
+---
+
+## 19. PARTIA 7 — POPRAWKI PO TESTACH NA TELEFONIE (2026-08-15)
+
+Podstawą tej partii jest **piętnaście zrzutów z iPhone'a właściciela** (`Screenshots/`)
+plus jego lista uwag. To pierwsza partia oparta na użyciu aplikacji przez człowieka,
+a nie na przebiegu automatu, i to widać w jej charakterze: większość rzeczy nie była
+brakiem funkcji, tylko obietnicą, której interfejs nie dotrzymywał.
+
+### 19.1 Nazwa produktu: **Billyada**
+
+Nazwa rozstrzygnięta przez właściciela 2026-08-15 i zamyka punkt otwarty z §2.
+Zmienione: `<title>`, `apple-mobile-web-app-title`, `manifest.json` (`name`, `short_name`,
+`description`), `public/sw.js`, `package.json`, przedrostek w konsoli i teksty pomocy.
+
+**Czego NIE zmieniono i dlaczego:** przedrostek `billsplitter_` w kluczach `localStorage`.
+Te klucze trzymają listę pokoi, motyw i szablony przypomnień na urządzeniu. Zmiana
+przedrostka wyczyściłaby listę pokoi każdemu, kto już aplikacji używa, a powrót do pokoju
+wymagałby wtedy kodu od kogoś innego. Nazwa klucza nikomu się nie wyświetla.
+
+### 19.2 Znak aplikacji
+
+`public/icons/icon.svg` jest źródłem prawdy, `node tools/make-icons.mjs` rasteryzuje go
+do pięciu rozmiarów przez puppeteera (już obecnego w repo — dokładanie `sharp` tylko dla
+ikony byłoby kosztem bez pokrycia).
+
+Znak: **rachunek przedarty na pół**. Limonkowy prostokąt przecięty ukośną szczeliną,
+obie połowy przesunięte względem siebie. Ukos, nie prosta — prosta czyta się jak znak
+równości. Przesunięcie, bo bez niego to jeden kształt z kreską w środku. Tło pełne, bez
+własnego zaokrąglenia: ikona jest maskowalna, a własny promień dałby ciemną obwódkę
+wewnątrz kształtu narzuconego przez system. Znak siedzi w środkowych 66 % kwadratu,
+czyli w strefie bezpiecznej.
+
+### 19.3 Dwie ciche awarie znalezione przy okazji
+
+**Nominał bilansu renderował się bez stylu.** `denominationHtml` w `main.js` wypisywał
+klasy `denomination`, `denomination-relief`, `denomination-fraction`, `denomination-currency`
+— nazwy z odrzuconego świata „druku zabezpieczonego". W arkuszu stylów tych klas NIE MA
+(są `amount`, `amount-fraction`, `amount-currency`). Efekt: kwota bilansu szła gołym
+tekstem, bez kroju kwot, bez cichszych groszy i bez odstępu przed walutą — stąd zgłoszone
+„120,80PLN" sklejone w jedno słowo, dotykające krawędzi limonkowego bloku. Brakująca klasa
+nie jest błędem, więc nic tego nie zgłaszało przez cały redesign.
+
+**Waluta domyślna wyglądała na niezmienną.** Etykietę `#room-currency-label` ustawiało
+wyłącznie `openRoomSettings`, więc po wyborze arkusz zamykał się, a pole nadal pokazywało
+starą walutę. Zapis do bazy działał od zawsze; niewidoczna była tylko jego odpowiedź.
+Stąd zgłoszenie „nie mogę zmienić waluty, gdy są już rachunki".
+
+### 19.4 Fundament dotykowy
+
+| Rzecz | Było | Jest |
+|---|---|---|
+| `viewport` | bez `viewport-fit=cover` | z nim — bez tego `env(safe-area-inset-*)` zwraca ZERA na iPhonie, więc cała obsługa paska gestów była martwa |
+| Przybliżanie szczypaniem | działało | wyłączone trzema warstwami: atrybut `viewport`, `touch-action: pan-x pan-y`, blokada `gesturestart` (iOS ignoruje dwie pierwsze) |
+| Pasek nawigacji | 17,5 rem, 0,875 rem nad krawędzią, krycie 0,94 | 21,25 rem, 1,5 rem nad paskiem gestów, krycie 0,78 z rozmyciem 24 px; cele 56 px zamiast 44 |
+| Zapas na dole treści | klasa `pb-36` w znacznikach | `#app-container` w CSS, `calc(7rem + env(...))` |
+| Toast | `bottom-28` wpisane w JavaScripcie | klasa `.toast-dock` licząca wysokość paska i safe-area |
+
+**Pułapka warstw Tailwinda, która wystąpiła DWA razy i musi zostać zapisana.**
+Reguła w `@layer base` albo `@layer components` przegrywa z klasą narzędziową w znacznikach,
+bo warstwa `utilities` leży nad nimi. Tak zginęło `padding-bottom: env(safe-area-inset-bottom)`
+na `.sheet` (każdy arkusz miał `p-5`) i tak samo zginął zapas na `#app-container` (klasa `p-4`).
+Objaw jest zawsze ten sam: przyciski stojące tuż nad paskiem gestów iPhone'a. Lekarstwo:
+reguła BEZ warstwy, bo styl nieowarstwowany wygrywa z każdą warstwą niezależnie od kolejności.
+
+**Odzew dotknięcia na iOS.** Zgłoszenie „brakuje drobnego feedbacku przy kliknięciu, jest
+statycznie" miało jedną przyczynę: Safari nie stosuje pseudoklasy `:active` do niczego,
+dopóki dokument nie ma choćby jednego nasłuchu dotyku. Jedna linijka w `init()`
+(`body.addEventListener('touchstart', () => {}, { passive: true })`) odblokowuje CAŁY odzew
+w aplikacji. Do tego drugi nośnik: `filter: brightness(0.96)` obok `scale(0.97)`, bo palec
+zasłania środek przycisku dokładnie wtedy, gdy ten się kurczy — widać wyłącznie obrzeże.
+
+### 19.5 Arkusze: jedna budowa, jedna obietnica gestu
+
+Zgłoszenie: „niektóre zakładki mają kreskę u góry sugerującą, że można przeciągnąć,
+a tak naprawdę nic to nie robi; inne mają tylko X; nie ma tu spójności".
+
+Diagnoza była gorsza, niż brzmiała: istniały DWA rody okien. Jedne z uchwytem i przyciskiem
+„Zamknij" na dole, drugie z paskiem nagłówka i krzyżykiem. Uchwyt w tych pierwszych był
+rysunkiem — obiecywał gest, którego nie było. To gorsze niż brak uchwytu, bo uczy nie ufać
+pozostałym znakom w interfejsie.
+
+**Reguła, która to zamyka:**
+
+1. **Uchwyt znaczy „zsuń mnie palcem" i naprawdę zsuwa** (`wireSheetDrag`). Ciągnie się za
+   nagłówek; ciągnięcie po treści działa tylko przy liście przewiniętej na sam szczyt —
+   tak zachowuje się arkusz systemowy. Opór po przekroczeniu 96 px, zamknięcie po 96 px
+   albo przy szybkim machnięciu (0,6 px/ms).
+2. **Krzyżyk stoi w nagłówku wtedy i tylko wtedy, gdy w stopce nie ma „Anuluj".** Inaczej
+   byłyby dwa przyciski o jednym znaczeniu w jednym oknie.
+3. **Okno decyzji nieodwracalnej nie ma ani uchwytu, ani krzyżyka** (`sheet-confirm`),
+   i nie zamyka się kliknięciem w tło. Brak uchwytu mówi to, zanim ktokolwiek spróbuje.
+4. Budowa jest stała: `sheet-head` (nie przewija) / `sheet-body` (przewija, `overscroll-behavior: contain`)
+   / `sheet-foot` (nie przewija). Odstępy siedzą w CSS, nie w klasach `p-5` — patrz pułapka warstw wyżej.
+5. Od 640 px uchwyt **znika**: arkusz stoi na środku ekranu, nie przy krawędzi, więc nie ma
+   go dokąd zsunąć i nie ma czego obiecywać.
+
+Przy okazji zniknęły **dwie ostatnie listy systemowe** (`<select>`): rodzaj sposobu płatności
+i rodzaj kosztu wspólnego. Obie chodzą teraz przez `openChoiceSheet`. Zakaz z DESIGN.md jest
+wreszcie prawdziwy w całej aplikacji.
+
+### 19.6 Nowy rachunek: koniec morfowania przez View Transitions
+
+Poprzednie rozwiązanie wyrzucone w całości i **nie wraca**. Trzy powody, wszystkie widoczne
+gołym okiem:
+
+1. Limonkowe koło przenikało w BIAŁY arkusz. Między barwami o takiej różnicy jasności
+   przenikanie nie czyta się jako przemiana przedmiotu, tylko jako mignięcie.
+2. Przy zamykaniu przeglądarka pokazywała najpierw wielki limonkowy kształt ze znakiem [+]
+   rozciągnięty na cały arkusz, a dopiero potem go zmniejszała.
+3. Safari ma to API dopiero od osiemnastki, więc większość ekipy nigdy tej animacji nie widziała.
+
+**W zamian:** okno `new-bill-modal` nosi klasę `keeps-deck`. Pasek ZOSTAJE na ekranie,
+arkusz wyrasta tuż nad nim z zaczepieniem na dole (`transform-origin: bottom center`),
+a koło [+] obraca się o 135° w krzyżyk i jest przyciskiem zamknięcia. Nic nie przenika,
+nic nie zmienia koloru, droga powrotna jest odwrotnością drogi otwarcia, a całość to
+zwykłe `transform` i `opacity` — działa wszędzie tak samo.
+
+Zakładki pod otwartym arkuszem gasną i przestają być klikalne: pasek trzyma w tej chwili
+jedną rolę.
+
+**Do rozstrzygnięcia przez właściciela.** `docs/animacje-nowego-rachunku.html` to pole
+testowe z pięcioma wariantami tej animacji (nad paskiem, rozwinięcie z koła, kaskada,
+wyciągnięcie z paska, podniesienie ekranu), każdy z argumentami za i przeciw. W aplikacji
+stoi wariant 1. Podmiana to jedna sekcja w `src/tailwind.css`.
+
+### 19.7 Rachunek: tryb podziału zamiast ręcznego statusu
+
+Właściciel: „nie wiem, co zrobić ze statusem Nieuzupełnione/Uzupełnione; może powinniśmy
+go usunąć do ręcznej ingerencji". Decyzja: **usunięty w całości** (wybór właściciela
+2026-08-15, wariant „auto + switch").
+
+Status był pytaniem do człowieka o rzecz, którą aplikacja i tak wie. Skutek: rachunek
+pokazywał „Nieuzupełnione" komuś, kto wszystko odkliknął, i „Uzupełnione" komuś, kto tylko
+przestawił pole. Status kłamał, a kłamiący status przy pieniądzach jest gorszy niż jego brak.
+Do tego ta sama zmiana kwoty własnej przestawiała `participants.X.status` na trzy różne
+sposoby zależnie od tego, czy jestem płatnikiem.
+
+**Teraz rachunek ma jeden przełącznik `splitMode`:**
+
+- `'even'` (Po równo) — kwota dzieli się na uczestników, nie ma czego uzupełniać, wszyscy
+  gotowi od razu. Sekcja pozycji i cały paragon **schodzą z ekranu**: jeśli rachunek dzieli
+  się po równo, to lista pozycji nie ma czego zmienić, a stojąc tam sugerowałaby, że ma.
+- `'own'` (Ze swoimi kosztami) — gotowy jest ten, kto stuknął choć jedną pozycję albo wpisał
+  koszt własny (`participantReady`).
+
+Nowy rachunek startuje w `'even'`. Rachunki sprzed tej zmiany nie mają tego pola, więc tryb
+odczytuje się z zawartości: są pozycje albo koszty własne → `'own'`. Powrót do `'even'` jest
+zablokowany, dopóki rachunek ma rozpisane pozycje — przełączenie kasowałoby czyjś wybór
+bez pytania, więc zamiast tego mówimy wprost, co stoi na przeszkodzie.
+
+**„Mnie nie dotyczy" odpadło jako WYBÓR**, bo od wypisania kogoś z rachunku jest edycja
+składu, a dwie drogi do tego samego znaczyły dwa różne stany w bazie. Sama **wartość**
+`not_applicable` ZOSTAJE: na niej stoi wykluczanie z podziału w `functions/calc.js` i noszą
+ją stare rachunki. Pole `status` niesie już tylko członkostwo (`'in'` albo `'not_applicable'`).
+
+### 19.8 Płatnik: okno decyzji zamiast banera
+
+Zgłoszenie właściciela: „mam wrażenie, że obecnie jak wyskakuje ta informacja na górze,
+to można łatwo ją zignorować".
+
+Miał rację i to jest usterka wagi pierwszej: **bez potwierdzenia płatnika rachunek nie wchodzi
+do rozliczeń**, czyli najważniejszy krok był tym, który najłatwiej pominąć — baner przewijał
+się razem z treścią.
+
+- **Wskazanie płatnika** przechodzi teraz przez okno z imieniem i „Potwierdzam". Wskazując
+  SIEBIE potwierdzam w tej samej chwili (dwa pytania o to samo pod rząd to jedno za dużo).
+- **Wskazany płatnik** dostaje przy wejściu na rachunek okno „Czy to Ty zapłaciłeś?" z „Tak, ja"
+  i „Nie ja". To okno decyzji: bez uchwytu, bez krzyżyka, bez zamykania kliknięciem w tło.
+  Pytanie pada RAZ na wejście (`payerClaimAskedFor`), nie raz na przerysowanie.
+- „Nie ja" **czyści wskazanie płatnika**, zamiast tylko zamykać okno. Inaczej ktoś błędnie
+  wskazany zostawałby z pytaniem wracającym przy każdym wejściu i bez sposobu na naprostowanie.
+- Baner u góry zostaje jako przypomnienie dla tego, kto zamknął okno i wrócił później.
+
+`openConfirm` dostało parametr `tone`. Czerwień długu znaczy „stąd nie ma powrotu" i nie może
+stać pod pytaniem, które niczego nie kasuje — potwierdzenie płatnika idzie limonką.
+
+### 19.9 Reszta listy właściciela
+
+| Zgłoszenie | Rozstrzygnięcie |
+|---|---|
+| Rząd twarzy ekipy na Bilansie „zabiera tylko miejsce" | Usunięty. Nie odpowiadał na pytanie zadawane na Bilansie, a zabierał wysokość tuż pod kwotą. Skład grupy jest w ustawieniach pokoju i tam jest pełniejszy. |
+| Kolejność w ustawieniach pokoju | Kod i link → waluta domyślna → podsumowanie wydatków → skład grupy → opuszczenie pokoju. Kolejność idzie za częstością, nie za budową danych. |
+| Krzyżyk kasujący pokój „bardzo łatwo wcisnąć" | Zastąpiony **przesunięciem kafelka w lewo** (wybór właściciela), które odsłania czerwony kosz, plus okno potwierdzenia. Gest jest odwracalny: puszczenie przed połową drogi zwija kafelek. |
+| Brak wyjścia na listę pokoi | Strzałka w lewo w nagłówku pokoju. Ten sam znak, co na ekranie rachunku: „o poziom wyżej". Nie myli się z „Opuść pokój", bo tam zwalnia się imię. |
+| Powrót do ostatniego pokoju po restarcie | Aplikacja bez `?group=` w adresie otwiera pokój odwiedzony ostatnio. Wyjątek: znacznik `billsplitter_skip_resume` w pamięci SESJI, ustawiany, gdy człowiek SAM wyszedł na listę albo opuścił pokój. Znacznik ginie przy następnym uruchomieniu, więc skrót PWA z iPhone'a trafia do pokoju od razu — po jednorazowym wejściu kodem, bo skrót ma własną pamięć. |
+| Kod pokoju ze spacją | Działa od dawna (`enterByCode` zdejmuje spacje, myślniki i wielkość liter). Teraz jest to **napisane** w ustawieniach pokoju, bo funkcja, o której nikt nie wie, nie istnieje. |
+| Dwa wyglądy wyboru osób | Okno nowego rachunku dostało `person-row` — te same wiersze ze zdjęciem, co przy pozycji paragonu. Do trzech list wyboru osób doszła **lupa** rozwijająca pole wyszukiwania (kryterium 12–25 osób z PRODUCT.md). Filtr UKRYWA wiersze, nie kasuje ich, więc zaznaczenie osoby chwilowo niewidocznej przeżywa wpisywanie. |
+| Rejestr wpłat „dziwną listą rozwijaną" | **Osobne miejsce** (arkusz pełnoekranowy) z nagłówkami dni, twarzami obu stron, kwotą, godziną i stanem potwierdzenia. Kasowanie: tylko własna wpłata i tylko dopóki odbiorca jej nie potwierdził — naprawa pomyłki sprzed minuty, nie kasowanie historii. Reguły Firestore pilnują tego samego warunku. |
+| Chevrony „Ekipa" po prawej, „Historia zmian" po lewej | Wszystkie po prawej (`ml-auto`), we wszystkich trzech miejscach. |
+| Link do Revoluta jako tekst do skopiowania | Metody, które da się otworzyć (Revolut, PayPal, Wise, telefon), dostały przycisk otwierający; kopiowanie zostaje OBOK. Adres składamy wyłącznie z uchwytu i znanej domeny — nigdy z cudzego tekstu, bo `href` przyjmujący czyjś tekst to otwarta furtka na `javascript:`. Doszedł Wise. |
+| „Zlewa mi się mój udział z kwotą rachunku i pozycjami" | Trzy warstwy, trzy nośniki: kwota rachunku = biała karta, pozycje = paragon z włoskami, **twój udział = blok limonkowy** (`.card-mine`). Limonka znaczy „to jest twoje" i tak samo działa już na twojej linii paragonu. |
+| Em dash „źle wygląda i AI-owo" | Wyczyszczone ze WSZYSTKICH tekstów interfejsu (znaczniki i literały w JavaScripcie). W komentarzach kodu zostaje — tam nikt ich nie czyta z ekranu. |
+| Audyt napisów | `HELP_CONTENT` przepisane w całości. Poprzednia wersja mówiła o imionach „po przecinku" (dodaje się je pojedynczo), o filtrze „Wszystkie / Ukryte" (filtrów jest pięć) i o ręcznym statusie (już nie istnieje). Pomoc opisująca nieistniejący ekran jest gorsza od braku pomocy. |
+
+### 19.10 Dwa fałszywe alarmy naprawione w narzędziu audytowym
+
+`tools/audit-layout.mjs` zgłaszał dwie rzeczy, których na ekranie nie ma:
+
+1. Treść **zwiniętego `<details>`** — Chrome chowa ją przez `content-visibility`, a nie
+   `display: none`, więc `getBoundingClientRect` nadal zwraca prostokąt. Stąd „Edytuj skład
+   pod paskiem nawigacji" dla przycisku, którego nie widać.
+2. Element **wyprzewinięty poza swój kontener** — ma współrzędne i potrafi wypaść za
+   nagłówkiem arkusza. Stąd „krzyżyk nachodzi na pole waluty".
+
+Oba są teraz odfiltrowane w `visible()`. Pogoń za takim zgłoszeniem kończy się psuciem
+układu, który był w porządku, więc to nie jest kosmetyka narzędzia.
+
+**Uwaga dla przyszłych zmian w tym pliku:** blok `AUDIT` jest szablonem znakowym, więc
+apostrof odwrotny w komentarzu zamyka literał i wywala cały skrypt.
+
+### 19.11 Stan audytu po partii
+
+Cztery szerokości z kontraktu (360 / 390 / 834 / 1280), 32 stany ekranu, **zero zgłoszeń**:
+bez wyjazdów poza ekran, bez celów poniżej progu, bez nachodzących się przycisków, bez
+treści uwięzionej pod paskiem. 164 testy jednostkowe przechodzą.

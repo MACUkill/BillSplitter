@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Billyada">
+  <title>Billyada</title>
+  <!--
+    ZNAK BILLYADY: RACHUNEK PRZEDARTY NA PÓŁ.
+
+    Jeden przedmiot, jedno zdarzenie, zero opisu. Limonkowy paragon jest przerwany
+    ukośną szczeliną, a obie połowy są względem siebie przesunięte, jakby ktoś
+    właśnie rozdarł go przy stole. To jest cała historia produktu w jednym geście:
+    rachunek się dzieli, i dzieli go człowiek, a nie tabelka.
+
+    Dlaczego takie, a nie inne:
+      - Ukośna szczelina, nie prosta: prosta linia czyta się jak znak równości albo
+        jak dwa oddzielne prostokąty. Ukos ma kierunek, więc czyta się jako ROZDARCIE.
+      - Przesunięcie połówek: bez niego to jeden kształt z kreską w środku. Z nim
+        widać ruch, który już się wydarzył.
+      - Tło pełne, bez zaokrąglenia: to ikona maskowalna (Android przycina ją własnym
+        kształtem, iOS zaokrągla po swojemu). Własne zaokrąglenie dałoby ciemną
+        obwódkę wewnątrz cudzego kształtu.
+      - Znak siedzi w środkowych 66 % kwadratu, czyli w strefie bezpiecznej ikony
+        maskowalnej. Żadne przycięcie systemowe go nie tnie.
+
+    Kolory z DESIGN.md i tylko stamtąd: atrament #0E0F13, limonka marki #C6F03A.
+    Limonka zawsze niesie ciemność pod sobą, nigdy odwrotnie.
+  -->
+  <defs>
+    <!-- Górna połowa: wszystko NAD ukośną szczeliną. -->
+    <!-- Szczelina przecina paragon dokładnie w połowie WYSOKOŚCI (środek prostokąta
+         to y = 256), więc obie połowy mają po 116 px i żadna nie wygląda na ścinek.
+         Obie krawędzie mają to samo nachylenie, więc przerwa jest równa na całej
+         szerokości: to ma być rozdarcie, a nie klin. -->
+    <clipPath id="billyada-top">
+      <path d="M0 0 H512 V219 L0 255 Z" />
+    </clipPath>
+    <!-- Dolna połowa: wszystko POD nią. Odstęp między ścieżkami tworzy szczelinę. -->
+    <clipPath id="billyada-bottom">
+      <path d="M0 293 L512 257 V512 H0 Z" />
+    </clipPath>
+  </defs>
+
+  <rect width="512" height="512" fill="#0E0F13" />
+
+  <!-- Ten sam paragon narysowany dwa razy: raz przycięty do góry i odsunięty w lewo,
+       raz przycięty do dołu i odsunięty w prawo. Jeden kształt, dwie połowy. -->
+  <g clip-path="url(#billyada-top)">
+    <rect x="140" y="121" width="200" height="270" rx="34" fill="#C6F03A" />
+  </g>
+  <g clip-path="url(#billyada-bottom)">
+    <rect x="172" y="121" width="200" height="270" rx="34" fill="#C6F03A" />
+  </g>
+</svg>

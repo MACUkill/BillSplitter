@@ -1,0 +1,630 @@
+<title>Animacje nowego rachunku</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+
+<style>
+  /* ==========================================================================
+     Tokeny wzięte wprost z DESIGN.md Billyady. Ta strona ma pokazywać ruch
+     w TYM świecie, a nie w abstrakcyjnej makiecie — inaczej wybór zapadłby
+     na podstawie czegoś, czego w aplikacji nie ma.
+
+     Kroje: aplikacja jedzie na Bricolage Grotesque i Archivo, wciągniętych do
+     buildu z npm. Tutaj ich nie ma i nie da się ich dociągnąć (strona nie może
+     nic pobierać z sieci), więc idzie stos systemowy z podkręconym światłem
+     międzyliterowym. Oceniamy RUCH, nie typografię.
+     ========================================================================== */
+  :root {
+    color-scheme: light dark;
+
+    --bg: #F5F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #EEF0F4;
+    --ink: #0E0F13;
+    --ink-2: #585C68;
+    --ink-3: #7A808D;
+    --brand: #C6F03A;
+    --brand-ink: #0E0F13;
+    --deck: #16181E;
+    --deck-ink: #FFFFFF;
+    --hairline: rgb(14 15 19 / 0.10);
+    --shadow-lift: 0 2px 6px rgb(14 15 19 / .10), 0 24px 60px rgb(14 15 19 / .22);
+    --page: #10121A;
+    --page-ink: #E9ECF2;
+    --page-ink-2: #99A0B0;
+    --page-card: #171A23;
+    --page-hair: rgb(255 255 255 / .09);
+  }
+
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --bg: #0C0D11;
+      --surface: #181A20;
+      --surface-2: #23262E;
+      --ink: #F5F6F8;
+      --ink-2: #A8ADB9;
+      --ink-3: #828895;
+      --deck: #23262E;
+      --deck-ink: #F5F6F8;
+      --hairline: rgb(245 246 248 / 0.10);
+      --shadow-lift: 0 2px 6px rgb(0 0 0 / .5), 0 24px 60px rgb(0 0 0 / .6);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0C0D11;
+    --surface: #181A20;
+    --surface-2: #23262E;
+    --ink: #F5F6F8;
+    --ink-2: #A8ADB9;
+    --ink-3: #828895;
+    --deck: #23262E;
+    --deck-ink: #F5F6F8;
+    --hairline: rgb(245 246 248 / 0.10);
+    --shadow-lift: 0 2px 6px rgb(0 0 0 / .5), 0 24px 60px rgb(0 0 0 / .6);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--page-ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .wrap {
+    max-width: 46rem;
+    margin: 0 auto;
+    padding: 1.5rem 1rem calc(3rem + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .lede h1 {
+    margin: 0 0 .5rem;
+    font-size: clamp(1.75rem, 6vw, 2.5rem);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.05;
+    text-wrap: balance;
+  }
+
+  .lede p { margin: 0; color: var(--page-ink-2); max-width: 46ch; }
+
+  .kicker {
+    display: inline-block;
+    margin-bottom: .75rem;
+    padding: .25rem .625rem;
+    border-radius: 999px;
+    background: var(--brand);
+    color: var(--brand-ink);
+    font-size: .6875rem;
+    font-weight: 800;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+
+  /* --- TELEFON ------------------------------------------------------------
+     Jedna makieta na wszystkie pięć wariantów: porównanie ma się odbywać
+     w tym samym miejscu ekranu, bo inaczej porównuje się też położenie. */
+  .stage {
+    position: sticky;
+    top: 1rem;
+    z-index: 5;
+    display: flex;
+    justify-content: center;
+  }
+
+  .phone {
+    position: relative;
+    width: min(19rem, 88vw);
+    aspect-ratio: 9 / 17;
+    border-radius: 2.25rem;
+    background: var(--bg);
+    color: var(--ink);
+    overflow: hidden;
+    box-shadow: 0 0 0 .5rem #05060A, 0 0 0 .5625rem rgb(255 255 255 / .10), 0 30px 70px rgb(0 0 0 / .55);
+    isolation: isolate;
+  }
+
+  .screen {
+    position: absolute;
+    inset: 0;
+    padding: 1.25rem 1rem;
+    transform-origin: 50% 0%;
+    transition: transform 340ms cubic-bezier(.2,0,0,1), filter 340ms ease-out, border-radius 340ms ease-out;
+  }
+
+  .screen-title { font-size: .8125rem; font-weight: 800; letter-spacing: -0.01em; margin: 0 0 .5rem; }
+
+  .balance {
+    background: var(--brand);
+    color: var(--brand-ink);
+    border-radius: 1.25rem;
+    padding: 1rem;
+  }
+  .balance b { display: block; font-size: 2rem; font-weight: 800; letter-spacing: -0.04em; line-height: 1; }
+  .balance small { display: block; margin-top: .375rem; font-size: .625rem; font-weight: 800; letter-spacing: .1em; opacity: .55; }
+  .balance i { display: block; margin-top: .625rem; font-size: .6875rem; font-style: normal; font-weight: 700; opacity: .7; }
+
+  .rows { display: flex; flex-direction: column; gap: .5rem; margin-top: .75rem; }
+  .row {
+    background: var(--surface);
+    border-radius: .875rem;
+    height: 2.75rem;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: 0 .75rem;
+    font-size: .6875rem;
+    font-weight: 700;
+    color: var(--ink-2);
+  }
+  .dot { width: 1.125rem; height: 1.125rem; border-radius: 999px; flex: 0 0 auto; }
+
+  .scrim {
+    position: absolute;
+    inset: 0;
+    background: rgb(0 0 0 / .45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 220ms ease-out;
+  }
+
+  /* --- PASEK NAWIGACJI ---------------------------------------------------- */
+  .deck {
+    position: absolute;
+    left: 50%;
+    bottom: 1rem;
+    transform: translateX(-50%);
+    width: min(15rem, 84%);
+    height: 3.25rem;
+    border-radius: 999px;
+    background: var(--deck);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 .5rem;
+    box-shadow: 0 10px 30px rgb(0 0 0 / .35);
+    transition: transform 260ms cubic-bezier(.2,0,0,1), opacity 200ms ease-out;
+  }
+  .tab {
+    width: 2rem; height: 2rem; border-radius: 999px;
+    display: grid; place-items: center;
+    color: rgb(255 255 255 / .5);
+  }
+  :root[data-theme="dark"] .tab, :root:not([data-theme="light"]) .tab { color: var(--deck-ink); }
+  .tab svg { width: 1rem; height: 1rem; opacity: .55; }
+  .tab.on { background: var(--surface); }
+  .tab.on svg { opacity: 1; color: var(--ink); }
+
+  .plus {
+    width: 2.5rem; height: 2.5rem;
+    border-radius: 999px;
+    background: var(--brand);
+    color: var(--brand-ink);
+    display: grid; place-items: center;
+    border: 0;
+    cursor: pointer;
+    transition: transform 300ms cubic-bezier(.2,0,0,1), opacity 160ms ease-out;
+  }
+  .plus svg { width: 1.125rem; height: 1.125rem; transition: transform 300ms cubic-bezier(.2,0,0,1); }
+
+  /* --- ARKUSZ ------------------------------------------------------------- */
+  .sheet {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    background: var(--surface);
+    color: var(--ink);
+    border-radius: 1.5rem 1.5rem 0 0;
+    padding: .75rem 1rem 1rem;
+    box-shadow: var(--shadow-lift);
+    transform: translateY(101%);
+    transition: transform 300ms cubic-bezier(.2,0,0,1), opacity 200ms ease-out;
+  }
+  .grip { width: 2.25rem; height: .1875rem; border-radius: 999px; background: var(--hairline); margin: 0 auto .625rem; }
+  .sheet h4 { margin: 0 0 .625rem; font-size: 1rem; font-weight: 800; letter-spacing: -0.02em; }
+  .label { font-size: .625rem; font-weight: 800; color: var(--ink-3); letter-spacing: .04em; }
+  .field {
+    height: 2.5rem;
+    border-radius: .75rem;
+    background: var(--surface-2);
+    margin: .25rem 0 .75rem;
+    display: flex; align-items: center;
+    padding: 0 .75rem;
+    font-size: .75rem;
+    color: var(--ink-3);
+  }
+  .actions { display: flex; gap: .5rem; }
+  .btn {
+    flex: 1;
+    height: 2.5rem;
+    border-radius: 999px;
+    border: 0;
+    font: inherit;
+    font-size: .75rem;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .btn-quiet { background: var(--surface-2); color: var(--ink); }
+  .btn-brand { background: var(--brand); color: var(--brand-ink); }
+
+  /* Duszek do wariantu 4: kształt, który JEST paskiem i staje się arkuszem. */
+  .ghost {
+    position: absolute;
+    border-radius: 999px;
+    background: var(--deck);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  /* ======================================================================
+     WARIANT 1 — NAD PASKIEM
+     Pasek zostaje, arkusz wyrasta tuż nad nim z zaczepieniem na dole,
+     a koło [+] obraca się w krzyżyk. Nic nie przenika, nic nie zmienia
+     koloru, droga powrotna jest odwrotnością drogi otwarcia.
+     ====================================================================== */
+  .v1 .sheet {
+    left: .625rem; right: .625rem;
+    bottom: 5.25rem;
+    border-radius: 1.5rem;
+    transform-origin: 50% 100%;
+    transform: translateY(1.25rem) scale(.94);
+    opacity: 0;
+  }
+  .v1.open .sheet { transform: none; opacity: 1; }
+  .v1.open .plus svg { transform: rotate(135deg); }
+  .v1.open .tab { opacity: .35; }
+
+  /* ======================================================================
+     WARIANT 2 — ROZWINIĘCIE Z KOŁA
+     Arkusz nie wjeżdża: jest ODSŁANIANY okręgiem rosnącym z punktu, w którym
+     stoi [[+]]. Powierzchnia arkusza od pierwszej klatki ma swój docelowy kolor,
+     więc nie ma żadnego przenikania barw.
+     ====================================================================== */
+  .v2 .sheet {
+    transform: none;
+    opacity: 1;
+    clip-path: circle(0% at 50% 100%);
+    transition: clip-path 460ms cubic-bezier(.2,0,0,1);
+    bottom: 4.75rem;
+    left: .625rem; right: .625rem;
+    border-radius: 1.5rem;
+  }
+  .v2:not(.open) .sheet { pointer-events: none; }
+  .v2.open .sheet { clip-path: circle(150% at 50% 100%); }
+  .v2.open .plus svg { transform: rotate(135deg); }
+  .v2.open .tab { opacity: .35; }
+
+  /* ======================================================================
+     WARIANT 3 — KASKADA
+     Arkusz wjeżdża szybko (220 ms), a jego zawartość dosypuje się wierszami
+     co 45 ms. Pasek zjeżdża pod ekran, bo w tej chwili nie ma nic do roboty.
+     ====================================================================== */
+  .v3 .sheet { transition-duration: 220ms; }
+  .v3 .sheet > * { opacity: 0; transform: translateY(.625rem); transition: opacity 220ms ease-out, transform 260ms cubic-bezier(.2,0,0,1); }
+  .v3.open .sheet { transform: none; }
+  .v3.open .scrim { opacity: 1; }
+  .v3.open .deck { transform: translateX(-50%) translateY(5rem); opacity: 0; }
+  .v3.open .sheet > * { opacity: 1; transform: none; }
+  .v3.open .sheet > *:nth-child(1) { transition-delay: 90ms; }
+  .v3.open .sheet > *:nth-child(2) { transition-delay: 135ms; }
+  .v3.open .sheet > *:nth-child(3) { transition-delay: 180ms; }
+  .v3.open .sheet > *:nth-child(4) { transition-delay: 225ms; }
+  .v3.open .sheet > *:nth-child(5) { transition-delay: 270ms; }
+  .v3.open .sheet > *:nth-child(6) { transition-delay: 315ms; }
+
+  /* ======================================================================
+     WARIANT 4 — WYCIĄGNIĘCIE Z PASKA
+     Pasek dosłownie rozciąga się w arkusz: jeden kształt zmienia położenie,
+     rozmiar, promień i kolor. To jest prawdziwe morfowanie, ale między dwoma
+     ciemnymi powierzchniami, a nie z limonki w biel.
+     ====================================================================== */
+  .v4 .ghost { transition: all 380ms cubic-bezier(.2,0,0,1); }
+  .v4.open .ghost { opacity: 1; }
+  .v4 .sheet { transition: opacity 200ms ease-out 200ms, transform 260ms cubic-bezier(.2,0,0,1) 180ms; }
+  .v4 .sheet { left: .625rem; right: .625rem; bottom: 1rem; border-radius: 1.5rem; transform: translateY(.75rem); opacity: 0; }
+  .v4.open .sheet { transform: none; opacity: 1; }
+  .v4.open .deck { opacity: 0; }
+  .v4.open .scrim { opacity: 1; }
+
+  /* ======================================================================
+     WARIANT 5 — PODNIESIENIE EKRANU
+     Cały ekran odsuwa się w głąb i przygasa, a arkusz nakłada się na niego
+     jak karta. Zachowanie znane z systemu, więc czyta się bez uczenia.
+     ====================================================================== */
+  .v5.open .screen { transform: scale(.9) translateY(.75rem); filter: brightness(.55); border-radius: 1.25rem; }
+  .v5.open .deck { transform: translateX(-50%) scale(.9) translateY(.75rem); filter: brightness(.55); }
+  .v5.open .sheet { transform: none; }
+  .v5.open .scrim { opacity: .6; }
+  .v5 .sheet { border-radius: 1.75rem 1.75rem 0 0; }
+
+  /* --- WYBÓR --------------------------------------------------------------- */
+  .picker { display: grid; gap: .625rem; }
+
+  .pick {
+    display: grid;
+    grid-template-columns: 2rem 1fr;
+    gap: .875rem;
+    align-items: start;
+    width: 100%;
+    text-align: left;
+    padding: .875rem 1rem;
+    border-radius: 1rem;
+    border: 1px solid var(--page-hair);
+    background: var(--page-card);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: border-color 160ms ease-out, background-color 160ms ease-out, transform 120ms cubic-bezier(.2,0,0,1);
+  }
+  .pick:active { transform: scale(.99); }
+  .pick[aria-pressed="true"] { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, var(--page-card)); }
+  .pick:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+  .pick .no {
+    font-size: .8125rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--page-ink-2);
+    padding-top: .0625rem;
+  }
+  .pick[aria-pressed="true"] .no { color: var(--brand); }
+  .pick h3 { margin: 0 0 .1875rem; font-size: .9375rem; font-weight: 800; letter-spacing: -0.015em; }
+  .pick p { margin: 0; font-size: .8125rem; color: var(--page-ink-2); }
+  .pick .verdict { margin-top: .375rem; font-size: .75rem; color: var(--page-ink-2); }
+  .pick .verdict b { color: var(--page-ink); font-weight: 700; }
+
+  .bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  .ctl {
+    border: 1px solid var(--page-hair);
+    background: transparent;
+    color: var(--page-ink);
+    font: inherit;
+    font-size: .8125rem;
+    font-weight: 700;
+    padding: .5rem .875rem;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .ctl:active { transform: scale(.98); }
+  .ctl.primary { background: var(--brand); color: var(--brand-ink); border-color: transparent; }
+  .ctl:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+  .note {
+    border-top: 1px solid var(--page-hair);
+    padding-top: 1rem;
+    font-size: .8125rem;
+    color: var(--page-ink-2);
+  }
+  .note b { color: var(--page-ink); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .screen, .deck, .sheet, .sheet > *, .plus, .plus svg, .ghost, .scrim { transition-duration: 1ms !important; }
+  }
+</style>
+
+<div class="wrap">
+  <div class="lede">
+    <span class="kicker">Billyada · do wyboru</span>
+    <h1>Jak ma się otwierać nowy rachunek</h1>
+    <p>Pięć sposobów, na jakie limonkowe koło [+] może zamienić się w arkusz. Stuknij wariant, potem [+] w makiecie. Zamyka się krzyżykiem, przyciskiem „Anuluj" albo ponownym [+]. Sprawdź to na telefonie, bo tam ten ruch będzie żył.</p>
+  </div>
+
+  <div class="stage">
+    <div class="phone v1" id="phone">
+      <div class="screen">
+        <p class="screen-title">Bilans</p>
+        <div class="balance">
+          <b>240,00</b>
+          <small>PLN</small>
+          <i>dostajesz od 3 osób</i>
+        </div>
+        <div class="rows">
+          <div class="row"><span class="dot" style="background:#C81E6E"></span>Kolacja w karczmie</div>
+          <div class="row"><span class="dot" style="background:#2D4AEB"></span>Paliwo na trasę</div>
+          <div class="row"><span class="dot" style="background:#0F7C7C"></span>Wypożyczalnia nart</div>
+        </div>
+      </div>
+
+      <div class="scrim" id="scrim"></div>
+      <div class="ghost" id="ghost"></div>
+
+      <div class="sheet" id="sheet">
+        <div class="grip"></div>
+        <h4>Nowy rachunek</h4>
+        <span class="label">Nazwa rachunku</span>
+        <div class="field">np. Lunch w piątek</div>
+        <span class="label">Rachunek dla wszystkich</span>
+        <div class="actions">
+          <button class="btn btn-quiet" id="cancel" type="button">Anuluj</button>
+          <button class="btn btn-brand" type="button">Stwórz rachunek</button>
+        </div>
+      </div>
+
+      <div class="deck" id="deck">
+        <span class="tab on" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="M17 12h.01"/></svg></span>
+        <span class="tab" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg></span>
+        <button class="plus" id="plus" type="button" aria-label="Nowy rachunek">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <span class="tab" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/></svg></span>
+        <span class="tab" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-4 12.5-4 14 0"/></svg></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="bar">
+    <button class="ctl primary" id="play" type="button">Odpal wybrany</button>
+    <button class="ctl" id="cycle" type="button">Pokaż wszystkie po kolei</button>
+    <button class="ctl" id="theme" type="button">Motyw: ciemny</button>
+  </div>
+
+  <div class="picker" id="picker">
+    <button class="pick" type="button" data-v="v1" aria-pressed="true">
+      <span class="no">01</span>
+      <span>
+        <h3>Nad paskiem</h3>
+        <p>Pasek zostaje na ekranie, arkusz wyrasta tuż nad nim, a koło [+] obraca się w krzyżyk i pełni rolę zamknięcia.</p>
+        <span class="verdict"><b>Za:</b> nic nie przenika i nic nie zmienia koloru; jeden przedmiot cały czas ten sam. <b>Przeciw:</b> arkusz jest niższy, więc dłuższe formularze będą się przewijać.</span>
+      </span>
+    </button>
+
+    <button class="pick" type="button" data-v="v2" aria-pressed="false">
+      <span class="no">02</span>
+      <span>
+        <h3>Rozwinięcie z koła</h3>
+        <p>Arkusz nie wjeżdża, tylko jest odsłaniany okręgiem rosnącym dokładnie z punktu, w którym stoi [+].</p>
+        <span class="verdict"><b>Za:</b> najmocniej ze wszystkich mówi „to wyszło z tego przycisku". <b>Przeciw:</b> odsłanianie jest efektowne, więc przy dwudziestym rachunku może zacząć męczyć.</span>
+      </span>
+    </button>
+
+    <button class="pick" type="button" data-v="v3" aria-pressed="false">
+      <span class="no">03</span>
+      <span>
+        <h3>Kaskada</h3>
+        <p>Arkusz wjeżdża szybko, a jego zawartość dosypuje się wierszami. Pasek zjeżdża pod ekran.</p>
+        <span class="verdict"><b>Za:</b> wygląda najszybciej z całej piątki, bo pierwszy wiersz widać po 90 ms. <b>Przeciw:</b> to ruch dla samego ruchu, nie tłumaczy, skąd arkusz przyszedł.</span>
+      </span>
+    </button>
+
+    <button class="pick" type="button" data-v="v4" aria-pressed="false">
+      <span class="no">04</span>
+      <span>
+        <h3>Wyciągnięcie z paska</h3>
+        <p>Pasek dosłownie rozciąga się w arkusz: jeden kształt zmienia położenie, rozmiar, promień i kolor.</p>
+        <span class="verdict"><b>Za:</b> prawdziwe morfowanie, ale między dwiema ciemnymi powierzchniami, więc bez mignięcia. <b>Przeciw:</b> najdłuższe (380 ms) i w jasnym motywie ciemny kształt na moment zasłania ekran.</span>
+      </span>
+    </button>
+
+    <button class="pick" type="button" data-v="v5" aria-pressed="false">
+      <span class="no">05</span>
+      <span>
+        <h3>Podniesienie ekranu</h3>
+        <p>Cały ekran odsuwa się w głąb i przygasa, a arkusz nakłada się na niego jak karta.</p>
+        <span class="verdict"><b>Za:</b> zachowanie znane z systemu, więc czyta się bez uczenia się czegokolwiek. <b>Przeciw:</b> nie ma nic wspólnego z [+], więc przycisk przestaje być bohaterem.</span>
+      </span>
+    </button>
+  </div>
+
+  <p class="note">
+    Wszystkie pięć jedzie na jednej krzywej <b>cubic-bezier(0.2, 0, 0, 1)</b>, tej samej co reszta ruchu w Billyadzie, i wszystkie znikają przy systemowym ustawieniu ograniczonego ruchu.
+    W aplikacji stoi teraz <b>wariant 01</b>. Powiedz, który wybierasz, a podmienię go w jednym miejscu w arkuszu stylów.
+  </p>
+</div>
+
+<script>
+  const phone = document.getElementById('phone');
+  const plus = document.getElementById('plus');
+  const cancel = document.getElementById('cancel');
+  const scrim = document.getElementById('scrim');
+  const ghost = document.getElementById('ghost');
+  const deck = document.getElementById('deck');
+  const sheet = document.getElementById('sheet');
+  const picker = document.getElementById('picker');
+  const themeBtn = document.getElementById('theme');
+
+  const VARIANTS = ['v1', 'v2', 'v3', 'v4', 'v5'];
+  let current = 'v1';
+
+  const setVariant = (v) => {
+    close();
+    VARIANTS.forEach((x) => phone.classList.remove(x));
+    phone.classList.add(v);
+    current = v;
+    picker.querySelectorAll('.pick').forEach((b) => {
+      b.setAttribute('aria-pressed', String(b.dataset.v === v));
+    });
+  };
+
+  // Wariant 4 potrzebuje kształtu, który startuje DOKŁADNIE tam, gdzie stoi pasek,
+  // i kończy tam, gdzie stanie arkusz. Liczymy to z prawdziwych prostokątów, więc
+  // ruch trafia co do piksela niezależnie od rozmiaru makiety.
+  const runGhost = () => {
+    const box = phone.getBoundingClientRect();
+    const from = deck.getBoundingClientRect();
+    const to = sheet.getBoundingClientRect();
+    const style = getComputedStyle(phone);
+    ghost.style.transition = 'none';
+    ghost.style.left = (from.left - box.left) + 'px';
+    ghost.style.top = (from.top - box.top) + 'px';
+    ghost.style.width = from.width + 'px';
+    ghost.style.height = from.height + 'px';
+    ghost.style.borderRadius = '999px';
+    ghost.style.background = style.getPropertyValue('--deck');
+    ghost.style.opacity = '1';
+    // Wymuszenie przeliczenia układu: bez tego przeglądarka skleja oba stany
+    // w jeden i animacja nie ma z czego wyjść.
+    void ghost.offsetWidth;
+    ghost.style.transition = 'all 380ms cubic-bezier(.2,0,0,1)';
+    ghost.style.left = (to.left - box.left) + 'px';
+    ghost.style.top = (to.top - box.top) + 'px';
+    ghost.style.width = to.width + 'px';
+    ghost.style.height = to.height + 'px';
+    ghost.style.borderRadius = '1.5rem';
+    ghost.style.background = style.getPropertyValue('--surface');
+  };
+
+  const open = () => {
+    if (phone.classList.contains('open')) return;
+    if (current === 'v4') runGhost();
+    phone.classList.add('open');
+  };
+
+  const close = () => {
+    if (!phone.classList.contains('open')) return;
+    phone.classList.remove('open');
+    if (current === 'v4') {
+      const box = phone.getBoundingClientRect();
+      const back = deck.getBoundingClientRect();
+      const style = getComputedStyle(phone);
+      ghost.style.left = (back.left - box.left) + 'px';
+      ghost.style.top = (back.top - box.top) + 'px';
+      ghost.style.width = back.width + 'px';
+      ghost.style.height = back.height + 'px';
+      ghost.style.borderRadius = '999px';
+      ghost.style.background = style.getPropertyValue('--deck');
+      setTimeout(() => { ghost.style.opacity = '0'; }, 320);
+    }
+  };
+
+  plus.addEventListener('click', () => (phone.classList.contains('open') ? close() : open()));
+  cancel.addEventListener('click', close);
+  scrim.addEventListener('click', close);
+
+  picker.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pick');
+    if (!btn) return;
+    setVariant(btn.dataset.v);
+    // Wybór wariantu od razu go pokazuje: po to się go wybiera.
+    setTimeout(open, 220);
+  });
+
+  document.getElementById('play').addEventListener('click', () => {
+    close();
+    setTimeout(open, 260);
+  });
+
+  document.getElementById('cycle').addEventListener('click', async () => {
+    for (const v of VARIANTS) {
+      setVariant(v);
+      await new Promise((r) => setTimeout(r, 260));
+      open();
+      await new Promise((r) => setTimeout(r, 1400));
+      close();
+      await new Promise((r) => setTimeout(r, 700));
+    }
+  });
+
+  themeBtn.addEventListener('click', () => {
+    const dark = document.documentElement.getAttribute('data-theme') !== 'light';
+    document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+    themeBtn.textContent = dark ? 'Motyw: jasny' : 'Motyw: ciemny';
+  });
+
+  document.documentElement.setAttribute('data-theme', 'dark');
+</script>
