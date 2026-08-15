@@ -125,14 +125,17 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     /* iOS zoomuje pole, którego tekst jest mniejszy niż 16 px. Cała aplikacja pracuje
        na telefonie, więc to nie detal typograficzny, tylko usterka wprowadzania. */
     -webkit-text-size-adjust: 100%;
-    /* PRZYBLIŻANIE SZCZYPANIEM WYŁĄCZONE. Układ jest jedną kolumną o stałej szerokości
-       i skaluje się sam — przybliżenie nic nie odsłania, za to wypycha treść poza ekran
-       i zostawia człowieka w widoku, z którego nie wie, jak wrócić (patrz zrzut 7:
-       ekran przybliżony na „ajmniej przelewów"). `pan-x pan-y` zostawia przewijanie
-       w obu osiach i odbiera wyłącznie skalowanie. Drugą warstwą jest atrybut
-       `viewport` w `index.html`, trzecią blokada gestu w `main.js` — iOS ignoruje
-       dwie pierwsze. */
-    touch-action: pan-x pan-y;
+    /* PRZYBLIŻANIE SZCZYPANIEM WYŁĄCZONE — ale NIE przez `touch-action` na korzeniu
+       dokumentu i to jest ważne.
+       `touch-action: pan-x pan-y` na `html` i `body` stało tu do 2026-08-15 i zabrało
+       przy okazji **gest cofania przesunięciem od krawędzi** na iOS: przeglądarka
+       traktuje deklarację na korzeniu jako przejęcie obsługi dotyku i przestaje
+       rozpoznawać swój własny gest nawigacyjny. Powrót z rachunku palcem przestał
+       działać, a to jest podstawowa droga wstecz na iPhonie.
+       Przybliżanie blokują teraz dwie warstwy, które gestu cofania nie dotykają:
+       atrybut `viewport` w `index.html` oraz odrzucenie zdarzeń `gesture*` w `main.js`
+       (to drugie jest na iOS jedyną skuteczną). Dwustuknięcie zdejmuje
+       `touch-action: manipulation` nałożone WYŁĄCZNIE na przyciski, nie na dokument. */
   }
 
   body {
@@ -140,9 +143,8 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     font-variant-numeric: tabular-nums;
     background-color: rgb(var(--bg));
     color: rgb(var(--ink));
-    /* Odbiera dwustuknięciowe przybliżenie, którego `touch-action` na html nie łapie
-       w każdej przeglądarce. */
-    touch-action: pan-x pan-y;
+    /* Bez `touch-action` — patrz komentarz przy `html`. Deklaracja na korzeniu dokumentu
+       zabierała iOS gest cofania przesunięciem od krawędzi. */
   }
 
 
@@ -439,6 +441,17 @@ body:has(#offline-banner:not(.hidden)) #app-container {
   :root[data-theme='dark'] .seg-btn[aria-pressed='true'] {
     background-color: rgb(var(--ink) / 0.14);
   }
+
+  /* Segment wyłączony ma WYGLĄDAĆ na wyłączony. Sam brak reakcji na dotknięcie czyta
+     się jak usterka, a nie jak decyzja — przy cudzych pieniądzach to gorsze niż komunikat.
+     Wybrany segment zostaje czytelny także wtedy, gdy nie da się go zmienić: pokazuje
+     stan rachunku, a nie dostępną akcję. */
+  .seg-btn:disabled {
+    cursor: default;
+    opacity: 0.55;
+  }
+  .seg-btn:disabled[aria-pressed='true'] { opacity: 1; }
+  .seg-btn:disabled:active { transform: none; filter: none; }
 
   .chip {
     display: inline-flex;
@@ -1818,11 +1831,21 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     100% { background-color: rgb(var(--brand) / 0); }
   }
 
+  /* BEZ `both` W WYPEŁNIENIU KLATEK. Z nim element trzymał OSTATNIĄ klatkę na zawsze,
+     czyli tło przezroczyste — a linia paragonu, która właśnie stała się moja, ma pod
+     spodem własne limonkowe wypełnienie. Po błysku traciła je aż do następnego
+     przerysowania, więc podświetlenie potwierdzenia po cichu kasowało stan „to moje".
+     Bez wypełnienia klatek element wraca po animacji do swojego tła. */
   .value-flash {
-    animation: value-flash 700ms ease-out both;
-    border-radius: 0.875rem;
+    animation: value-flash 700ms ease-out;
     box-decoration-break: clone;
   }
+
+  /* Promień należy się tylko tam, gdzie błysk pada na SAMOTNY napis (suma kontrolna).
+     Na linii paragonu dokładał zaokrąglenie w środku listy: wiersz na chwilę dostawał
+     własny narożnik i wyglądał jak wyjęty z paragonu. Zgłoszenie właściciela: „pojawia
+     się taki dodatkowy radius w tej pozycji". */
+  #control-sum.value-flash { border-radius: 0.875rem; }
 
   /* Element dopisany do listy wjeżdża od dołu — pokazuje, GDZIE wylądował,
      zamiast pojawiać się znikąd. */

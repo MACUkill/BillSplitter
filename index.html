@@ -9,7 +9,9 @@
          `maximum-scale=1, user-scalable=no` wyłącza przybliżanie szczypaniem: aplikacja
          jest układem o stałej szerokości kolumny, a przybliżenie robiło z niej mapę,
          z której trudno wrócić. iOS ignoruje ten atrybut od dziesiątej wersji, więc
-         drugą warstwą jest `touch-action` w arkuszu i blokada gestu w `main.js`. -->
+         drugą warstwą jest odrzucenie zdarzeń `gesture*` w `main.js`.
+         `touch-action` NA KORZENIU DOKUMENTU do tego NIE służy: zabiera iOS gest
+         cofania przesunięciem od krawędzi (patrz komentarz przy `html` w tailwind.css). -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Billiada</title>
     <link rel="icon" sizes="32x32" href="/icons/icon-32x32.png">

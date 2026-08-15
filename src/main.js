@@ -3678,13 +3678,28 @@
                 .filter((p) => p.status !== PARTICIPANT_OUT);
             document.querySelectorAll('.bill-mode-btn').forEach((btn) => {
                 btn.setAttribute('aria-pressed', String(btn.dataset.mode === mode));
+                // TRYB PODZIAŁU IDZIE ZA TĄ SAMĄ REGUŁĄ, CO KWOTA I WALUTA.
+                // Po potwierdzeniu płatnika główne pola rachunku są zamknięte dla
+                // wszystkich poza nim (`canEditMainFields`), a kształt podziału jest
+                // takim samym polem: przestawienie go zmienia każdemu udział w cudzych
+                // pieniądzach. Do 2026-08-15 przełącznik zostawał otwarty dla całej
+                // ekipy nawet na zablokowanym rachunku.
+                btn.disabled = !canEditMainFields;
             });
             const modeHint = document.getElementById('bill-mode-hint');
             const modeNote = document.getElementById('bill-mode-note');
             if (modeHint) {
-                modeHint.textContent = mode === 'even'
-                    ? 'Cała kwota dzieli się równo między uczestników i nikt niczego nie uzupełnia. Chcesz rozpisać paragon na pozycje? Przełącz na „Ze swoimi kosztami".'
-                    : 'Każdy stuka swoje pozycje i wpisuje koszty własne. To, czego nikt nie weźmie imiennie, i tak podzieli się po równo.';
+                if (!canEditMainFields) {
+                    // Wyłączony przełącznik bez wyjaśnienia czyta się jak usterka.
+                    const payerName = billData.payerId ? memberName(billData.payerId) : 'płatnik';
+                    modeHint.textContent = mode === 'even'
+                        ? `Cała kwota dzieli się równo między uczestników. Sposób podziału może zmienić tylko ${payerName}, bo to on wyłożył pieniądze.`
+                        : `Każdy stuka swoje pozycje i wpisuje koszty własne. Sposób podziału może zmienić tylko ${payerName}, bo to on wyłożył pieniądze.`;
+                } else {
+                    modeHint.textContent = mode === 'even'
+                        ? 'Cała kwota dzieli się równo między uczestników i nikt niczego nie uzupełnia. Chcesz rozpisać paragon na pozycje? Przełącz na „Ze swoimi kosztami".'
+                        : 'Każdy stuka swoje pozycje i wpisuje koszty własne. To, czego nikt nie weźmie imiennie, i tak podzieli się po równo.';
+                }
             }
 
             // W trybie „po równo" cała maszyneria rozpisywania schodzi z ekranu. Nie chodzi
@@ -3704,7 +3719,11 @@
             const evenBtn = document.getElementById('bill-mode-even');
             if (evenBtn) {
                 const locked = mode === 'own' && (hasItems || hasOwn);
-                evenBtn.disabled = locked;
+                // `||`, nie przypisanie: zamknięcie rachunku przez płatnika obowiązuje
+                // niezależnie od tego, czy są rozpisane pozycje. Bez tego ta linia
+                // odblokowywałaby przycisk, który dwadzieścia linii wyżej został
+                // świadomie wyłączony dla wszystkich poza płatnikiem.
+                evenBtn.disabled = locked || !canEditMainFields;
                 evenBtn.classList.toggle('opacity-40', locked);
                 evenBtn.title = locked
                     ? 'Rachunek ma już rozpisane pozycje albo koszty własne. Usuń je, żeby wrócić do podziału po równo.'

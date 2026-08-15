@@ -44,6 +44,11 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   Wciągnięcie go do wzoru na wysokość paska nawigacji posłało pasek w górę tym mocniej,
   im mocniej ktoś pociągnął stronę. Pasek przeglądarki zabiera wyłącznie WYSOKOŚĆ, więc
   liczy się `clientHeight - visualViewport.height` i nic poza tym.
+- **NIE ustawiaj `touch-action` na `html` ani `body`.** Deklaracja na korzeniu dokumentu
+  zabiera iOS **gest cofania przesunięciem od krawędzi**, czyli podstawową drogę wstecz
+  na iPhonie. Przybliżanie szczypaniem blokuje atrybut `viewport` plus odrzucenie zdarzeń
+  `gesture*` w `main.js` — i to wystarcza. `touch-action` zostaje wyłącznie na przyciskach
+  (`manipulation`) oraz tam, gdzie sami obsługujemy gest: `.sheet` i `.room-swipe`.
 - **W aplikacji z ekranu początkowego poprawka położenia paska jest WYŁĄCZONA** —
   tam nie ma paska przeglądarki, więc nie ma czego kompensować, a każde liczenie to
   tylko okazja do usterki. Zostaje samo chowanie paska pod klawiaturę.
