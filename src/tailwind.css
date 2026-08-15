@@ -479,7 +479,12 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     margin-top: -0.25rem;
     border-radius: 999px;
     background-color: var(--slider-thumb, rgb(var(--ink)));
-    box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 4px rgb(14 15 19 / 0.35), 0 2px 6px rgb(0 0 0 / 0.3);
+    /* Uchwyt stoi na kolorowej ścieżce, nie na podłożu aplikacji, więc jego obwódka
+       musi trzymać kontrast na KAŻDYM kolorze: biały pierścień na jasnym żółtym,
+       ciemny na jasnym białym. Zewnętrzny pierścień idzie przez `--shadow`, bo ten
+       token jest ciemny w obu motywach — `--ink` w motywie ciemnym jest jasny
+       i pierścień zniknąłby w białym pod nim. */
+    box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 4px rgb(var(--shadow) / 0.4), 0 2px 6px rgb(var(--shadow) / 0.35);
     cursor: pointer;
   }
   .color-slider::-moz-range-thumb {
@@ -488,7 +493,12 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     border: none;
     border-radius: 999px;
     background-color: var(--slider-thumb, rgb(var(--ink)));
-    box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 4px rgb(14 15 19 / 0.35), 0 2px 6px rgb(0 0 0 / 0.3);
+    /* Uchwyt stoi na kolorowej ścieżce, nie na podłożu aplikacji, więc jego obwódka
+       musi trzymać kontrast na KAŻDYM kolorze: biały pierścień na jasnym żółtym,
+       ciemny na jasnym białym. Zewnętrzny pierścień idzie przez `--shadow`, bo ten
+       token jest ciemny w obu motywach — `--ink` w motywie ciemnym jest jasny
+       i pierścień zniknąłby w białym pod nim. */
+    box-shadow: 0 0 0 3px #FFFFFF, 0 0 0 4px rgb(var(--shadow) / 0.4), 0 2px 6px rgb(var(--shadow) / 0.35);
     cursor: pointer;
   }
 
@@ -509,7 +519,9 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.5rem;
+    /* Stopień „Title" ze skali, nie wartość wzięta z oka. Litera na znaku ma tu
+       zachować mniej więcej tę samą proporcję do koła, co awatary w listach. */
+    font-size: 1.25rem;
     font-weight: 700;
     transition: background-color 120ms linear, color 120ms linear;
   }
