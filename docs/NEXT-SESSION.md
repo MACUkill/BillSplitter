@@ -38,6 +38,15 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   adresu, 34 px po jego zwinięciu. Odległości od dolnej krawędzi bierz przez
   `max(własny odstęp, env(...))`, nigdy przez dodawanie — inaczej wszystko, co przypięte
   do dołu, skacze o 34 px przy każdym przewinięciu.
+- **`visualViewport.offsetTop` NIE mówi nic o pasku przeglądarki.** To przesunięcie
+  widocznego obszaru wewnątrz układu; iOS zmienia je przy rozciąganiu strony na końcu
+  przewijania (gumka) i przy przybliżaniu, a przy ciągnięciu w dół schodzi poniżej zera.
+  Wciągnięcie go do wzoru na wysokość paska nawigacji posłało pasek w górę tym mocniej,
+  im mocniej ktoś pociągnął stronę. Pasek przeglądarki zabiera wyłącznie WYSOKOŚĆ, więc
+  liczy się `clientHeight - visualViewport.height` i nic poza tym.
+- **W aplikacji z ekranu początkowego poprawka położenia paska jest WYŁĄCZONA** —
+  tam nie ma paska przeglądarki, więc nie ma czego kompensować, a każde liczenie to
+  tylko okazja do usterki. Zostaje samo chowanie paska pod klawiaturę.
 - **Trzy piętra okien:** 50 okno z ekranu, 60 (`modal-over`) okno otwierane z innego okna,
   70 (`modal-top`) decyzja. Piętro wynika z tego, SKĄD okno się otwiera. Bez tego arkusz
   wyboru otwierał się pod arkuszem, który go wywołał.

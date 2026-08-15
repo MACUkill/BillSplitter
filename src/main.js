@@ -754,6 +754,7 @@
             if ((window.scrollY || document.documentElement.scrollTop || 0) > 0) {
                 try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (_) { window.scrollTo(0, 0); }
             }
+            refreshDeckPin();
         };
 
         const setupDeckNav = () => {
@@ -791,6 +792,17 @@
         // więc poprawka wychodzi zerowa i nic się nie dzieje. To jest w porządku:
         // ten kod ma naprawiać Safari, a nie zastępować `env(safe-area-inset-bottom)`.
         const KEYBOARD_MIN_PX = 140; // mniej to pasek przeglądarki, więcej to klawiatura
+        const DECK_LIFT_MAX_PX = 120; // wyżej pasek nawigacji nie ma prawa wjechać nigdy
+        const DECK_LIFT_MIN_PX = 8;   // niżej to szum pomiaru, nie pasek przeglądarki
+
+        // Aplikacja dodana do ekranu początkowego NIE MA paska przeglądarki, więc nie ma
+        // też czego kompensować. Sprawdzamy to raz i wtedy poprawka jest wyłączona
+        // w całości — zostaje wyłącznie chowanie paska pod klawiaturę.
+        const isStandaloneApp = () =>
+            !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+            || window.navigator.standalone === true;
+
+        let refreshDeckPin = () => {};
 
         const pinDeckToVisualViewport = () => {
             const vv = window.visualViewport;
@@ -800,12 +812,26 @@
             let queued = false;
             const apply = () => {
                 queued = false;
-                const layout = document.documentElement.clientHeight;
-                const covered = layout - (vv.height + vv.offsetTop);
+                // TU BYŁ BŁĄD, KTÓRY POSŁAŁ PASEK W GÓRĘ PRZY CIĄGNIĘCIU STRONY W DÓŁ.
+                //
+                // Poprzednia wersja liczyła `clientHeight - (vv.height + vv.offsetTop)`.
+                // `offsetTop` nie mówi jednak nic o pasku przeglądarki — to przesunięcie
+                // widocznego obszaru wewnątrz układu, które iOS zmienia przy rozciąganiu
+                // strony na końcu przewijania (gumka) i przy przybliżaniu. Przy ciągnięciu
+                // w dół schodzi poniżej zera, więc różnica rosła razem z siłą gestu
+                // i pasek odlatywał tym wyżej, im mocniej ktoś pociągnął.
+                //
+                // Pasek przeglądarki zabiera wyłącznie WYSOKOŚĆ, więc liczy się różnica
+                // wysokości i nic poza nią.
+                const covered = document.documentElement.clientHeight - vv.height;
+
                 // Klawiatura to inna sprawa niż pasek przeglądarki: tam pasek nawigacji
                 // ma zejść z drogi, a nie wjechać nad nią i przykryć pole wpisywania.
                 const keyboard = covered >= KEYBOARD_MIN_PX;
-                const lift = !keyboard && covered > 0 ? Math.round(covered) : 0;
+                let lift = 0;
+                if (!keyboard && !isStandaloneApp() && covered >= DECK_LIFT_MIN_PX) {
+                    lift = Math.min(Math.round(covered), DECK_LIFT_MAX_PX);
+                }
                 deck.style.setProperty('--deck-lift', `${lift}px`);
                 deck.classList.toggle('deck-keyboard', keyboard);
             };
@@ -819,7 +845,12 @@
 
             vv.addEventListener('resize', schedule);
             vv.addEventListener('scroll', schedule);
+            window.addEventListener('resize', schedule);
             window.addEventListener('orientationchange', schedule);
+            // Zmiana zakładki albo ekranu też przelicza poprawkę. Bez tego wartość
+            // policzona w chwili gestu potrafiła zostać na pasku, gdy żadne kolejne
+            // zdarzenie widocznego obszaru już nie przyszło — i pasek zostawał wyżej.
+            refreshDeckPin = schedule;
             apply();
         };
 
@@ -839,6 +870,10 @@
                 targetScreen.classList.add('screen-in');
             }
             currentScreenName = screenName;
+            // Każde wejście na ekran przelicza poprawkę położenia paska: inaczej wartość
+            // policzona przy poprzednim geście zostawała i pasek stał wyżej niż powinien
+            // (zgłoszenie: „w sekcji Profil nawigacja jest lekko wyżej").
+            refreshDeckPin();
             // Kontekstowy przycisk pomocy „?" — widoczny tylko na ekranach z treścią.
             const fab = document.getElementById('help-fab');
             if (fab) fab.classList.toggle('hidden', !HELP_CONTENT[screenName]);
