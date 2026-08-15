@@ -33,7 +33,34 @@
    pod paskiem nawigacji"). Styl bez warstwy wygrywa z każdą warstwą, niezależnie od
    kolejności. Ta sama pułapka zabiła wcześniej `padding-bottom` na `.sheet`. */
 #app-container {
+  /* GÓRA: `viewport-fit=cover` wpuszcza treść POD wcięcie i pasek stanu iPhone'a.
+     To jest cena tego atrybutu i trzeba ją zapłacić po drugiej stronie, inaczej nazwa
+     grupy i przyciski w nagłówku wjeżdżają pod zegarek — dokładnie to zgłosił właściciel
+     na iPhonie 12 (usterka wprowadzona razem z `viewport-fit`, nie wcześniejsza).
+     Do tego dochodzi `apple-mobile-web-app-status-bar-style: black-translucent`
+     w znacznikach, które w zainstalowanej aplikacji też wsuwa treść pod pasek stanu. */
+  padding-top: calc(1rem + env(safe-area-inset-top));
   padding-bottom: calc(7rem + env(safe-area-inset-bottom));
+}
+
+/* Boki też: w orientacji poziomej wcięcie zjada lewą albo prawą krawędź. Pion jest
+   sceną podstawową, ale ekran obrócony nie ma prawa ucinać kwot. */
+@supports (padding: max(0px)) {
+  #app-container {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+}
+
+/* Pasek offline jest przyklejony do GÓRY ekranu, więc jego treść też musi zejść
+   spod wcięcia — inaczej komunikat o braku sieci czyta się spod zegarka. */
+#offline-banner {
+  padding-top: calc(0.5rem + env(safe-area-inset-top));
+}
+
+/* Odsunięcie treści spod paska offline liczy się razem z wcięciem, bo pasek urósł. */
+body:has(#offline-banner:not(.hidden)) #app-container {
+  padding-top: calc(4.25rem + env(safe-area-inset-top));
 }
 
 /* ==========================================================================
@@ -119,11 +146,9 @@
   }
 
 
-  /* Pasek offline jest przyklejony do góry, więc treść musi mu ustąpić miejsca —
-     inaczej zakrywa nagłówek ekranu zamiast go uzupełniać. */
-  body:has(#offline-banner:not(.hidden)) #app-container {
-    padding-top: 3.25rem;
-  }
+  /* Odsunięcie treści spod paska offline mieszka POZA warstwami, razem z resztą
+     odstępów liczonych z `env()` — patrz komentarz przy `#app-container`. Reguła
+     wpisana tutaj przegrywałaby z klasą `p-4` w znacznikach. */
 
   button, [role='button'], a.btn {
     touch-action: manipulation;
@@ -167,6 +192,54 @@
     background-color: rgb(var(--surface-2));
     border-radius: 1.25rem;
   }
+
+  /* --- ZNAK FIRMOWY -------------------------------------------------------
+     Koń trojański plus logotyp „Bill" + „iada". Nazwa łączy rachunek z Iliadą,
+     więc znak idzie za nazwą — mechanikę produktu niesie żywy paragon w środku.
+
+     BARWY TU NIE IDĄ ZA MOTYWEM i to jest jawny wyjątek od reguły rozdziału kolorów.
+     Limonka na jasnym podłożu ma kontrast około 1,5:1, czyli jest nieczytelna, a biel
+     na jasnym tle nie istnieje. Znak firmowy jest jedyną rzeczą w tej aplikacji ze
+     stałymi barwami niezależnymi od motywu — bo tym właśnie jest znak firmowy.
+     Dlatego logotyp zawsze siedzi we własnym ciemnym bloku.
+
+     Kolor bloku to `#21242B`, czyli DOKŁADNIE tło rysunku. Dzięki temu kwadrat obrazka
+     wtapia się w pigułkę i nie widać, że to dwa osobne przedmioty. */
+  .brand-lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 1rem 0.375rem 0.375rem;
+    border-radius: 999px;
+    background-color: #21242B;
+  }
+
+  .brand-lockup img {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+
+  /* Logotyp idzie krojem kwot (Bricolage Grotesque), więc nie wprowadza do aplikacji
+     dziewiątego stopnia ani drugiego kroju. Wersaliki są tu zakazane tak samo jak
+     wszędzie indziej — nazwa pisze się tak, jak się ją wymawia. */
+  .wordmark {
+    font-family: 'Bricolage Grotesque Variable', 'Archivo Variable', system-ui, sans-serif;
+    font-size: 1.25rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    color: #FFFFFF;
+    white-space: nowrap;
+  }
+
+  .wordmark-bill { color: #C6F03A; }
+
+  /* Wersja duża — ekran wczytywania, gdzie znak jest jedyną treścią. */
+  .brand-lockup-lg { gap: 0.75rem; padding: 0.5rem 1.375rem 0.5rem 0.5rem; }
+  .brand-lockup-lg img { width: 3.25rem; height: 3.25rem; }
+  .brand-lockup-lg .wordmark { font-size: 1.875rem; }
 
   /* --- KWOTA --------------------------------------------------------------
      Liczba, po którą ludzie tu przychodzą. Grosze cichsze od złotówek: złotówki
@@ -371,8 +444,65 @@
      Współbieżność przestaje być obietnicą w opisie i staje się obrazem. */
   .receipt {
     background-color: rgb(var(--surface));
-    border-radius: 1.5rem;
+    /* Dolne narożniki proste, bo pod spodem doklejamy ząbki (`.receipt-tear`).
+       Zaokrąglenie zostawiłoby między nimi widoczny uskok. */
+    border-radius: 1.5rem 1.5rem 0 0;
     overflow: hidden;
+  }
+
+  /* ZĄBKOWANA KRAWĘDŹ — oderwany paragon.
+     Zgłoszenie właściciela: pozycje czytają się jak luźne kafelki, a nie jak część
+     rachunku. Ząbki mówią to jednym kształtem, bez ani jednego słowa i bez nowego
+     koloru: blok pozycji JEST wydrukiem, który ktoś oderwał.
+
+     Osobny element, a nie maska na samej karcie, bo maska skasowałaby jej cień —
+     a cień jest tym, co odróżnia kartę od podłoża w motywie jasnym. Tutaj cień nie
+     jest potrzebny: pasek ząbków leży bezpośrednio pod kartą i czyta się jako jej
+     dalszy ciąg. */
+  .receipt-tear {
+    height: 0.4375rem;
+    background-color: rgb(var(--surface));
+    /* Stożkowy gradient zaczepiony na dolnej krawędzi wycina trójkąt w każdym kaflu
+       o szerokości 0,875 rem. Powtórzony w poziomie daje regularne ząbki.
+       Ząbek jest niski i gęsty świadomie: ma się czytać jako oderwany papier, a nie
+       jako korona. Wysoki ząbek przy trzech pozycjach zaczyna być ozdobą. */
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 0.875rem 100% repeat-x;
+    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 0.875rem 100% repeat-x;
+  }
+
+  /* Przeglądarka bez masek dostaje po prostu prostą krawędź — paragon zostaje
+     paragonem dzięki wierszom i włoskom, ząbki są dodatkiem, nie warunkiem. */
+  @supports not ((-webkit-mask: conic-gradient(#000, #000)) or (mask: conic-gradient(#000, #000))) {
+    .receipt-tear { display: none; }
+    .receipt { border-radius: 1.5rem; }
+  }
+
+  /* ZNACZNIK „TO MOJE" przy każdej linii paragonu.
+     Do 2026-08-15 linia, której nikt nie wziął, nie mówiła NICZYM, że da się ją wziąć —
+     dowiadywało się o tym dopiero po stuknięciu. Puste kółko mówi to, zanim ktokolwiek
+     dotknie ekranu, i jest dokładnie tym samym znacznikiem, co przy wyborze osób
+     (`person-row-check`), więc nie dokłada do aplikacji nowego języka.
+
+     Wypełnia się LIMONKĄ, nie atramentem jak przy wyborze osób: na paragonie limonka
+     znaczy „to jest twoje" i tak samo barwi całą linię. */
+  .pick-mark {
+    flex-shrink: 0;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    border: 2px solid rgb(var(--ink) / 0.22);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    color: transparent;
+    transition: background-color 160ms ease-out, border-color 160ms ease-out, color 160ms ease-out;
+  }
+
+  .receipt-line-mine .pick-mark {
+    background-color: rgb(var(--brand));
+    border-color: rgb(var(--brand));
+    color: rgb(var(--brand-ink));
   }
 
   .receipt-line {
@@ -707,29 +837,42 @@
      bez niego szary pasek czytał się jak podpis, a nie jak przycisk. Znacznik
      `list-style: none` zdejmuje systemowy trójkącik, który wyglądał inaczej
      w każdej przeglądarce. */
+  /* WYGLĄD IDENTYCZNY Z `.settings-row` i to jest celowe. Oba są tym samym rodzajem
+     rzeczy: cichym wierszem, który prowadzi dalej. Do 2026-08-15 różniły się stopniem
+     pisma (0,8125 rem kontra 1 rem), wagą (700 kontra 500) i tonem (ink-2 kontra
+     dziedziczony), więc „Jeszcze 3 przelewy w grupie" i „Rejestr wpłat" stały pod sobą
+     w tej samej kolumnie i wyglądały na dwa różne systemy. Zgłoszenie właściciela.
+     Różnica została tam, gdzie coś znaczy: chevron w dół rozwija w miejscu, chevron
+     w prawo otwiera osobne miejsce. */
   .settle-others-summary {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    min-height: 2.75rem;
-    padding: 0 0.875rem;
+    gap: 0.75rem;
+    width: 100%;
+    min-height: 3rem;
+    padding: 0.75rem 1rem;
     border-radius: theme('borderRadius.block');
     background-color: rgb(var(--surface-2));
-    color: rgb(var(--ink-2));
-    font-size: 0.8125rem;
-    font-weight: 700;
+    color: inherit;
+    font-size: 1rem;
+    font-weight: 500;
+    text-align: left;
     cursor: pointer;
     user-select: none;
     list-style: none;
-    transition: background-color 160ms ease-out;
+    transition: background-color 160ms ease-out, transform 160ms cubic-bezier(0.2, 0, 0, 1);
   }
+  .settle-others-summary:active { transform: scale(0.99); }
   .settle-others-summary::-webkit-details-marker { display: none; }
   .settle-others-summary:active { background-color: rgb(var(--ink) / 0.10); }
 
+  /* Chevron ma ten sam ton i stopień, co strzałka w `.settings-row-value` — inaczej
+     dwa wiersze o tej samej roli różniłyby się już tylko znakiem po prawej. */
   .settle-others-chevron {
     flex-shrink: 0;
-    font-size: 0.6875rem;
-    opacity: 0.7;
+    font-size: 0.875rem;
+    color: rgb(var(--ink-3));
+    opacity: 1;
     transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
   }
   details[open] > .settle-others-summary .settle-others-chevron,
@@ -759,13 +902,19 @@
     position: fixed;
     left: 50%;
     transform: translateX(-50%);
-    /* WYSOKOŚĆ NAD PASKIEM GESTÓW. 0,875 rem wystarczało na telefonie z przyciskiem
-       Home; na iPhonie z paskiem gestów pasek nawigacji siadał praktycznie na nim
-       i stuknięcie w skrajną zakładkę bywało wyjściem do ekranu początkowego.
-       Teraz odstęp to 1,5 rem PONAD paskiem systemu, a nie zamiast niego —
-       `env(safe-area-inset-bottom)` musi mieć wartość, stąd `viewport-fit=cover`
-       w `index.html`. */
-    bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    /* WYSOKOŚĆ NAD PASKIEM GESTÓW — `max()`, nie `calc()` z dodawaniem.
+       Powód jest konkretny: w Safari na iPhonie `env(safe-area-inset-bottom)` NIE JEST
+       STAŁE. Przy rozwiniętym pasku adresu wynosi 0 (bo pasek i tak zasłania dół),
+       a po jego zwinięciu skacze na 34 px. Przy zapisie `calc(1,5rem + env(...))`
+       pasek nawigacji przesuwał się o całe 34 px w chwili, gdy przeglądarka chowała
+       swój pasek — a przełączenie zakładki przewija stronę na górę, więc dokładnie
+       wtedy. Stąd zgłoszenie „nawigacja zmienia pozycję przy przełączaniu zakładek".
+
+       `max()` bierze większą z dwóch wartości: 24 px własnego odstępu albo wysokość
+       paska gestów. Skok schodzi z 34 px do 10 px, a w aplikacji zainstalowanej na
+       ekranie początkowym (gdzie nie ma paska adresu) wcięcie jest stałe i pasek
+       nie rusza się w ogóle. */
+    bottom: max(1.5rem, env(safe-area-inset-bottom));
     z-index: 40;
     transition: transform 220ms cubic-bezier(0.2, 0, 0, 1), opacity 160ms ease-out;
     display: flex;
@@ -1271,11 +1420,22 @@
      jednym stuknięciem — zbyt tanio jak na „zniknij mi to z ekranu". Teraz kafelek
      przesuwa się palcem w lewo i dopiero wtedy odsłania kosz. Gest jest odwracalny:
      puszczenie przed połową drogi zwija kafelek z powrotem. */
+  /* CZERWIEŃ SIEDZI TYLKO POD KOSZEM, nie pod całym wierszem.
+     Wcześniej całe podłoże wiersza było czerwone, a kafelek pokoju je zasłaniał —
+     rozwiązanie kruche z dwóch powodów naraz i oba zgłosił właściciel:
+       1. Na krawędziach prześwitywał czerwony rąbek. Kafelek i podłoże miały ten sam
+          promień 24 px, a wygładzanie krawędzi nie daje dwóch identycznych łuków —
+          piksel różnicy wystarczy, żeby zobaczyć kolor spod spodu.
+       2. Po stuknięciu kafelek kurczy się do 97 % (odzew dotknięcia) i odsłaniał
+          czerwień na całym obwodzie.
+     Teraz podłoże jest przezroczyste, więc pod kafelkiem nie ma czego prześwitywać,
+     a czerwień pojawia się dopiero tam, gdzie faktycznie coś znaczy: pod koszem,
+     który odsłania gest. */
   .room-swipe {
     position: relative;
     overflow: hidden;
     border-radius: 1.5rem;
-    background-color: rgb(var(--owe));
+    background-color: transparent;
     touch-action: pan-y;
   }
 
@@ -1289,17 +1449,35 @@
     align-items: center;
     justify-content: center;
     border: none;
-    background: none;
+    /* Kosz nachodzi lewą krawędzią pod kafelek, żeby przy odsłanianiu nie było między
+       nimi szpary: czerwień ma wychodzić spod kafelka, a nie stać obok. */
+    padding-left: 1.5rem;
+    margin-left: -1.5rem;
+    border-radius: 1.5rem;
+    background-color: rgb(var(--owe));
     color: rgb(255 255 255);
     font-size: 1.0625rem;
   }
 
   .room-swipe-face {
     position: relative;
+    /* Kafelek MUSI mieć własne, nieprzezroczyste tło i ten sam promień, co podłoże:
+       to on zasłania kosz w stanie spoczynku. `card` daje jedno i drugie, a ta
+       deklaracja jest asekuracją, gdyby kiedyś zmienił się zestaw klas w szablonie. */
+    border-radius: 1.5rem;
     transition: transform 220ms cubic-bezier(0.2, 0, 0, 1);
     will-change: transform;
   }
   .room-swipe-face.is-dragging { transition: none; }
+
+  /* Odzew dotknięcia na tym kafelku NIE kurczy go, tylko przyciemnia. Kurczenie
+     odsłaniało kosz spod spodu, czyli wciśnięcie wyglądało jak początek kasowania.
+     Reguła musi być bardziej szczegółowa niż `.tap:active`, stąd dwie klasy. */
+  .room-swipe-face.tap:active {
+    transform: none;
+    filter: brightness(0.94);
+  }
+  :root[data-theme='dark'] .room-swipe-face.tap:active { filter: brightness(1.18); }
 
   /* --- WYSZUKIWANIE OSOBY -------------------------------------------------
      Przy grupie dwunastu do dwudziestu pięciu osób (kryterium projektowe z PRODUCT.md)

@@ -1,9 +1,9 @@
 {
-  "name": "billyada",
+  "name": "billiada",
   "private": true,
   "version": "2.0.0",
   "type": "module",
-  "description": "Billyada: rozliczenia ze znajomymi (V2)",
+  "description": "Billiada: rozliczenia ze znajomymi (V2)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

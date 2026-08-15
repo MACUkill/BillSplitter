@@ -189,15 +189,20 @@ za pierwszym razem. Dynamiczny manifest przestaje być potrzebny.
 
 ## Brand Commitments
 
-- Nazwa produktu to **Billyada** (decyzja właściciela 2026-08-15). Punkt jest ZAMKNIĘTY;
+- Nazwa produktu to **Billiada** (decyzja właściciela 2026-08-15). Punkt jest ZAMKNIĘTY;
   wcześniejsze ustalenie z 2026-08-04, że nazwa musi być angielska, jest tym samym
   nieaktualne — właściciel wybrał inaczej i to jego wybór.
   Nazwa siedzi w `index.html`, `public/manifest.json`, `public/sw.js`, `package.json`
   i tekstach pomocy. Przedrostek `billsplitter_` w kluczach `localStorage` **zostaje
   celowo**: to jedyny ślad po pokojach na urządzeniu, a jego zmiana wyczyściłaby listę
   pokoi każdemu, kto już aplikacji używa.
-- Znak: **rachunek przedarty na pół**, limonka `#C6F03A` na atramencie `#0E0F13`.
-  Źródło w `public/icons/icon.svg`, rasteryzacja `node tools/make-icons.mjs`.
+- Znak: **koń trojański** w limonce na atramencie, rysunek właściciela. Nazwa łączy
+  rachunek z Iliadą, więc znak idzie za nazwą, a nie za mechaniką produktu.
+  Źródło `logo/billiada-logo.png` (600 px), skalowanie `node tools/make-icons.mjs`.
+  Sześćset pikseli wystarcza na wszystko, co robi aplikacja w sieci; wydanie natywne
+  poprosi kiedyś o 1024 px albo o plik wektorowy.
+- Logotyp: **Bill** w limonce marki, **iada** w bieli, krój Bricolage Grotesque (ten sam,
+  co kwoty). Stoi zawsze na ciemnym podłożu, bo limonka na jasnym tle jest nieczytelna.
 - Język interfejsu: polski. Redesign ma zostawić UI gotowy na tłumaczenie (teksty
   wydzielone, layout znoszący dłuższe stringi), ale **druga wersja językowa nie wchodzi
   do zakresu tego redesignu**.

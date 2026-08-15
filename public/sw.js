@@ -1,4 +1,4 @@
-// Billyada: service worker (Faza 6.1)
+// Billiada: service worker (Faza 6.1)
 // Offline app-shell przez runtime caching (bez precache-manifestu — Vite hashuje nazwy).
 // Strategia: network-first dla nawigacji (zawsze świeża wersja gdy online, fallback offline),
 //            cache-first + odświeżenie w tle (stale-while-revalidate) dla statycznych zasobów.
@@ -25,7 +25,7 @@ self.addEventListener('push', (event) => {
   let d = {};
   try { d = event.data ? event.data.json() : {}; } catch (_) { d = {}; }
   const payload = d.data || d; // FCM data-only pakuje treść w `data`
-  const title = payload.title || 'Billyada';
+  const title = payload.title || 'Billiada';
   const body = payload.body || 'Masz nowe przypomnienie.';
   event.waitUntil(self.registration.showNotification(title, {
     body,

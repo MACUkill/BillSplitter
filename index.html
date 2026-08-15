@@ -11,15 +11,19 @@
          z której trudno wrócić. iOS ignoruje ten atrybut od dziesiątej wersji, więc
          drugą warstwą jest `touch-action` w arkuszu i blokada gestu w `main.js`. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Billyada</title>
-    <link rel="icon" href="/icons/icon-16x16.png">
+    <title>Billiada</title>
+    <link rel="icon" sizes="32x32" href="/icons/icon-32x32.png">
+    <link rel="icon" sizes="16x16" href="/icons/icon-16x16.png">
     <link rel="manifest" href="/manifest.json">
-    <!-- Kolor paska systemowego idzie za podłożem aplikacji, żeby ekran nie miał szwu. -->
-    <meta name="theme-color" content="#F5F6F8" media="(prefers-color-scheme: light)">
-    <meta name="theme-color" content="#0C0D11" media="(prefers-color-scheme: dark)">
+    <!-- Kolor paska systemowego. Motywem DOMYŚLNYM jest ciemny (decyzja właściciela
+         2026-08-15), więc `theme-color` bez zapytania medialnego też jest ciemny —
+         to on obowiązuje, dopóki ktoś nie przestawi motywu ręcznie. Wariant jasny
+         zostaje pod zapytaniem, bo przeglądarka i tak wybierze go dopiero wtedy,
+         gdy aplikacja realnie stoi w motywie jasnym (patrz `applyTheme` w main.js). -->
+    <meta name="theme-color" content="#0C0D11">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Billyada">
+    <meta name="apple-mobile-web-app-title" content="Billiada">
     <link rel="apple-touch-icon" href="/icons/icon-180x180.png">
     <!-- Tailwind nie przychodzi już z sieci — jest kompilowany do arkusza w buildzie
          (src/tailwind.css → import w main.js). Dzięki temu produkcja nie zależy od cudzego
@@ -36,8 +40,21 @@
            arkusz w jednym miejscu, a nawigacja i tak schodzi z drogi (patrz `.deck`). */
         .modal { display: none; z-index: 50; }
         .modal.active { display: flex; }
-        /* Okno kasowania zdjęcia otwiera się NAD podglądem zdjęcia. */
-        .modal-top { z-index: 60; }
+
+        /* TRZY PIĘTRA OKIEN i ani jednego więcej. Wszystkie okna miały wcześniej tę samą
+           warstwę, więc o tym, które jest na wierzchu, decydowała KOLEJNOŚĆ W DOKUMENCIE.
+           Efekt zgłoszony przez właściciela: arkusz wyboru sposobu płatności otwierał się
+           POD arkuszem „Jak Ci oddać pieniądze", bo stoi w znacznikach wcześniej — czyli
+           wyboru nie dało się dokonać w ogóle.
+
+           50  okno podstawowe, otwierane z ekranu
+           60  okno otwierane Z INNEGO OKNA (wybór jednokrotny)
+           70  decyzja: potwierdzenia i pytania, na które trzeba odpowiedzieć
+
+           Nowe okno dostaje piętro według tego, SKĄD się otwiera, a nie według tego,
+           jak bardzo jest ważne. */
+        .modal-over { z-index: 60; }
+        .modal-top { z-index: 70; }
         /* Suma kontrolna to jedyne miejsce, w którym aplikacja mówi „temu rachunkowi
            można ufać": zgodność zieleń, rozbieżność czerwień — pieniądze, których
            nikt nie przypisał, to ten sam rodzaj problemu co dług. */
@@ -138,9 +155,15 @@ the verdict, and DESIGN.md
          wysokość paska gestów przez `env(safe-area-inset-bottom)`. -->
     <div id="app-container" class="max-w-4xl mx-auto p-4 md:p-8">
 
-        <div id="loading-screen" class="fixed inset-0 bg-bg flex flex-col items-center justify-center z-50">
+        <!-- Ekran wczytywania jest jedynym miejscem, w którym znak firmowy dostaje całą
+             uwagę: nic innego się tu nie dzieje, a czekanie ma mieć twarz. -->
+        <div id="loading-screen" class="fixed inset-0 bg-bg flex flex-col items-center justify-center z-50 gap-6">
+            <span class="brand-lockup brand-lockup-lg">
+                <img src="/icons/icon-96x96.png" width="96" height="96" alt="" aria-hidden="true">
+                <span class="wordmark"><span class="wordmark-bill">Bill</span>iada</span>
+            </span>
             <div class="loader"></div>
-            <p class="mt-4 font-bold text-ink-3">Wczytywanie</p>
+            <p class="sr-only">Wczytywanie</p>
         </div>
 
         <!-- EKRAN STARTOWY.
@@ -152,6 +175,13 @@ the verdict, and DESIGN.md
         <div id="start-screen" class="hidden">
             <div class="max-w-md mx-auto">
                 <div class="mb-8">
+                    <!-- Znak firmowy stoi TYLKO tutaj i na ekranie wczytywania. W pokoju
+                         ważniejsza jest nazwa pokoju, a logo na każdym ekranie to szyld,
+                         nie produkt. -->
+                    <span class="brand-lockup mb-5">
+                        <img src="/icons/icon-96x96.png" width="96" height="96" alt="" aria-hidden="true">
+                        <span class="wordmark"><span class="wordmark-bill">Bill</span>iada</span>
+                    </span>
                     <h1 class="font-display text-5xl font-extrabold tracking-tight leading-none mb-3">Podziel rachunek</h1>
                     <p class="text-ink-2 text-lg">Zrób zdjęcie paragonu, a ekipa odklika swoje pozycje. Bez kont i bez logowania.</p>
                 </div>
@@ -524,22 +554,20 @@ the verdict, and DESIGN.md
                 <p id="bill-mode-hint" class="text-sm text-ink-2 mt-3"></p>
             </section>
 
-            <!-- POZYCJE — bohater tego ekranu i znak całej aplikacji.
-                 Stuknięcie w linię dopisuje mnie; twarze ekipy lądują na liniach na żywo. -->
-            <section id="items-section" class="mb-3 mt-6">
-                <div id="items-section-header"></div>
-                <div id="shared-costs-list" class="mb-3"></div>
-                <button id="add-shared-cost-btn" class="btn btn-dark w-full">Dodaj pozycję</button>
-            </section>
+            <!-- TWOJA CZĘŚĆ — stoi TU, zaraz pod decyzją o podziale, a nie na dole ekranu.
+                 Kolejność idzie za tym, po co ktoś wchodzi na rachunek: najpierw fakty
+                 o rachunku (kwota, płatnik), potem kształt podziału, a zaraz potem MOJE
+                 zadanie. Do 2026-08-15 własna kwota leżała pod paragonem i wszystkimi
+                 pozycjami, więc żeby zrobić swoje, trzeba było najpierw minąć cudze.
 
-            <!-- Koszt wspólny działa w OBU trybach: napiwek dzieli się po równo niezależnie
-                 od tego, czy pozycje są rozpisane. Dlatego stoi poza sekcją pozycji. -->
-            <section class="mb-3 mt-3">
-                <button id="add-global-cost-btn" class="btn btn-quiet w-full">Dodaj koszt wspólny</button>
-            </section>
+                 Karta niesie zadanie i JEDNĄ liczbę (Twój udział). Pełna rozpiska
+                 „z czego się składa" chowa się w zwijanym wierszu: suma nad rzeczami,
+                 które ją tworzą, jest w porządku, ale rozpisana suma nad nimi już nie. -->
+            <div id="my-participant-card" class="mb-3 mt-6"></div>
 
-            <!-- PARAGON — źródło pozycji. Odczyt modelem stoi tuż przy zdjęciach, bo to
-                 jeden ruch: zrób zdjęcie, odczytaj, zaakceptuj. -->
+            <!-- PARAGON — źródło pozycji, więc stoi NAD nimi. Do 2026-08-15 był pod listą
+                 pozycji, czyli pod czymś, co z niego powstaje: przy pierwszym rachunku
+                 kolejność ekranu przeczyła kolejności czynności. -->
             <section id="receipt-photos-section" class="mb-3 mt-6">
                 <h3 class="font-display text-xl font-extrabold tracking-tight mb-1">Paragon</h3>
                 <!-- Bez tego zdania odczyt paragonu był funkcją dla wtajemniczonych:
@@ -569,10 +597,24 @@ the verdict, and DESIGN.md
                 </div>
             </section>
 
-            <div id="global-costs-list" class="space-y-2 mb-3"></div>
+            <!-- POZYCJE — bohater tego ekranu i znak całej aplikacji.
+                 Stuknięcie w linię dopisuje mnie; twarze ekipy lądują na liniach na żywo.
+                 Ząbkowana krawędź pod listą mówi jednym kształtem, że to wydruk należący
+                 do rachunku, a nie luźna lista kafelków. -->
+            <section id="items-section" class="mb-3 mt-6">
+                <div id="items-section-header"></div>
+                <div id="shared-costs-list"></div>
+                <div id="receipt-tear" class="receipt-tear hidden" aria-hidden="true"></div>
+                <button id="add-shared-cost-btn" class="btn btn-dark w-full mt-3">Dodaj pozycję</button>
+            </section>
 
-            <!-- TWÓJ UDZIAŁ — własna kwota stoi osobno od reszty ekipy, bo tylko ją edytujesz. -->
-            <div id="my-participant-card" class="mb-3 mt-6"></div>
+            <!-- KOSZTY WSPÓLNE — działają w OBU trybach podziału: napiwek dzieli się po
+                 równo niezależnie od tego, czy pozycje są rozpisane. Lista stoi przy
+                 przycisku, który ją zapełnia. -->
+            <section class="mb-3 mt-6">
+                <div id="global-costs-list" class="space-y-2 mb-3"></div>
+                <button id="add-global-cost-btn" class="btn btn-quiet w-full">Dodaj koszt wspólny</button>
+            </section>
 
             <!-- UCZESTNICY — ZWINIĘCI. Na ekranie rachunku pracujesz nad swoją częścią;
                  rozpiska całej ekipy przy dwunastu osobach zajmowała więcej miejsca niż
@@ -718,7 +760,7 @@ the verdict, and DESIGN.md
 
     <!-- WYBÓR Z LISTY — jeden arkusz obsługujący każdy wybór jednokrotny
          (waluta, płatnik). Treść wstawia `openChoiceSheet`. -->
-    <div id="choice-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+    <div id="choice-modal" class="modal modal-over fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet w-full max-w-md">
             <div class="sheet-head">
                 <div class="sheet-grip" aria-hidden="true"></div>
@@ -933,10 +975,10 @@ the verdict, and DESIGN.md
          WYBÓR ANIMACJI WEJŚCIA: klasa `anim-reveal` albo `anim-sprout`. Obie są
          zdefiniowane w `src/tailwind.css`, więc powrót do poprzedniej to podmiana
          jednego słowa TUTAJ i nic więcej.
-           anim-reveal — rozwinięcie z koła, okrąg rośnie z punktu, w którym stoi [+]
-                         (włączone 2026-08-15, wybór właściciela)
-           anim-sprout — arkusz wyrasta nad paskiem (poprzednie ustawienie) -->
-    <div id="new-bill-modal" class="modal keeps-deck anim-reveal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+           anim-sprout — arkusz wyrasta nad paskiem (WŁĄCZONE, wybór właściciela
+                         po obejrzeniu obu na telefonie)
+           anim-reveal — rozwinięcie z koła, okrąg rośnie z punktu, w którym stoi [+] -->
+    <div id="new-bill-modal" class="modal keeps-deck anim-sprout fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet w-full max-w-lg">
             <div class="sheet-head">
                 <div class="sheet-grip" aria-hidden="true"></div>
@@ -1151,7 +1193,7 @@ the verdict, and DESIGN.md
          w tło też nie zamyka (patrz CONFIRM_MODALS w main.js). Z takiej decyzji wychodzi
          się wyłącznie wskazując odpowiedź, a brak uchwytu mówi to, zanim ktokolwiek
          zdąży spróbować zsunąć okno palcem. -->
-    <div id="confirm-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+    <div id="confirm-modal" class="modal modal-top fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet sheet-confirm w-full max-w-md text-center">
             <div class="sheet-head">
                 <div class="sheet-head-row justify-center">
@@ -1166,7 +1208,7 @@ the verdict, and DESIGN.md
         </div>
     </div>
 
-    <div id="delete-confirm-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+    <div id="delete-confirm-modal" class="modal modal-top fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet sheet-confirm w-full max-w-md text-center">
             <div class="sheet-head">
                 <div class="sheet-head-row justify-center">
@@ -1193,7 +1235,7 @@ the verdict, and DESIGN.md
          Dlatego jest to okno DECYZJI: bez uchwytu, bez krzyżyka, bez zamykania
          kliknięciem w tło. Odpowiedź „Nie" jest pełnoprawna i czyści wskazanie
          płatnika, więc nikt nie zostaje zamknięty w pytaniu bez wyjścia. -->
-    <div id="payer-claim-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+    <div id="payer-claim-modal" class="modal modal-top fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet sheet-confirm w-full max-w-md text-center">
             <div class="sheet-head">
                 <div class="sheet-head-row justify-center">
@@ -1211,7 +1253,7 @@ the verdict, and DESIGN.md
         </div>
     </div>
 
-    <div id="takeover-name-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+    <div id="takeover-name-modal" class="modal modal-top fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet sheet-confirm w-full max-w-md text-center">
             <div class="sheet-head">
                 <div class="sheet-head-row justify-center">

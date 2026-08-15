@@ -10,7 +10,7 @@ pierwszych testach na telefonie właściciela).
 
 Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kodem:
 
-- **Produkt nazywa się Billyada.** Klucze `localStorage` zostają z przedrostkiem
+- **Produkt nazywa się Billiada.** Klucze `localStorage` zostają z przedrostkiem
   `billsplitter_` i **nie wolno ich zmieniać** — to jedyny ślad po pokojach na urządzeniu.
 - **Ręczny status uczestnika nie istnieje.** Rachunek ma `splitMode` (`'even'` / `'own'`),
   a gotowość liczy `participantReady`. Wartość `not_applicable` ZOSTAJE w bazie, bo na niej
@@ -27,11 +27,22 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   wyprzewinięte poza kontener. Blok `AUDIT` w tym pliku jest szablonem znakowym: apostrof
   odwrotny w komentarzu wywala cały skrypt.
 
-- **Animacja nowego rachunku: wariant „rozwinięcie z koła"** (wybór właściciela
-  2026-08-15). Włącza ją klasa `anim-reveal` na `#new-bill-modal` w `index.html`.
-  Powrót do poprzedniego wariantu to podmiana tego jednego słowa na `anim-sprout` —
-  oba warianty stoją obok siebie w `src/tailwind.css`. Właściciel zastrzegł, że może
-  wrócić, więc **nie kasuj `anim-sprout`**.
+- **Animacja nowego rachunku: wariant „nad paskiem"** (`anim-sprout` na `#new-bill-modal`).
+  Właściciel obejrzał oba na telefonie i wybrał ten. `anim-reveal` (rozwinięcie z koła)
+  zostaje w `src/tailwind.css` jako druga opcja — **nie kasuj go**, podmiana to jedno
+  słowo w znacznikach.
+- **Odstępy od KAŻDEJ krawędzi liczą się z `env(safe-area-inset-*)`, nie tylko od dołu.**
+  `viewport-fit=cover` wpuszcza treść pod wcięcie także u góry i po bokach. Pominięcie
+  góry ucięło nagłówek na iPhonie 12.
+- **`env(safe-area-inset-bottom)` w Safari NIE JEST STAŁE**: 0 przy rozwiniętym pasku
+  adresu, 34 px po jego zwinięciu. Odległości od dolnej krawędzi bierz przez
+  `max(własny odstęp, env(...))`, nigdy przez dodawanie — inaczej wszystko, co przypięte
+  do dołu, skacze o 34 px przy każdym przewinięciu.
+- **Trzy piętra okien:** 50 okno z ekranu, 60 (`modal-over`) okno otwierane z innego okna,
+  70 (`modal-top`) decyzja. Piętro wynika z tego, SKĄD okno się otwiera. Bez tego arkusz
+  wyboru otwierał się pod arkuszem, który go wywołał.
+- **Motyw domyślny jest ciemny** i nie idzie już za ustawieniem systemu. Jasny zostaje
+  wyborem w zakładce „Ty".
 - **Sondy badające ruch muszą wyłączyć tryb ograniczonego ruchu.** Chrome bez interfejsu
   zgłasza `prefers-reduced-motion: reduce` domyślnie, więc bez
   `page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])`
@@ -81,8 +92,8 @@ wykonanie opisane w `docs/UI-UX.md` §11–§16.
 
 **Co zostaje otwarte:**
 
-1. ~~Nazwa produktu i logo~~ — **ZAMKNIĘTE 2026-08-15**: produkt nazywa się **Billyada**,
-   znak to rachunek przedarty na pół (`public/icons/icon.svg`). Wcześniejszy wymóg
+1. ~~Nazwa produktu i logo~~ — **ZAMKNIĘTE 2026-08-15**: produkt nazywa się **Billiada**,
+   znak to koń trojański (`logo/billiada-logo.png`). Wcześniejszy wymóg
    „nazwa musi być angielska" właściciel unieważnił własnym wyborem.
 2. **Font Awesome** — ikony do wymiany na własny zestaw (§6). Nie blokuje niczego.
 3. **Konta zamiast tożsamości przypiętej do urządzenia** — domknęłoby ryzyko podmiany

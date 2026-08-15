@@ -1051,7 +1051,7 @@ plus jego lista uwag. To pierwsza partia oparta na użyciu aplikacji przez czło
 a nie na przebiegu automatu, i to widać w jej charakterze: większość rzeczy nie była
 brakiem funkcji, tylko obietnicą, której interfejs nie dotrzymywał.
 
-### 19.1 Nazwa produktu: **Billyada**
+### 19.1 Nazwa produktu: **Billiada**
 
 Nazwa rozstrzygnięta przez właściciela 2026-08-15 i zamyka punkt otwarty z §2.
 Zmienione: `<title>`, `apple-mobile-web-app-title`, `manifest.json` (`name`, `short_name`,
@@ -1062,18 +1062,31 @@ Te klucze trzymają listę pokoi, motyw i szablony przypomnień na urządzeniu. 
 przedrostka wyczyściłaby listę pokoi każdemu, kto już aplikacji używa, a powrót do pokoju
 wymagałby wtedy kodu od kogoś innego. Nazwa klucza nikomu się nie wyświetla.
 
-### 19.2 Znak aplikacji
+### 19.2 Znak i logotyp
 
-`public/icons/icon.svg` jest źródłem prawdy, `node tools/make-icons.mjs` rasteryzuje go
-do pięciu rozmiarów przez puppeteera (już obecnego w repo — dokładanie `sharp` tylko dla
-ikony byłoby kosztem bez pokrycia).
+**Znak: koń trojański**, rysunek właściciela (`logo/billiada-logo.png`, 600 px,
+limonka na atramencie). Nazwa łączy rachunek z Iliadą, więc znak idzie za NAZWĄ, a nie
+za mechaniką produktu — i to jest dobra decyzja, bo mechanikę i tak niesie żywy paragon
+wewnątrz aplikacji. Wcześniejsza propozycja (rachunek przedarty na pół, generowany z SVG)
+została zastąpiona rysunkiem właściciela 2026-08-15 i usunięta z repozytorium.
 
-Znak: **rachunek przedarty na pół**. Limonkowy prostokąt przecięty ukośną szczeliną,
-obie połowy przesunięte względem siebie. Ukos, nie prosta — prosta czyta się jak znak
-równości. Przesunięcie, bo bez niego to jeden kształt z kreską w środku. Tło pełne, bez
-własnego zaokrąglenia: ikona jest maskowalna, a własny promień dałby ciemną obwódkę
-wewnątrz kształtu narzuconego przez system. Znak siedzi w środkowych 66 % kwadratu,
-czyli w strefie bezpiecznej.
+`node tools/make-icons.mjs` skaluje źródło do sześciu rozmiarów przez puppeteera (już
+obecnego w repo — dokładanie `sharp` tylko dla ikony byłoby kosztem bez pokrycia):
+16 i 32 na kartę przeglądarki, 96 do użycia w samej aplikacji, 180 dla iPhone'a,
+192 i 512 dla manifestu. Sześćset pikseli źródła wystarcza na wszystko, co robi aplikacja
+w sieci; wydanie natywne poprosi kiedyś o 1024 px albo o plik wektorowy.
+
+**Logotyp: „Bill" w limonce marki, „iada" w bieli**, krój Bricolage Grotesque — ten sam,
+którym pisane są kwoty, więc logotyp nie wprowadza do aplikacji nowego kroju.
+
+Logotyp **zawsze stoi na ciemnym podłożu** i jego barwy NIE idą za motywem. To jest jawny
+wyjątek od reguły rozdziału kolorów z `DESIGN.md`: limonka na jasnym tle ma kontrast około
+1,5:1, czyli jest nieczytelna, a biel na jasnym tle nie istnieje. Znak firmowy jest jedyną
+rzeczą w tej aplikacji, która ma stałe barwy niezależne od motywu — bo tym właśnie jest
+znak firmowy. W motywie jasnym logotyp siedzi więc we własnym ciemnym bloku.
+
+Gdzie stoi: ekran wczytywania i nagłówek ekranu startowego. Nie w pokoju — tam nazwa
+pokoju jest ważniejsza od nazwy aplikacji, a logo na każdym ekranie to szyld, nie produkt.
 
 ### 19.3 Dwie ciche awarie znalezione przy okazji
 
@@ -1294,6 +1307,122 @@ układu, który był w porządku, więc to nie jest kosmetyka narzędzia.
 
 **Uwaga dla przyszłych zmian w tym pliku:** blok `AUDIT` jest szablonem znakowym, więc
 apostrof odwrotny w komentarzu zamyka literał i wywala cały skrypt.
+
+### 19.12 Druga tura po testach na telefonie (2026-08-15, wieczór)
+
+Właściciel przeszedł aplikację jeszcze raz na iPhonie 12. Osiem zgłoszeń, z czego
+**dwa to regresje wprowadzone tego samego dnia** — warto to zapisać, bo pokazuje koszt
+zmian w warstwie systemowej.
+
+**Regresja 1: ucięta góra ekranu.** `viewport-fit=cover` wpuszcza treść pod wcięcie
+i pasek stanu. Dołożyliśmy odstęp na DOLE (pasek gestów), a zapomnieliśmy o GÓRZE, więc
+nazwa grupy i przyciski nagłówka wjechały pod zegarek. `#app-container` ma teraz
+`padding-top: calc(1rem + env(safe-area-inset-top))`, boki liczą `max()` z wcięciem
+(orientacja pozioma), a pasek offline dostał własny odstęp górny.
+
+**Regresja 2: skacząca nawigacja przy zmianie zakładki.** Dwie przyczyny naraz:
+
+1. `bottom: calc(1.5rem + env(safe-area-inset-bottom))`. W Safari na iPhonie ta wartość
+   **nie jest stała**: przy rozwiniętym pasku adresu wynosi 0, po zwinięciu skacze na
+   34 px. Zapis z dodawaniem przenosił cały skok na pasek nawigacji. Teraz
+   `bottom: max(1.5rem, env(safe-area-inset-bottom))` — skok schodzi z 34 px do 10 px,
+   a w aplikacji zainstalowanej na ekranie początkowym znika zupełnie.
+2. `showDeckView` wołało `window.scrollTo({ top: 0 })` przy KAŻDEJ zmianie zakładki,
+   także gdy strona już była na górze. Na iPhonie takie przewinięcie rozwija pasek
+   adresu, czyli samo wywołuje zmianę z punktu 1. Teraz przewijamy tylko wtedy, gdy
+   `scrollY > 0`.
+
+Sonda w emulatorze pokazywała pasek stojący w miejscu co do dziesiątej piksela —
+usterki nie dało się odtworzyć bez prawdziwego Safari. To jest granica tych narzędzi
+i warto ją pamiętać.
+
+**Prześwitujący czerwony kontener pod kafelkiem pokoju.** Podłoże wiersza było czerwone,
+a kafelek je zasłaniał. Dwa problemy naraz: wygładzanie krawędzi nie daje dwóch
+identycznych łuków przy tym samym promieniu (stąd czerwony rąbek), a odzew dotknięcia
+kurczył kafelek do 97 % i odsłaniał czerwień na całym obwodzie. Teraz podłoże jest
+przezroczyste, czerwień siedzi wyłącznie pod koszem, a kafelek pokoju na wciśnięcie
+**przyciemnia się zamiast kurczyć**.
+
+**Arkusz wyboru otwierał się POD arkuszem, z którego go wywołano.** Wszystkie okna miały
+tę samą warstwę, więc o wierzchu decydowała kolejność w znacznikach — a `choice-modal`
+stoi wcześniej niż `payment-methods-modal`. Skutek: sposobu płatności nie dało się wybrać
+w ogóle. Wprowadzone **trzy piętra okien**: 50 dla okna otwieranego z ekranu, 60 dla okna
+otwieranego z innego okna, 70 dla decyzji. Piętro wynika z tego, SKĄD okno się otwiera,
+a nie z tego, jak jest ważne.
+
+**Dwa wiersze o tej samej roli wyglądały na dwa systemy.** „Jeszcze 3 przelewy w grupie"
+(`settle-others-summary`) i „Rejestr wpłat" (`settings-row`) stały pod sobą w jednej
+kolumnie i różniły się stopniem pisma, wagą i tonem. Ujednolicone do jednego wyglądu.
+Różnica została tam, gdzie coś znaczy: chevron w dół rozwija w miejscu, chevron w prawo
+otwiera osobne miejsce.
+
+**Motyw domyślny: ciemny.** Aplikacja szła za ustawieniem systemu, więc pierwsze wejście
+u kogoś z jasnym telefonem pokazywało wersję jasną. Scena użycia to wieczór w lokalu,
+więc ciemny jest tu stanem podstawowym, nie preferencją. Jasny zostaje pełnoprawnym
+wyborem w zakładce „Ty". Nasłuch zmiany ustawienia systemowego usunięty razem
+z podążaniem za nim, a `theme-color` przestawia się teraz razem z motywem.
+
+**Animacja nowego rachunku wróciła do wariantu „nad paskiem"** (`anim-sprout`) po
+obejrzeniu obu na telefonie. `anim-reveal` zostaje w arkuszu stylów.
+
+### 19.13 Kolejność na ekranie rachunku i czytelność pozycji
+
+Rozstrzygnięte z właścicielem przed wdrożeniem.
+
+**Nowa kolejność:** pełna kwota → jak dzielimy → **Twoja część** → paragon → pozycje →
+koszty wspólne → ekipa → historia. Dwie zmiany i obie mają ten sam powód:
+
+- **Paragon nad pozycjami.** Był pod nimi, czyli pod czymś, co z niego powstaje.
+  Przy pierwszym rachunku kolejność ekranu przeczyła kolejności czynności.
+- **Twoja część zaraz pod decyzją o podziale.** Wcześniej własna kwota leżała pod
+  paragonem i wszystkimi pozycjami: żeby zrobić swoje, trzeba było najpierw minąć cudze.
+
+Karta została przy tym **rozdzielona**, i to jest sedno rozwiązania. Robiła dwie rzeczy
+naraz: była polem do wypełnienia (koszt własny) i podsumowaniem (Pozycje / Koszty wspólne
+/ Łącznie). Pole chce stać wysoko, bo to zadanie; rozpisana suma chce stać nisko, bo suma
+należy się po tym, co ją tworzy. Przeniesiona w całości pokazywałaby „Pozycje 96,00",
+zanim pozycje w ogóle pojawią się na ekranie.
+
+Teraz na wierzchu stoi zadanie plus **jedna liczba** („Twój udział"), a rozpiska chowa się
+w zwijanym „Z czego się składa". Suma nad rzeczami, które ją tworzą, jest w porządku;
+rozpisana suma nad nimi już nie.
+
+**Czytelność pozycji** — zgłoszenie „kafelki nie mówią, że można je kliknąć":
+
+1. Część wrażenia „statyczności" wynikała z martwego `:active` na iOS i zniknęła razem
+   z naprawą z §19.4. Warto to wiedzieć, zanim doda się cokolwiek nowego.
+2. **Pusty znacznik po lewej każdej linii.** To ten sam okrągły znacznik, co przy wyborze
+   osób (`person-row-check`), więc nie dokłada do aplikacji nowego języka. Puste kółko
+   mówi „to czeka na wybór", zanim ktokolwiek dotknie ekranu. Wypełnia się **limonką**,
+   nie atramentem: na paragonie limonka znaczy „to jest twoje" i tak samo barwi całą linię.
+3. **Ząbkowana krawędź pod listą** (`.receipt-tear`). Jednym kształtem, bez ani jednego
+   słowa, mówi że blok pozycji JEST wydrukiem należącym do rachunku, a nie luźną listą.
+   Osobny element, a nie maska na karcie: maska skasowałaby cień, a cień odróżnia kartę
+   od podłoża w motywie jasnym. Przeglądarka bez masek dostaje prostą krawędź.
+4. Podpis linii, której nikt nie wziął, zmienił się ze „Stuknij, jeśli to Twoje" na
+   **„Nikt nie wziął"**. Zachętę niesie teraz znacznik, a podpis może wreszcie mówić
+   o STANIE — tym samym, który liczy odznaka „2 bez wyboru" nad listą.
+
+### 19.14 Nazwa i znak: Billiada
+
+Nazwa doprecyzowana przez właściciela na **Billiada** (wcześniej przez chwilę „Billyada").
+Znak to jego własny rysunek: **koń trojański** w limonce na atramencie. Nazwa łączy
+rachunek z Iliadą, więc znak idzie za nazwą — mechanikę produktu i tak niesie żywy
+paragon w środku. Wcześniejsza propozycja (rachunek przedarty na pół, generowany z SVG)
+usunięta z repozytorium.
+
+Logotyp: **„Bill" w limonce, „iada" w bieli**, krój Bricolage Grotesque — ten sam, którym
+pisane są kwoty, więc logotyp nie wprowadza dziewiątego stopnia ani drugiego kroju.
+Stoi w ciemnej pigułce w kolorze `#21242B`, czyli dokładnie tła rysunku, więc kwadrat
+obrazka wtapia się w pigułkę.
+
+**Barwy logotypu nie idą za motywem i to jest jawny wyjątek** od reguły rozdziału kolorów:
+limonka na jasnym podłożu ma kontrast około 1,5:1, a biel na jasnym tle nie istnieje.
+Znak firmowy jest jedyną rzeczą w tej aplikacji ze stałymi barwami — bo tym właśnie jest.
+
+Logotyp stoi w dwóch miejscach: na ekranie wczytywania (jedyne miejsce, gdzie nic innego
+się nie dzieje) i w nagłówku ekranu startowego. **Nie w pokoju** — tam nazwa pokoju jest
+ważniejsza od nazwy aplikacji, a logo na każdym ekranie to szyld, nie produkt.
 
 ### 19.11 Stan audytu po partii
 

@@ -1,5 +1,5 @@
 ---
-name: Billyada
+name: Billiada
 description: Rozliczenia grupowe — jeden rachunek, który rośnie, dzielony przez całą ekipę naraz.
 colors:
   bg: "#F5F6F8"
@@ -129,15 +129,16 @@ components:
     padding: "4px 10px"
 ---
 
-# Design System: Billyada
+# Design System: Billiada
 
 > Stan na 2026-08-15. Świat przypięty referencjami właściciela z `Referencje/`.
 > Poprzedni kierunek („druk zabezpieczony": banknot, gilosz, mikrodruk, Bodoni) został
 > odrzucony w całości i jest **anty-referencją** — nic z niego nie wraca.
 >
-> Nazwa produktu **Billyada** rozstrzygnięta 2026-08-15. Znak: rachunek przedarty na pół,
-> limonka na atramencie, źródło w `public/icons/icon.svg`, rasteryzacja przez
-> `node tools/make-icons.mjs`.
+> Nazwa produktu **Billiada** rozstrzygnięta 2026-08-15 (wcześniej przez chwilę
+> „Billyada"). Znak: **koń trojański** w limonce na atramencie, rysunek właściciela.
+> Źródło `logo/billiada-logo.png` (600 px), skalowanie `node tools/make-icons.mjs`.
+> Nazwa łączy rachunek z Iliadą, więc znak idzie za NAZWĄ, a nie za mechaniką produktu.
 
 ## Overview
 
@@ -246,10 +247,17 @@ Jedna kolumna, `max-width: 56rem`, margines 16 px na telefonie. Rytm pionowy: 24
 sekcjami, 20 px w karcie, 8 px między wierszami listy. Dół dokumentu ma 112 px zapasu pod
 pływające elementy plus `env(safe-area-inset-bottom)`.
 
-**Reguła strefy bezpiecznej.** Odległości od dolnej krawędzi liczy `env(safe-area-inset-bottom)`,
-nigdy stała. Warunkiem, żeby ta funkcja w ogóle zwracała coś innego niż zero, jest
-`viewport-fit=cover` w atrybucie `viewport` — bez niego iPhone raportuje zera i cała
-obsługa paska gestów jest martwym kodem.
+**Reguła strefy bezpiecznej.** Odległości od KAŻDEJ krawędzi liczy `env(safe-area-inset-*)`,
+nigdy stała. Warunkiem, żeby ta funkcja zwracała cokolwiek poza zerem, jest
+`viewport-fit=cover` w atrybucie `viewport` — ale ten sam atrybut wpuszcza treść pod
+wcięcie także u GÓRY i po BOKACH. Policzenie tylko dołu ucina nagłówek pod zegarkiem;
+to się w tym projekcie wydarzyło.
+
+**Reguła `max()` przy dolnej krawędzi.** `env(safe-area-inset-bottom)` w Safari na iPhonie
+**nie jest stałe**: przy rozwiniętym pasku adresu wynosi 0, po jego zwinięciu 34 px.
+Dlatego odstępy od dołu liczy się jako `max(własny odstęp, env(...))`, a nigdy jako
+`calc(własny + env(...))` — przy dodawaniu wszystko przypięte do dołu skacze o 34 px
+za każdym razem, gdy przeglądarka chowa swój pasek.
 
 **Reguła pierwszeństwa nad warstwami.** Odstęp liczony z `env()` NIE MOŻE mieszkać
 w `@layer base` ani `@layer components`: klasa narzędziowa Tailwinda w znacznikach
@@ -282,6 +290,26 @@ i uczy nie ufać pozostałym znakom w interfejsie. Stąd trzy konsekwencje:
 
 Od 640 px uchwyt znika: arkusz stoi na środku ekranu, nie przy krawędzi, więc nie ma go
 dokąd zsunąć i nie ma czego obiecywać.
+
+**Reguła trzech pięter.** O tym, które okno jest na wierzchu, nie może decydować kolejność
+w znacznikach. Piętro wynika z tego, SKĄD okno się otwiera, a nie z tego, jak jest ważne:
+
+| Warstwa | Klasa | Kiedy |
+|---|---|---|
+| 50 | (domyślna) | okno otwierane z ekranu |
+| 60 | `modal-over` | okno otwierane Z INNEGO OKNA (wybór jednokrotny) |
+| 70 | `modal-top` | decyzja: potwierdzenie albo pytanie wymagające odpowiedzi |
+
+Bez tego arkusz wyboru sposobu płatności otwierał się POD arkuszem, z którego go wywołano,
+więc wyboru nie dało się dokonać w ogóle.
+
+### Motyw
+
+**Domyślny motyw jest ciemny** i nie idzie za ustawieniem systemu. Scena użycia to wieczór
+w lokalu, więc ciemny jest tu stanem podstawowym, a nie preferencją. Motyw jasny zostaje
+pełnoprawnym wyborem i jest pamiętany na urządzeniu. Kolor paska systemowego telefonu
+(`theme-color`) przestawia się razem z motywem, inaczej nad ciemnym ekranem wisi jasna
+listwa i widać szew.
 
 ### Kontrakt responsywności
 
@@ -361,8 +389,29 @@ zmniejsza do 97 %. **Bez `:hover` jako jedynego nośnika stanu.**
 ### Żywy paragon (komponent sygnaturowy)
 Pozycje w kolumnie jak na paragonie. Po prawej każdej linii stos okrągłych twarzy tych,
 którzy ją wzięli. Gdy ktoś inny odklika swoje, jego zdjęcie **ląduje na linii z animacją**
-w czasie rzeczywistym. Moja pozycja: limonkowe wypełnienie i limonkowa obwódka przy mojej
-twarzy. Pozycja niczyja: cichy blok z zachętą „Stuknij, jeśli to Twoje".
+w czasie rzeczywistym. Moja pozycja: limonkowe wypełnienie linii.
+
+**Po lewej każdej linii stoi pusty okrągły znacznik** — ten sam, co przy wyborze osób
+(`person-row-check`), tylko wypełniany limonką zamiast atramentem, bo na paragonie limonka
+znaczy „to jest twoje". Puste kółko mówi „to czeka na wybór", ZANIM ktokolwiek dotknie
+ekranu; bez niego linia, której nikt nie wziął, nie zdradzała, że da się ją wziąć.
+
+**Pod listą ząbkowana krawędź** (`.receipt-tear`): jednym kształtem, bez ani jednego słowa,
+mówi że blok pozycji jest wydrukiem należącym do rachunku, a nie luźną listą kafelków.
+To osobny element, nie maska na karcie — maska skasowałaby cień, a cień odróżnia kartę
+od podłoża w motywie jasnym.
+
+Podpis linii niczyjej brzmi **„Nikt nie wziął"**, czyli mówi o STANIE. Zachętę niesie
+znacznik, więc podpis nie musi już być poleceniem.
+
+### Twoja część rachunku
+Karta „Twoja część" stoi **nad** paragonem, zaraz pod decyzją o podziale: najpierw fakty
+o rachunku, potem jego kształt, a zaraz potem moje zadanie.
+
+**Reguła sumy nad składnikami.** Na wierzchu karty stoi zadanie (pole kosztu własnego)
+i JEDNA liczba: „Twój udział". Rozpiska „z czego się składa" chowa się w zwijanym wierszu.
+Suma nad rzeczami, które ją tworzą, jest w porządku — rozpisana suma nad nimi już nie,
+bo czytałoby się „Pozycje 96,00", zanim pozycje pojawią się na ekranie.
 
 ### Pola i przełączniki
 `field` — cichy blok bez ramki, ognisko obwódką błękitu. `seg` — pigułka z segmentami
@@ -403,6 +452,20 @@ dostaje pełne krycie: półprzezroczysty pasek bez rozmycia to szara mgła na t
 Nazwa miejsca **nie stoi w pasku** — pada raz, jako `view-title` na górze otwartej
 zakładki. Podpis w pasku i tytuł na ekranie to ta sama informacja podana dwa razy,
 a na wąskim telefonie podpis urywał się wielokropkiem.
+
+### Znak firmowy
+Koń trojański w limonce na atramencie plus logotyp **„Bill" w limonce, „iada" w bieli**,
+krój Bricolage Grotesque — ten sam, którym pisane są kwoty.
+
+**Barwy znaku firmowego NIE idą za motywem i to jest jedyny taki wyjątek w całym systemie.**
+Limonka na jasnym podłożu ma kontrast około 1,5:1, a biel na jasnym tle nie istnieje —
+więc logotyp zawsze siedzi we własnej ciemnej pigułce w kolorze `#21242B` (dokładnie tło
+rysunku, żeby kwadrat obrazka się w nią wtopił). Znak firmowy ma stałe barwy, bo tym
+właśnie jest znak firmowy.
+
+Stoi w dwóch miejscach: ekran wczytywania i nagłówek ekranu startowego. **Nie w pokoju** —
+tam nazwa pokoju jest ważniejsza od nazwy aplikacji, a logo na każdym ekranie to szyld,
+nie produkt.
 
 ### Trzy warstwy ekranu rachunku
 Rachunek niesie trzy różne rodzaje informacji i każdy ma własny nośnik, bo bez tego

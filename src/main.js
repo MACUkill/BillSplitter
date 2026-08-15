@@ -57,8 +57,8 @@
             connectFirestoreEmulator(db, '127.0.0.1', 8770);
             connectStorageEmulator(storage, '127.0.0.1', 9199);
             connectFunctionsEmulator(functions, '127.0.0.1', 5001);
-            console.info('[Billyada] Emulator Firebase (127.0.0.1) — żywe dane nietknięte.');
-            if (!env.DEV) console.warn('[Billyada] UWAGA: build produkcyjny podpięty do EMULATORA (VITE_USE_EMULATOR=true). To build testowy, nie do wdrożenia.');
+            console.info('[Billiada] Emulator Firebase (127.0.0.1) — żywe dane nietknięte.');
+            if (!env.DEV) console.warn('[Billiada] UWAGA: build produkcyjny podpięty do EMULATORA (VITE_USE_EMULATOR=true). To build testowy, nie do wdrożenia.');
         }
 
         // Globalne zmienne stanu
@@ -102,12 +102,21 @@
         // Scena użycia to lokal wieczorem, więc ciemny nie jest fanaberią: jasny ekran
         // w półmroku oślepia i wymusza przymykanie oczu przy kwotach. Domyślnie idziemy
         // za ustawieniem systemu; ręczny wybór zapamiętujemy na urządzeniu.
+        // DOMYŚLNY MOTYW JEST CIEMNY, niezależnie od ustawienia systemu (decyzja
+        // właściciela 2026-08-15). Wcześniej aplikacja szła za systemem, więc pierwsze
+        // wejście u kogoś z jasnym telefonem pokazywało wersję jasną — a scena użycia
+        // to wieczór w lokalu i to ciemny jest tu stanem podstawowym, nie preferencją.
+        // Motyw jasny NIE znika: zostaje pełnoprawnym wyborem w zakładce „Ty" i jest
+        // pamiętany na urządzeniu.
         const THEME_KEY = 'billsplitter_theme';
-        const prefersDark = () => !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
         const storedTheme = () => { try { return localStorage.getItem(THEME_KEY); } catch { return null; } };
-        const activeTheme = () => storedTheme() || (prefersDark() ? 'dark' : 'light');
+        const activeTheme = () => storedTheme() || 'dark';
         const applyTheme = (theme) => {
             document.documentElement.dataset.theme = theme;
+            // Pasek systemowy telefonu idzie za motywem aplikacji, inaczej nad ciemnym
+            // ekranem wisi jasna listwa i widać szew.
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', theme === 'dark' ? '#0C0D11' : '#F5F6F8');
             // Ikona pokazuje motyw WŁĄCZONY TERAZ, ten sam stan co podpis obok.
             // Wcześniej pokazywała motyw docelowy: przy ciemnym świeciło słońce,
             // więc obrazek i podpis mówiły dwie różne rzeczy naraz.
@@ -125,16 +134,16 @@
         };
 
         // Motyw stosujemy od razu przy starcie, jeszcze zanim odpowie Firebase — inaczej
-        // pierwsze sekundy w półmroku to biały ekran w twarz. Dopóki nikt nie wybrał ręcznie,
-        // idziemy za systemem NA ŻYWO: telefon przełącza się o zmierzchu w trakcie kolacji.
+        // pierwsze sekundy w półmroku to biały ekran w twarz.
+        //
+        // Nasłuch zmiany ustawienia systemowego został usunięty razem z podążaniem za nim:
+        // skoro domyślny motyw jest ciemny zawsze, przełączenie telefonu na jasny nie ma
+        // prawa nic zmienić w aplikacji, a przełączanie ekranu pod palcami w trakcie
+        // liczenia pieniędzy byłoby gorsze niż jakikolwiek zysk z automatyki.
         const setupTheme = () => {
             applyTheme(activeTheme());
             const btn = document.getElementById('theme-toggle-btn');
             if (btn) btn.onclick = toggleTheme;
-            const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
-            if (mq && mq.addEventListener) {
-                mq.addEventListener('change', () => { if (!storedTheme()) applyTheme(activeTheme()); });
-            }
         };
 
         // Kod pokoju czytany na głos przy stole i przepisywany z cudzego telefonu —
@@ -507,7 +516,7 @@
         // --- Faza 4: „Moje pokoje" — lista dołączonych pokoi (localStorage, przypięta do urządzenia) ---
         //
         // UWAGA PRZY ZMIANIE NAZWY PRODUKTU: przedrostek `billsplitter_` w kluczach
-        // pamięci lokalnej ZOSTAJE, mimo że aplikacja nazywa się teraz Billyada.
+        // pamięci lokalnej ZOSTAJE, mimo że aplikacja nazywa się teraz Billiada.
         // Te klucze to jedyny ślad po pokojach, motywie i szablonach na urządzeniu.
         // Zmiana przedrostka wyczyściłaby listę pokoi każdemu, kto już aplikacji używa,
         // a odzyskanie pokoju wymagałoby kodu od kogoś innego. Nazwa klucza nikomu się
@@ -635,7 +644,7 @@
         const HELP_CONTENT = {
             'start': {
                 title: 'Jak zacząć',
-                html: `<p>Billyada dzieli rachunki w grupie znajomych i liczy, kto komu ile jest winien.</p>
+                html: `<p>Billiada dzieli rachunki w grupie znajomych i liczy, kto komu ile jest winien.</p>
                     <ul class="list-disc pl-5 space-y-1">
                         <li>Nazwij grupę i dopisz osoby pojedynczo. Resztę ekipy dodasz później.</li>
                         <li>Zaproś znajomych linkiem, kodem pokoju albo kodem QR. Każdy wybiera swoje imię z listy.</li>
@@ -733,7 +742,14 @@
             });
             const btnId = Object.keys(DECK_NAV_VIEWS).find(k => DECK_NAV_VIEWS[k] === viewId);
             if (btnId) setDeckNavCurrent(btnId);
-            try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (_) { window.scrollTo(0, 0); }
+            // Przewijamy na górę TYLKO wtedy, gdy strona faktycznie jest przewinięta.
+            // Bezwarunkowe `scrollTo(0)` w Safari na iPhonie rozwija pasek adresu, a to
+            // zmienia wysokość widocznego obszaru i przesuwa wszystko, co jest przypięte
+            // do dolnej krawędzi. Jedno zbędne przewinięcie kosztowało skok paska
+            // nawigacji przy każdej zmianie zakładki.
+            if ((window.scrollY || document.documentElement.scrollTop || 0) > 0) {
+                try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (_) { window.scrollTo(0, 0); }
+            }
         };
 
         const setupDeckNav = () => {
@@ -990,7 +1006,7 @@
                 // ma działać dalej z pustą historią, a nie sypać błędami w konsoli.
                 latestEvents = [];
                 renderBillHistory();
-                console.warn('[Billyada] Dziennik aktywności niedostępny:', error.code || error);
+                console.warn('[Billiada] Dziennik aktywności niedostępny:', error.code || error);
             });
 
             document.getElementById('copy-group-link-btn').onclick = () => {
@@ -2307,7 +2323,7 @@
                     createdAt: serverTimestamp(),
                 });
             } catch (e) {
-                console.warn('[Billyada] Nie udało się dopisać zdarzenia:', e);
+                console.warn('[Billiada] Nie udało się dopisać zdarzenia:', e);
             }
         };
 
@@ -2916,7 +2932,7 @@
                     tx.update(billRef, { sharedCosts: mutate(fresh) });
                 });
             } catch (err) {
-                console.warn('[Billyada] Transakcja pozycji nieudana — zapis awaryjny:', err);
+                console.warn('[Billiada] Transakcja pozycji nieudana — zapis awaryjny:', err);
                 await updateDoc(billRef, { sharedCosts: mutate(billData.sharedCosts || []) });
             }
         };
@@ -2941,13 +2957,17 @@
                     </div>`;
             }
 
+            // Ząbkowana krawędź należy się WYŁĄCZNIE prawdziwemu paragonowi: pod stanem
+            // pustym wyglądałaby jak oderwany kawałek niczego.
+            const tear = document.getElementById('receipt-tear');
+
             if (items.length === 0) {
-                // Odstęp pod listą MUSI zostać także w stanie pustym: przyciski akcji
-                // stoją zaraz pod nią i bez tego dotykają kafelka.
-                list.className = 'mb-3';
-                list.innerHTML = `<p class="block-quiet p-5 text-sm text-ink-2">Brak pozycji. Dodaj zdjęcie paragonu niżej i odczytaj je albo dopisz pozycję ręcznie. Potem każdy stuknie to, co jadł.</p>`;
+                list.className = '';
+                if (tear) tear.classList.add('hidden');
+                list.innerHTML = `<p class="block-quiet p-5 text-sm text-ink-2">Brak pozycji. Zrób zdjęcie paragonu wyżej i odczytaj je albo dopisz pozycję ręcznie. Potem każdy stuknie to, co jadł.</p>`;
                 return;
             }
+            if (tear) tear.classList.remove('hidden');
 
             // ŻYWY PARAGON — znak tej aplikacji.
             //
@@ -2957,9 +2977,9 @@
             // rzecz, której nie ma konkurencja: gdy piętnaście osób odklikuje równocześnie,
             // widzisz cudze zdjęcia lądujące na liniach na własnym ekranie, w czasie
             // rzeczywistym. Współbieżność przestaje być obietnicą w opisie i staje się obrazem.
-            // Odstęp `mb-3` musi być TUTAJ, bo ta linia nadpisuje klasy z index.html:
-            // bez niego przyciski „Dodaj pozycję" dotykały ostatniego kafelka paragonu.
-            list.className = 'receipt card overflow-hidden mb-3';
+            // Bez `mb-3`: odstęp pod paragonem należy teraz do ząbkowanej krawędzi
+            // i do przycisku pod nią, a margines tutaj odsuwałby ząbki od wydruku.
+            list.className = 'receipt card overflow-hidden';
             list.innerHTML = items.map(it => {
                 const pickers = itemPickers(it).filter(pid => billData.participants[pid]);
                 const count = pickers.length;
@@ -2992,13 +3012,14 @@
                 // dla niego jak dana z bazy wstawiona bez neutralizacji.
                 const lineClass = myPickChanged ? `${baseLineClass} value-flash` : baseLineClass;
                 return `<div class="${lineClass} cursor-pointer select-none" data-item-id="${it.id}">
+                    <span class="pick-mark" aria-hidden="true"><i class="fas fa-check"></i></span>
                     <span class="flex-grow min-w-0">
                         <span class="block font-bold leading-tight truncate">${escapeHtml(it.description || 'Pozycja')}${qty > 1 ? ` <span class="text-ink-3 font-semibold">×${qty}</span>` : ''}</span>
                         <span class="mt-1.5 flex items-center gap-2 min-h-[1.75rem]">
                             ${count > 0
                                 ? `<span class="face-stack">${faces}</span>${count > 5 ? `<span class="text-xs font-bold text-ink-3">+${count - 5}</span>` : ''}
                                    <span class="text-xs ${mine ? 'font-bold text-ink' : 'text-ink-3'}">${fmtMoney(perPersonG, cur)}/os.</span>`
-                                : `<span class="chip text-ink-3">Stuknij, jeśli to Twoje</span>`}
+                                : `<span class="chip text-ink-3">Nikt nie wziął</span>`}
                         </span>
                     </span>
                     <span class="flex items-center gap-2 flex-shrink-0">
@@ -3095,7 +3116,7 @@
                 renderReceiptPreview();
                 document.getElementById('receipt-preview-modal').classList.add('active');
             } catch (err) {
-                console.error('[Billyada] Odczyt paragonu nieudany:', err);
+                console.error('[Billiada] Odczyt paragonu nieudany:', err);
                 showToast(err && err.message ? err.message : 'Nie udało się odczytać paragonu.', true);
             } finally {
                 btn.disabled = false;
@@ -3180,7 +3201,7 @@
                     tx.update(billRef, buildUpdates(snap.data()));
                 });
             } catch (err) {
-                console.warn('[Billyada] Transakcja paragonu nieudana — zapis awaryjny:', err);
+                console.warn('[Billiada] Transakcja paragonu nieudana — zapis awaryjny:', err);
                 await updateDoc(billRef, buildUpdates(billData));
             }
             document.getElementById('receipt-preview-modal').classList.remove('active');
@@ -3295,6 +3316,39 @@
         // Rozpiska udziału jednej osoby. U siebie pomijamy wiersz „koszt własny" — stoi
         // wyżej jako pole do wpisania i powtórzony niżej tylko myli. ŁĄCZNIE dostaje
         // nominał, bo to jedyna liczba z tej rozpiski, którą ktoś realnie czyta.
+        // MOJA CZĘŚĆ — jedna liczba na wierzchu, rozpiska pod zwinięciem.
+        //
+        // Karta stoi teraz NAD paragonem (decyzja właściciela 2026-08-15), a to zmienia
+        // zasadę: suma nad rzeczami, które ją tworzą, jest w porządku, ale ROZPISANA suma
+        // nad nimi już nie — czytałoby się „Pozycje 96,00", zanim pozycje w ogóle będą
+        // na ekranie. Dlatego na wierzchu zostaje wyłącznie odpowiedź („Twój udział"),
+        // a skąd się wzięła, mówi zwijany wiersz dla tych, którzy pytają.
+        const myShareHtml = (pt, paymentInfo = '') => {
+            const cur = billData.currency;
+            const row = (caption, amount) =>
+                `<div class="flex justify-between gap-2 py-0.5"><span class="text-ink-2">${caption}</span><span class="font-semibold">${amount.toFixed(2).replace('.', ',')}</span></div>`;
+            const conversion = getPlnConversionHtml(pt.total, cur, billData.exchangeRatePLN);
+            return `<div class="mt-4 pt-3 border-t border-ink/10">
+                <div class="flex items-baseline justify-between gap-3">
+                    <span class="font-bold">Twój udział</span>
+                    <span class="text-2xl">${amountHtml(toGrosze(pt.total), cur, 'text-ink')}</span>
+                </div>
+                ${conversion ? `<p class="text-right text-xs text-ink-2 mt-0.5">${conversion}</p>` : ''}
+                <details class="mt-2">
+                    <summary class="settle-others-summary">
+                        <span>Z czego się składa</span>
+                        <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
+                    </summary>
+                    <div class="mt-2 text-sm">
+                        ${row('Pozycje z paragonu', pt.sharedAmount)}
+                        ${row('Koszty wspólne', pt.globalCostsAmount)}
+                        ${row('Koszt tylko Twój', pt.individualAmount)}
+                    </div>
+                </details>
+                ${paymentInfo}
+            </div>`;
+        };
+
         const participantBreakdownHtml = (pt, isMe, paymentInfo = '') => {
             const cur = billData.currency;
             // `caption`, nie `label`: strażnik escapowania traktuje `label` jako daną z bazy
@@ -3592,7 +3646,7 @@
                             </div>
                         </div>
 
-                        ${participantBreakdownHtml(pt, true, paymentInfo)}
+                        ${myShareHtml(pt, paymentInfo)}
                     </div>`;
                 } else { // Other participants view
                     participantHTML = `
@@ -3992,7 +4046,7 @@
                     await navigator.serviceWorker.ready;
                     setupPush();
                 } catch (err) {
-                    console.warn('[Billyada] Rejestracja service workera nieudana:', err);
+                    console.warn('[Billiada] Rejestracja service workera nieudana:', err);
                 }
             });
         };
@@ -4048,7 +4102,7 @@
                 serviceWorkerRegistration: swRegistration || undefined,
             });
             pushTokenSaved = false;
-            console.info('[Billyada] Token FCM tego urządzenia:', pushToken);
+            console.info('[Billiada] Token FCM tego urządzenia:', pushToken);
             await savePushToken();
             return pushToken;
         };
@@ -4061,7 +4115,7 @@
                 await acquirePushToken();
                 showToast('Powiadomienia włączone.');
             } catch (err) {
-                console.warn('[Billyada] Push — nie udało się pobrać tokenu:', err);
+                console.warn('[Billiada] Push — nie udało się pobrać tokenu:', err);
                 showToast('Nie udało się włączyć powiadomień.', true);
             }
             renderPushToggle();
@@ -4083,7 +4137,7 @@
                 if (Notification.permission === 'granted') await acquirePushToken();
                 renderPushToggle();
             } catch (err) {
-                console.warn('[Billyada] Push — inicjalizacja nieudana:', err);
+                console.warn('[Billiada] Push — inicjalizacja nieudana:', err);
             }
         };
 
