@@ -367,6 +367,12 @@ const run = async () => {
   await new Promise((r) => setTimeout(r, 400));
   await shot('10a-koszty-wspolne');
 
+  // Limonkowa wyspa „twoja część rachunku" — po decyzji o pełnym kolorze (2026-08-16)
+  // to jest miejsce, w którym najłatwiej o nieczytelny podpis na jasnym tle.
+  await page.evaluate(() => document.querySelector('.card-mine')?.scrollIntoView({ block: 'center' }));
+  await new Promise((r) => setTimeout(r, 400));
+  await shot('10b-twoj-udzial');
+
   // Powrót na pulpit z danymi.
   await click('#back-to-dashboard-btn');
   await new Promise((r) => setTimeout(r, 1500));

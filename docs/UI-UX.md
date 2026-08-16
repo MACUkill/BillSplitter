@@ -1624,6 +1624,29 @@ Trzy skutki, wszystkie dobre:
 Koszt: pozycję przewijania czyta się i ustawia przez ten kontener, nie przez okno
 (`window.scrollY` zwraca zero). Dotyczy to także narzędzia audytowego.
 
+### 19.20 Dwa kolory z decyzji właściciela (2026-08-16)
+
+**Twoja część rachunku to teraz pełna limonka**, a nie limonka na 16 % krycia. Przy kilku
+kartach na ekranie ledwie zabarwiona karta ginęła. Wyspa w kolorze marki jest tym samym
+blokiem, co saldo w Bilansie i koło [+] w pasku — wszędzie tam limonka znaczy „to jest
+twoja liczba, po nią tu przyszedłeś".
+
+Pełny kolor wymusił własny zestaw tonów, bo tekst pomocniczy aplikacji jest liczony pod tło
+karty, nie pod limonkę: wszystko wewnątrz przechodzi na atrament z limonki w trzech mocach,
+kreski i pola też. Osobno trzeba było rozstrzygnąć **barwy pieniężne**: zieleń „dostajesz"
+i błękit stanu mają na limonce kontrast rzędu 1,5–2,5:1, a ich rola jest tam już obsadzona
+przez samo tło — schodzą więc na atrament i niosą treść słowem. **Czerwień długu zostaje
+kolorem**, bo tej informacji nie wolno zgubić, tyle że w wersji przyciemnionej
+(`--owe-on-brand`, 6,5:1). Wyszło to na zrzucie z audytu: „Płatnik · potwierdzony" świecił
+turkusem na limonce.
+
+**Przycisk „Odczytaj paragon" dostał fiolet spoza palety** (`--ai`). To jedyne miejsce
+w aplikacji, za którym stoi model, i jedyny fiolet: limonka znaczy „to jest twoje", barwy
+pieniężne znaczą kierunek długu, a ten przycisk nie należy do żadnej z tych rodzin. Fiolet
+niesie dziś skojarzenie z modelami tak samo, jak koperta niesie pocztę — korzystamy z tego
+zamiast tłumaczyć to słowami. Do tego ikona różdżki i delikatna poświata, bo przy pierwszym
+rachunku nikt nie wie, że zdjęcie paragonu da się w ogóle odczytać.
+
 ### 19.11 Stan audytu po partii
 
 Cztery szerokości z kontraktu (360 / 390 / 834 / 1280), 32 stany ekranu, **zero zgłoszeń**:

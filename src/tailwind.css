@@ -92,6 +92,20 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     --due: 0 138 92;             /* dostajesz — 4,9:1 */
     --info: 45 74 235;           /* stan i informacja — 6,7:1 */
 
+    /* ODCZYT PARAGONU — JEDYNE MIEJSCE, GDZIE PRACUJE MODEL.
+       Fiolet stoi poza paletą aplikacji świadomie: limonka znaczy „to jest twoje",
+       barwy pieniężne znaczą kierunek długu, a ten przycisk nie należy do żadnej z tych
+       rodzin — robi rzecz, której nie robi nic innego w aplikacji, i ma się o to
+       dopominać. Fiolet niesie dziś skojarzenie z modelami językowymi tak samo, jak
+       koperta niesie pocztę; korzystamy z tego zamiast tłumaczyć to słowami.
+       6,1:1 z bielą, więc napis na nim jest czytelny także w słońcu. */
+    --ai: 107 70 245;
+
+    /* Czerwień DŁUGU NA LIMONCE. Zwykła (`--owe`) ma na limonkowym tle około 2,4:1
+       i jest nieczytelna, a akurat tej informacji nie wolno zgubić — dlatego zamiast
+       zdjąć kolor, przyciemniamy go do 6,5:1. Znaczenie zostaje, czytelność wraca. */
+    --owe-on-brand: 138 14 34;
+
     --shadow: 14 15 19;
     --ring: 45 74 235;           /* obwódka skupienia */
     --scrim-photo: 0 0 0;        /* przyciemnienie pod podglądem zdjęcia */
@@ -116,6 +130,14 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     --owe: 255 106 122;          /* rozjaśnione, bo na ciemnym czerwień się zapada */
     --due: 45 214 152;
     --info: 122 141 255;
+
+    /* Ten sam fiolet rozjaśniony: na ciemnym tle wersja z jasnego motywu zapada się
+       w tło tak samo, jak czerwień. Napis na nim zostaje biały. */
+    --ai: 138 108 255;
+
+    /* Czerwień NA LIMONCE — patrz komentarz w motywie jasnym. Limonka jest w obu
+       motywach ta sama, więc i ta czerwień jest ta sama. */
+    --owe-on-brand: 138 14 34;
 
     --shadow: 0 0 0;
     --ring: 122 141 255;
@@ -423,6 +445,15 @@ body:has(#offline-banner:not(.hidden)) #app-container {
   .btn-dark { background-color: rgb(var(--ink)); color: rgb(var(--surface)); }
   .btn-quiet { background-color: rgb(var(--surface-2)); color: rgb(var(--ink)); }
   .btn-danger { background-color: rgb(var(--owe)); color: rgb(255 255 255); }
+
+  /* PRZYCISK ODCZYTU PARAGONU. Jedyny w aplikacji, za którym stoi model — i jedyny
+     fiolet. Delikatna poświata pod spodem, bo to przycisk, który ma zapraszać:
+     przy pierwszym rachunku nikt nie wie, że zdjęcie paragonu da się w ogóle odczytać. */
+  .btn-ai {
+    background-color: rgb(var(--ai));
+    color: rgb(255 255 255);
+    box-shadow: 0 6px 20px rgb(var(--ai) / 0.35);
+  }
 
   /* Okrągły przycisk-ikona z podpisem pod spodem — rząd akcji nad treścią,
      wprost z referencji: cztery koła, cztery słowa, zero opisów. */
@@ -1699,22 +1730,68 @@ body:has(#offline-banner:not(.hidden)) #app-container {
                          (DESIGN.md, reguła rozdziału kolorów) i dokładnie tak samo
                          działa już na twojej linii paragonu. Zero nowego języka:
                          ten sam kolor w tej samej roli, o piętro wyżej. */
+  /* TWOJA CZĘŚĆ RACHUNKU — PEŁNA LIMONKA (decyzja właściciela, 2026-08-16).
+     Wcześniej stała tu limonka na 16 % krycia, czyli ledwie zabarwiona karta; przy
+     kilku kartach na ekranie różnica ginęła i „mój udział" zlewał się z resztą.
+     Teraz to jest wyspa w kolorze marki — ten sam blok, co saldo w Bilansie i koło
+     [+] w pasku: tam też limonka znaczy „to jest twoja liczba, po nią tu przyszedłeś".
+
+     Pełny kolor wymaga własnego zestawu tonów, bo tekst pomocniczy z reszty aplikacji
+     (`--ink-2`, `--ink-3`) jest liczony pod tło karty, nie pod limonkę. Wszystko wewnątrz
+     przechodzi więc na atrament z limonki (`--brand-ink`) w trzech mocach. Bez tego
+     podpisy na limonce miałyby kontrast poniżej progu. */
   .card-mine {
-    background-color: rgb(var(--brand) / 0.16);
+    background-color: rgb(var(--brand));
+    color: rgb(var(--brand-ink));
     border-radius: 1.5rem;
     box-shadow:
-      0 1px 2px rgb(var(--shadow) / 0.04),
-      0 8px 24px rgb(var(--shadow) / 0.06);
+      0 1px 2px rgb(var(--shadow) / 0.06),
+      0 10px 28px rgb(var(--shadow) / 0.10);
   }
 
-  /* Pod lampą ta sama limonka na 16 % daje brudną oliwkę — schodzi do cienkiej
-     warstwy, a rolę „to jest twoje" przejmuje limonkowa obwódka. Ta sama decyzja,
-     co przy `receipt-line-mine`. */
+  /* Ta sama farba w innym świetle — jak przy bloku bilansu, limonka NIE zmienia się
+     w ciemnym motywie i nadal nosi czarny tekst. */
   :root[data-theme='dark'] .card-mine {
-    background-color: rgb(var(--brand) / 0.10);
-    box-shadow:
-      0 0 0 1px rgb(var(--brand) / 0.28),
-      0 8px 24px rgb(0 0 0 / 0.3);
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.35);
+  }
+
+  .card-mine .text-ink,
+  .card-mine .amount { color: rgb(var(--brand-ink)); }
+  .card-mine .text-ink-2 { color: rgb(var(--brand-ink) / 0.78); }
+  .card-mine .text-ink-3 { color: rgb(var(--brand-ink) / 0.66); }
+
+  /* Barwy pieniężne na limonce. Zieleń „dostajesz" i błękit stanu mają na niej
+     kontrast rzędu 1,5–2,5:1 — na limonkowej wyspie ich rola jest zresztą już
+     obsadzona przez samo tło, więc schodzą na atrament i niosą treść słowem.
+     Czerwień długu zostaje kolorem, bo tej informacji nie wolno zgubić — tyle że
+     w wersji przyciemnionej (`--owe-on-brand`). */
+  .card-mine .text-due,
+  .card-mine .text-info,
+  .card-mine .text-brand { color: rgb(var(--brand-ink) / 0.78); }
+  .card-mine .text-owe { color: rgb(var(--owe-on-brand)); }
+
+  /* Kreski i tła wewnątrz wyspy też liczą się od atramentu, nie od tła aplikacji —
+     inaczej włos oddzielający „Twój udział" znikał, a pola do wpisywania wyglądały
+     jak dziury w kolorze. */
+  .card-mine .border-ink\/10 { border-color: rgb(var(--brand-ink) / 0.20); }
+  .card-mine .chip {
+    background-color: rgb(var(--brand-ink) / 0.14);
+    color: rgb(var(--brand-ink));
+  }
+  .card-mine .settle-others-summary {
+    background-color: rgb(var(--brand-ink) / 0.10);
+    color: rgb(var(--brand-ink));
+  }
+  .card-mine .settle-others-summary:active { background-color: rgb(var(--brand-ink) / 0.16); }
+  .card-mine .settle-others-chevron { color: rgb(var(--brand-ink) / 0.66); }
+  .card-mine .field {
+    background-color: rgb(var(--brand-ink) / 0.10);
+    color: rgb(var(--brand-ink));
+  }
+  .card-mine .field::placeholder { color: rgb(var(--brand-ink) / 0.5); }
+  .card-mine .bg-surface-2 {
+    background-color: rgb(var(--brand-ink) / 0.10);
+    color: rgb(var(--brand-ink));
   }
 
   /* Nagłówek sekcji na rachunku: jeden stopień, jeden odstęp, jeden ton.
