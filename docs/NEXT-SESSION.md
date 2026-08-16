@@ -1,8 +1,16 @@
 # Brief na następną sesję
 
-Napisane 2026-08-05, zaktualizowane **2026-08-15** po siódmej partii (poprawki po
-pierwszych testach na telefonie właściciela).
-**Zacznij od tego pliku.** Potem `docs/UI-UX.md`, `DESIGN.md`, `PRODUCT.md`.
+Napisane 2026-08-05, zaktualizowane **2026-08-16** po pełnym audycie.
+
+> ### ⚠️ ZACZNIJ OD `docs/AUDYT-2026-08.md`
+>
+> Audyt z 2026-08-16 znalazł i naprawił **sześć usterek**, w tym dwie pieniężne
+> (kwota znikała z rachunku; rabat już wliczony odejmowany drugi raz) i przyczynę
+> zgłoszenia „powiadomienia na iPhonie działały rzadko". Ma też **sekcję Decyzje
+> z jedną sprawą pilną**: dziesięć commitów pracy stoi niescalonych i niewydanych
+> na gałęzi `worktree-ux-poprawki-v2`.
+>
+> Dopiero potem ten plik, `docs/UI-UX.md`, `DESIGN.md`, `PRODUCT.md`.
 
 ---
 
@@ -107,7 +115,7 @@ Pole testowe z pięcioma wariantami zostaje w `docs/animacje-nowego-rachunku.htm
 - **Znak własny** — żywy paragon, zbudowany i działa.
 - **Reguła „jeden rachunek, który rośnie"** — w `calculateAll`, z testami.
 - **Narzędzia audytowe** — `tools/audit-layout.mjs`, `tools/audit-buttons.mjs`.
-- **Sieć asekuracyjna** — 164 testy jednostkowe + 32 testy reguł Firestore, kontrakt selektorów, strażnik escapowania, próg sygnału.
+- **Sieć asekuracyjna** — 187 testów jednostkowych + 32 testy reguł Firestore, kontrakt selektorów, strażnik escapowania, próg sygnału.
 - **Komponenty wspólne** — `person-row` (wybór osób), `settings-row` (wiersz ustawienia),
   `choice-field` + `openChoiceSheet` (wybór jednokrotny, **zakaz `select`**), `filter-pill`,
   `openConfirm` (jedno okno decyzji nieodwracalnej), `inboxRowHtml` (sprawa w skrzynce).
@@ -146,10 +154,15 @@ wykonanie opisane w `docs/UI-UX.md` §11–§16.
    nie ukryją pojedynczego pola przed resztą grupy).
 4. **Zdjęcia po przekroczeniu 4,5 GB** — świadomie odłożone do wersji monetyzacyjnej.
 5. **Wybór animacji nowego rachunku** — pole testowe w `docs/animacje-nowego-rachunku.html`.
-6. **Odczyt paragonu na wydanej wersji** — na zrzucie właściciela z 2026-08-15 usługa
-   zwróciła **401**. To nie jest usterka interfejsu: funkcja `parseReceipt` odpowiada
-   „brak autoryzacji" po stronie OpenRoutera, czyli sekret w Secret Managerze projektu
-   `billsplitter-push-test` jest nieważny albo wyczerpany. Do sprawdzenia kluczem, nie kodem.
+6. **Odczyt paragonu na wydanej wersji** — usługa zwracała **401** (zrzut z 2026-08-15).
+   Audyt 2026-08-16 zawęził to do jednej rzeczy: **sam klucz jest dobry, nieważny jest
+   sekret wgrany do projektu**. Klucz z `E:/BillSplitter/.env` przeszedł czternaście
+   odczytów w `tools/receipt-bench.mjs` bez jednego błędu. Zostaje rotacja sekretu —
+   dwa kroki, oba konieczne (funkcja jest przypięta do numeru wersji sekretu):
+   `firebase functions:secrets:set OPENROUTER_API_KEY --data-file <plik>`
+   plus `firebase deploy --only functions:parseReceipt`.
+   **Jakość samego odczytu jest zmierzona i dobra** — 14/14 paragonów co do grosza,
+   patrz `docs/AUDYT-2026-08.md` §B.
 
 **Research — obowiązkowy, nie opcjonalny.** Właściciel powiedział
     wprost 2026-08-05: *„nie jestem bogiem co wie wszystko; stworzyłem aplikację, która
@@ -345,9 +358,13 @@ dopiero przy wycofywaniu V1 — nigdy „przy okazji".
 
 1. **Push na telefonie** — kod jest (FCM, service worker, VAPID), ale nigdy nie było
    testu na fizycznym urządzeniu po redesignie.
-2. **Odczyt paragonu na wydanej wersji** — zrzut właściciela z 2026-08-15 pokazuje
-   błąd **401**, czyli odrzucony klucz OpenRoutera. Do sprawdzenia w Secret Managerze
-   projektu `billsplitter-push-test`, nie w kodzie.
+   **Audyt 2026-08-16 znalazł dwie przyczyny zgłoszenia „działało rzadko" i obie naprawił:**
+   serwer blokował dymek na sześć godzin mimo decyzji o dziesięciu sekundach, a token
+   zapisywał się tylko do pokoju otwartego w chwili włączania powiadomień. Pełny opis
+   i instrukcja sprawdzenia kciukiem: `docs/AUDYT-2026-08.md` §E.
+   **Wymaga wgrania funkcji**, żeby zadziałało na żywo.
+2. **Odczyt paragonu na wydanej wersji** — patrz punkt 6 wyżej: kod i prompt są sprawdzone
+   pomiarem, zostaje rotacja sekretu w Secret Managerze.
 3. **Praca kilku osób naraz** — żywy paragon i salda sprawdzał wyłącznie automat,
    nigdy dwa telefony równocześnie.
 4. **Zsuwanie arkusza palcem i przesuwanie kafelka pokoju** — obsługa stoi na zdarzeniach

@@ -25,19 +25,41 @@ npm run emulators    # Firebase Emulator Suite (w dev aplikacja idzie na emulato
                      # billsplitter-push-test, a emulator funkcji routuje po
                      # identyfikatorze projektu W ADRESIE: przy rozjeździe parseReceipt
                      # wraca 404 (w przeglądarce widoczne jako błąd CORS).
-npm test             # 164 testy jednostkowe
+npm test             # 187 testów jednostkowych
 npm run test:rules   # 32 testy reguł Firestore (wymaga emulatorów)
 npm run build
 ```
 
 ### Narzędzia audytowe
 
-Dwa przebiegi w `tools/`. Wymagają puppeteera: `npm i --no-save puppeteer`.
+Trzy przebiegi w `tools/`. Dwa pierwsze wymagają puppeteera: `npm i --no-save puppeteer`.
+
+**Adres serwera bierze się ze zmiennej `BILLIADA_URL`** (domyślnie `http://localhost:5173/`).
+Vite podnosi port, gdy 5173 jest zajęty — bez tej zmiennej audyt po cichu bada CUDZĄ, starą
+instancję aplikacji. Zdarzyło się to podczas audytu 2026-08-16.
 
 ```bash
 node tools/audit-layout.mjs ./shots          # zrzuty + pomiar układu, domyślnie 390×844
 node tools/audit-layout.mjs ./shots 834      # tablet; zrzuty lądują w ./shots/w834
 node tools/audit-buttons.mjs                 # szuka martwych przycisków, domyślnie 390
+BILLIADA_URL=http://localhost:5199/ node tools/audit-layout.mjs ./shots   # inny port
+```
+
+**Odczyt paragonów — stanowisko pomiarowe** (`tools/receipt-bench.mjs`, bez puppeteera,
+za to z siecią i kluczem OpenRoutera). Woła model dokładnie tak jak `parseReceipt`
+i przepuszcza wynik przez to samo sito `normalizeReceipt` co przeglądarka, więc zmianę
+promptu widać w liczbach, a nie w odczuciach.
+
+```bash
+node tools/receipt-bench.mjs --fetch     # raz: pobiera 14 zdjęć z Wikimedia Commons
+node tools/receipt-bench.mjs             # mierzy; wynik to % odczytów co do grosza
+node tools/receipt-bench.mjs --model google/gemini-3.5-flash
+```
+
+Wzorce w `tools/receipt-corpus.json` spisane ręcznie ze zdjęć. Korpus celuje w konkretne
+pułapki: PTU, rabat już wliczony w cenę, kaucja, podatek doliczany po amerykańsku, zdjęcie
+obrócone o 90°, cztery języki obce i dwa zdjęcia, które paragonem NIE SĄ. Stan na
+2026-08-16: **14/14 co do grosza**. Szczegóły w `docs/AUDYT-2026-08.md` §B.
 node tools/audit-buttons.mjs 834             # to samo na tablecie
 ```
 

@@ -116,7 +116,7 @@ Ograniczenia techniczne:
   FCM. Jeden service worker obsługuje offline i push.
 - Sieć asekuracyjna, której redesign nie może obejść: `selectors.contract.test.js`
   (kontrakt identyfikatorów i klas-uchwytów), `render.safety.test.js` (żadna dana z bazy
-  nie trafia do znaczników bez neutralizacji). 164 testy jednostkowe muszą zostać zielone.
+  nie trafia do znaczników bez neutralizacji). 187 testów jednostkowych musi zostać zielonych.
 - Tożsamość jest anonimowa i przypięta do urządzenia — wyczyszczenie danych przeglądarki
   oznacza utratę dostępu do pokoi. To znany, świadomie przyjęty koszt.
 
@@ -139,6 +139,12 @@ Wchodzi do redesignu:
   rachunku, ekran „prosty" skasowany (stare rachunki `type: 'simple'` otwierają się na
   wspólnym ekranie bez migracji danych). Status kontroli `under` przestał być błędem —
   interfejs mówi „Nierozpisane X — po Y na osobę". Błędem zostaje wyłącznie `over`.
+  **DOMKNIĘTE 2026-08-16 (audyt):** reguła działała dla kwoty NIEWPISANEJ, ale nie dla
+  pozycji WPISANEJ, której nikt nie wziął — taka kwota liczyła się jako rozpisana, a nie
+  trafiała do niczyjego udziału, więc po cichu zostawała na płatniku przy zielonej kontroli.
+  Na ścieżce odczytu paragonu przez AI dotyczyło to wszystkich pozycji naraz. Teraz pozycja
+  bez ani jednego aktywnego chętnego wraca do puli nierozpisanej. Komunikat o kwocie
+  nierozpisanej pokazuje się zawsze, gdy jest większa od zera — także przy kontroli `ok`.
 - **Udziały nierówne** (wagi/procenty) — „ktoś płaci za dwoje" bez obchodzenia tego
   kosztami własnymi.
 - **Dziennik zmian** — widoczny ślad, kto zmienił kwotę lub pozycję. Przy grupie 12–25
@@ -226,7 +232,7 @@ adresat.
 - Działająca aplikacja na gałęzi `BillSplitterV2`, wdrożona pod
   `billsplitterv2--groupbillsplitter.netlify.app` (piaskownica `billsplitter-push-test`).
 - Audyt techniczny z 27.07.2026 (13 ustaleń naprawionych, 4 świadomie otwarte).
-- 164 testy jednostkowe + 32 testy reguł.
+- 187 testów jednostkowych + 32 testy reguł.
 - Brak: opinii użytkowników w formie pisemnej, danych o użyciu, materiałów prasowych,
   logo, zdjęć produktowych. Niczego z tej listy nie wolno wymyślać.
 
