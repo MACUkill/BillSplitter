@@ -65,9 +65,14 @@ service cloud.firestore {
         // a nie kasowanie historii: po potwierdzeniu wpłata jest dowodem dla obu stron
         // i znika wyłącznie wpłatą w drugą stronę. Interfejs pokazuje kosz na dokładnie
         // tych samych warunkach, więc reguła i ekran mówią to samo.
+        // `get('confirmed', false)`, a nie `resource.data.confirmed` (audyt 2026-08-16):
+        // odwołanie WPROST do brakującego pola nie daje `null`, tylko wywala regułę błędem
+        // wykonania, a błąd znaczy odmowę. Pole `confirmed` dokładamy przy tworzeniu wpłaty
+        // dopiero od 2026-08-15, więc każda WCZEŚNIEJSZA wpłata była nie do skasowania przez
+        // własnego autora — i to bez czytelnego powodu, bo interfejs pokazywał kosz.
         allow delete: if request.auth != null
                       && resource.data.createdBy == request.auth.uid
-                      && resource.data.confirmed != true;
+                      && resource.data.get('confirmed', false) != true;
       }
 
       // Przypomnienia (nudge-windykator): zalogowany tworzy jako on sam (createdBy=uid), każdy zalogowany czyta.

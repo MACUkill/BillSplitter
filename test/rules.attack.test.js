@@ -15,6 +15,8 @@ import { beforeAll, afterAll, beforeEach, describe, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rules = readFileSync(join(here, '..', 'firestore.rules'), 'utf8');
+// Patrz uwaga w test/rules.emulator.test.js — pozwala ominąć cudzą instancję emulatora.
+const FIRESTORE_PORT = Number(process.env.FIRESTORE_EMULATOR_PORT) || 8770;
 const APP = 'bill-splitter-public';
 const G = 'atk';
 const g = `artifacts/${APP}/public/data/groups/${G}`;
@@ -28,7 +30,7 @@ const as = (uid) => env.authenticatedContext(uid).firestore();
 beforeAll(async () => {
   env = await initializeTestEnvironment({
     projectId: 'billsplitter-attack-test',
-    firestore: { host: '127.0.0.1', port: 8770, rules },
+    firestore: { host: '127.0.0.1', port: FIRESTORE_PORT, rules },
   });
 });
 

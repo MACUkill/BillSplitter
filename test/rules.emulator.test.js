@@ -14,6 +14,12 @@ import { beforeAll, afterAll, describe, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const rules = readFileSync(join(here, '..', 'firestore.rules'), 'utf8');
+// Port emulatora Firestore. Domyślnie ten z `firebase.json`, ale da się wskazać inny
+// przez `FIRESTORE_EMULATOR_PORT`. Potrzebne, gdy na 8770 stoi CUDZA instancja emulatora
+// — na przykład uruchomiona z innego drzewa roboczego. Audyt 2026-08-16 stracił na tym
+// sporo czasu: testy padały na regułach, których ten katalog w ogóle nie wgrywał.
+const FIRESTORE_PORT = Number(process.env.FIRESTORE_EMULATOR_PORT) || 8770;
+
 const APP = 'bill-splitter-public';
 const g = (id) => `artifacts/${APP}/public/data/groups/${id}`;
 
@@ -22,7 +28,7 @@ let env;
 beforeAll(async () => {
   env = await initializeTestEnvironment({
     projectId: 'billsplitter-rules-test',
-    firestore: { host: '127.0.0.1', port: 8770, rules },
+    firestore: { host: '127.0.0.1', port: FIRESTORE_PORT, rules },
   });
   // Zasiew grupy g1 z pominięciem reguł (baza pod testy update/delete).
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -109,9 +115,44 @@ describe('reguły Firestore — rejestr wpłat (model wpłat)', () => {
     await assertFails(updateDoc(doc(db, s('s1')), { to: 'hacker' }));
   });
 
-  it('usunąć wpłatę może TYLKO twórca', async () => {
-    await assertFails(deleteDoc(doc(env.authenticatedContext('user-b').firestore(), s('s1'))));
-    await assertSucceeds(deleteDoc(doc(env.authenticatedContext('user-a').firestore(), s('s1'))));
+  // AUDYT 2026-08-16. Ten test padał, i to nie z winy reguł.
+  // Sprawdzał kasowanie na `s1`, czyli na wpłacie, którą test poprzedni POTWIERDZA —
+  // a reguła z 2026-08-15 pozwala kasować wyłącznie wpłatę jeszcze niepotwierdzoną.
+  // Test był starszy od reguły i dodatkowo sprzężony ze stanem sąsiada, więc padał
+  // niezależnie od tego, czy reguły są dobre. Teraz każdy przypadek dostaje własny
+  // dokument, a warunek „tylko do potwierdzenia" ma własne pokrycie.
+  it('usunąć niepotwierdzoną wpłatę może TYLKO twórca', async () => {
+    const author = env.authenticatedContext('user-a').firestore();
+    await assertSucceeds(setDoc(doc(author, s('s-del')), {
+      from: 'm1', to: 'm2', amount: 20, currency: 'PLN', createdBy: 'user-a', confirmed: false,
+    }));
+    await assertFails(deleteDoc(doc(env.authenticatedContext('user-b').firestore(), s('s-del'))));
+    await assertSucceeds(deleteDoc(doc(author, s('s-del'))));
+  });
+
+  it('STARĄ wpłatę BEZ pola „confirmed" też skasuje jej autor', async () => {
+    // Pole `confirmed` dokładamy przy tworzeniu dopiero od 2026-08-15. Reguła czytała je
+    // wprost (`resource.data.confirmed`), a odwołanie do brakującego pola wywala regułę
+    // błędem wykonania — czyli odmową. Efekt: wpłaty sprzed tej daty były nie do usunięcia
+    // przez własnego autora, mimo że interfejs pokazywał kosz.
+    const author = env.authenticatedContext('user-a').firestore();
+    await assertSucceeds(setDoc(doc(author, s('s-stara')), {
+      from: 'm1', to: 'm2', amount: 20, currency: 'PLN', createdBy: 'user-a',
+    }));
+    await assertSucceeds(deleteDoc(doc(author, s('s-stara'))));
+  });
+
+  it('POTWIERDZONEJ wpłaty nie skasuje nawet jej twórca', async () => {
+    // Po potwierdzeniu wpłata jest dowodem dla obu stron i znika wyłącznie wpłatą
+    // w drugą stronę — kasowanie byłoby wycinaniem historii, nie naprawą pomyłki.
+    const author = env.authenticatedContext('user-a').firestore();
+    await assertSucceeds(setDoc(doc(author, s('s-conf')), {
+      from: 'm1', to: 'm2', amount: 20, currency: 'PLN', createdBy: 'user-a',
+    }));
+    await assertSucceeds(updateDoc(doc(env.authenticatedContext('user-b').firestore(), s('s-conf')), {
+      confirmed: true, confirmedBy: 'user-b',
+    }));
+    await assertFails(deleteDoc(doc(author, s('s-conf'))));
   });
 });
 
