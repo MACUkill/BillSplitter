@@ -636,10 +636,18 @@ body:has(#offline-banner:not(.hidden)) #app-container {
      Współbieżność przestaje być obietnicą w opisie i staje się obrazem. */
   .receipt {
     background-color: rgb(var(--surface));
-    /* Dolne narożniki proste, bo pod spodem doklejamy ząbki (`.receipt-tear`).
-       Zaokrąglenie zostawiłoby między nimi widoczny uskok. */
-    border-radius: 1.5rem 1.5rem 0 0;
+    /* WSZYSTKIE narożniki proste: ząbki doklejamy teraz z GÓRY i z DOŁU, więc
+       zaokrąglenie zostawiałoby przy każdym z nich widoczny uskok. Wydruk nie ma
+       zaokrąglonych rogów — ma dwie linie oderwania. */
+    border-radius: 0;
     overflow: hidden;
+    /* SUBTELNA LIMONKOWA RAMKA (zgłoszenie właściciela): pozycje i koszty wspólne to
+       jedyne miejsca na ekranie, gdzie ekipa coś ODKLIKUJE, więc mają się wyróżniać
+       jako rzecz do ruszenia. Ramka idzie cieniem wewnętrznym, nie `border`, bo karta
+       nie może przez nią urosnąć o dwa piksele i rozjechać się z paskiem ząbków.
+       Krycie 0,45: przy pełnej limonce ramka zaczyna konkurować z limonkową linią
+       „to moje", a ta niesie znaczenie. */
+    box-shadow: inset 1px 0 0 rgb(var(--brand) / 0.45), inset -1px 0 0 rgb(var(--brand) / 0.45);
   }
 
   /* ZĄBKOWANA KRAWĘDŹ — oderwany paragon.
@@ -652,8 +660,20 @@ body:has(#offline-banner:not(.hidden)) #app-container {
      jest potrzebny: pasek ząbków leży bezpośrednio pod kartą i czyta się jako jej
      dalszy ciąg. */
   .receipt-tear {
+    position: relative;
     height: 0.4375rem;
-    background-color: rgb(var(--surface));
+  }
+
+  /* Ząbek rysują DWIE warstwy o tej samej masce, przesunięte względem siebie o półtora
+     piksela: spodnia w limonce, wierzchnia w kolorze papieru. Widać z tego wyłącznie
+     ten półtora piksela limonki na skosach — czyli ramka karty biegnie dalej po
+     linii oderwania, zamiast urywać się na niej.
+     Zwykły `border` tego nie umie: maska wycina kształt razem z obramowaniem. */
+  .receipt-tear::before,
+  .receipt-tear::after {
+    content: '';
+    position: absolute;
+    inset: 0;
     /* Stożkowy gradient zaczepiony na dolnej krawędzi wycina trójkąt w każdym kaflu
        o szerokości 0,875 rem. Powtórzony w poziomie daje regularne ząbki.
        Ząbek jest niski i gęsty świadomie: ma się czytać jako oderwany papier, a nie
@@ -662,11 +682,34 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 0.875rem 100% repeat-x;
   }
 
+  .receipt-tear::before {
+    background-color: rgb(var(--brand) / 0.45);
+    transform: translateY(1.5px);
+  }
+
+  .receipt-tear::after { background-color: rgb(var(--surface)); }
+
+  /* GÓRNA LINIA ODERWANIA. Zgłoszenie właściciela: dolna krawędź mówiła „to wydruk",
+     a górna nie mówiła nic — paragon zaczynał się jak zwykła karta i kończył jak
+     paragon. Ten sam kształt obrócony o pół obrotu, z limonką przesuniętą w drugą
+     stronę, bo kontur ma leżeć po zewnętrznej. */
+  .receipt-tear-top::before,
+  .receipt-tear-top::after {
+    -webkit-mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / 0.875rem 100% repeat-x;
+    mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / 0.875rem 100% repeat-x;
+  }
+
+  .receipt-tear-top::before { transform: translateY(-1.5px); }
+
   /* Przeglądarka bez masek dostaje po prostu prostą krawędź — paragon zostaje
-     paragonem dzięki wierszom i włoskom, ząbki są dodatkiem, nie warunkiem. */
+     paragonem dzięki wierszom i włoskom, ząbki są dodatkiem, nie warunkiem.
+     Ramka zostaje, bo nie zależy od masek: zamyka się wtedy dookoła prostokąta. */
   @supports not ((-webkit-mask: conic-gradient(#000, #000)) or (mask: conic-gradient(#000, #000))) {
     .receipt-tear { display: none; }
-    .receipt { border-radius: 1.5rem; }
+    .receipt {
+      border-radius: 1.5rem;
+      box-shadow: inset 0 0 0 1px rgb(var(--brand) / 0.45);
+    }
   }
 
   /* ZNACZNIK „TO MOJE" przy każdej linii paragonu.
@@ -695,6 +738,23 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     background-color: rgb(var(--brand));
     border-color: rgb(var(--brand));
     color: rgb(var(--brand-ink));
+  }
+
+  /* ZNACZNIK KOSZTU WSPÓLNEGO. Ta sama metryka co `.pick-mark`, żeby oba rodzaje
+     wierszy stały w jednej kolumnie, ale bez obwódki i bez stanu: kosztu wspólnego
+     nikt nie odklikuje, on po prostu dotyczy wszystkich. Ikona ekipy mówi to samo,
+     co przycisk, którym się go dodaje — jeden znak, jedno znaczenie. */
+  .global-cost-mark {
+    flex-shrink: 0;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    background-color: rgb(var(--ink) / 0.08);
+    color: rgb(var(--ink-3));
   }
 
   .receipt-line {
@@ -912,8 +972,16 @@ body:has(#offline-banner:not(.hidden)) #app-container {
        do końca listy przewijało pulpit ukryty za przyciemnieniem. */
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    padding: 0 1.25rem 0.25rem;
+    padding: 0 1.25rem 1rem;
   }
+
+  /* ODSTĘP NAD STOPKĄ JEST TERAZ JEDEN NA WSZYSTKIE ARKUSZE.
+     Wcześniej wynikał z tego, co akurat stało na końcu treści: pole z klasą `mb-4`
+     dawało 34 px, pole bez niej 18 px, lista niosła własny odstęp. Stąd zgłoszenie,
+     że „czasami jest problem z odstępem nad przyciskami" — nie było reguły, był
+     przypadek. Margines ostatniego dziecka schodzi do zera, a cały oddech nad kreską
+     należy do arkusza. */
+  .sheet-body > *:last-child { margin-bottom: 0; }
 
   /* Gdy nie ma stopki, oddech na dole (plus pasek gestów) należy się treści. */
   .sheet-body:last-child {
@@ -1057,6 +1125,30 @@ body:has(#offline-banner:not(.hidden)) #app-container {
   details[open] > .settle-others-summary .settle-others-chevron,
   details[open] > .settle-others-summary .fa-chevron-down {
     transform: rotate(180deg);
+  }
+
+  /* SPOSOBY PŁATNOŚCI UCZESTNIKA W USTAWIENIACH POKOJU.
+     Wiersz osoby rozwija się w miejscu, a w środku stoją dokładnie te same wiersze,
+     co w oknie „Ureguluj": numer, „Otwórz", „Kopiuj". Rozwijanie idzie znacznikiem
+     `details`, tym samym co „Ekipa" i „Historia zmian" — jeden mechanizm zwijania
+     na całą aplikację. */
+  .member-pay > summary {
+    list-style: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .member-pay > summary::-webkit-details-marker { display: none; }
+
+  .member-pay-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.25rem 0 0.75rem 3.5rem;
+  }
+
+  /* Przy najwęższym telefonie wcięcie pod znak zjada za dużo miejsca na numer konta,
+     a numer jest tu jedyną treścią, po którą ktoś tu zagląda. */
+  @media (max-width: 22.5rem) {
+    .member-pay-body { padding-left: 0.75rem; }
   }
 
   /* Nagłówek dnia nad grupą rachunków. Data przestaje być mikrodrukiem na każdym

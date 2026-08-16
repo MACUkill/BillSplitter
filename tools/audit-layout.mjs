@@ -330,12 +330,31 @@ const run = async () => {
   }
   await shot('09-paragon-moje-pozycje');
 
+  // Sam wydruk w kadrze. Audyt do 2026-08-16 fotografował ekran rachunku wyłącznie
+  // od góry, więc bohater tego ekranu — paragon z ząbkowanymi krawędziami — nie trafiał
+  // na żaden zrzut i zmiany w nim sprawdzało się wyłącznie okiem na telefonie.
+  await page.evaluate(() => document.getElementById('items-section')?.scrollIntoView({ block: 'start' }));
+  await new Promise((r) => setTimeout(r, 500));
+  await shot('09a-paragon-w-kadrze');
+
   // Koszt wspólny.
   await click('#add-global-cost-btn');
   await new Promise((r) => setTimeout(r, 500));
   await shot('10-okno-koszt-wspolny');
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 400));
+
+  // Koszt wspólny zapisany: sekcja ma teraz nagłówek, zdanie o dzieleniu po równo
+  // i wiersz z kwotą na osobę — czyli wszystko, czego audyt nie widział, dopóki
+  // lista kosztów wspólnych była pusta.
+  await click('#add-global-cost-btn');
+  await new Promise((r) => setTimeout(r, 400));
+  await type('#global-cost-value', '10');
+  await click('#save-global-cost');
+  await new Promise((r) => setTimeout(r, 900));
+  await page.evaluate(() => document.getElementById('global-costs-section')?.scrollIntoView({ block: 'center' }));
+  await new Promise((r) => setTimeout(r, 400));
+  await shot('10a-koszty-wspolne');
 
   // Powrót na pulpit z danymi.
   await click('#back-to-dashboard-btn');

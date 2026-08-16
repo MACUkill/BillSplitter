@@ -617,17 +617,40 @@ the verdict, and DESIGN.md
                  do rachunku, a nie luźna lista kafelków. -->
             <section id="items-section" class="mb-3 mt-6">
                 <div id="items-section-header"></div>
+                <div id="receipt-tear-top" class="receipt-tear receipt-tear-top hidden" aria-hidden="true"></div>
                 <div id="shared-costs-list"></div>
                 <div id="receipt-tear" class="receipt-tear hidden" aria-hidden="true"></div>
-                <button id="add-shared-cost-btn" class="btn btn-dark w-full mt-3">Dodaj pozycję</button>
+                <!-- Wyszukiwarka pozycji stoi POD wydrukiem, nie nad nim: przy trzech
+                     pozycjach jest zbędna, więc nie ma prawa zajmować miejsca nad
+                     treścią, po którą się tu przyszło. Pokazuje się dopiero wtedy,
+                     gdy pozycji jest tyle, że szukanie ma sens (`ITEM_SEARCH_MIN`). -->
+                <div id="item-search-wrap" class="hidden mt-3">
+                    <div class="person-search">
+                        <i class="fas fa-magnifying-glass person-search-icon" aria-hidden="true"></i>
+                        <input type="text" id="item-search" class="person-search-input" placeholder="Szukaj pozycji" autocomplete="off" aria-label="Szukaj wśród pozycji">
+                        <button id="item-search-clear" class="person-search-clear tap hidden" type="button" aria-label="Wyczyść szukanie"><i class="fas fa-xmark"></i></button>
+                    </div>
+                    <p id="item-search-count" class="text-xs text-ink-3 mt-2 hidden"></p>
+                </div>
+                <button id="add-shared-cost-btn" class="btn btn-dark w-full mt-3">
+                    <i class="fas fa-receipt" aria-hidden="true"></i>
+                    Dodaj pozycję
+                </button>
             </section>
 
             <!-- KOSZTY WSPÓLNE — działają w OBU trybach podziału: napiwek dzieli się po
-                 równo niezależnie od tego, czy pozycje są rozpisane. Lista stoi przy
-                 przycisku, który ją zapełnia. -->
-            <section class="mb-3 mt-6">
-                <div id="global-costs-list" class="space-y-2 mb-3"></div>
-                <button id="add-global-cost-btn" class="btn btn-quiet w-full">Dodaj koszt wspólny</button>
+                 równo niezależnie od tego, czy pozycje są rozpisane.
+                 Sekcja wygląda jak druga część wydruku (ta sama ramka, te same linie
+                 oderwania), bo tym właśnie jest: dopiskiem na dole paragonu. -->
+            <section id="global-costs-section" class="mb-3 mt-6">
+                <div id="global-costs-header"></div>
+                <div id="global-tear-top" class="receipt-tear receipt-tear-top hidden" aria-hidden="true"></div>
+                <div id="global-costs-list"></div>
+                <div id="global-tear" class="receipt-tear hidden" aria-hidden="true"></div>
+                <button id="add-global-cost-btn" class="btn btn-dark w-full mt-3">
+                    <i class="fas fa-users" aria-hidden="true"></i>
+                    Dodaj koszt wspólny
+                </button>
             </section>
 
             <!-- UCZESTNICY — ZWINIĘCI. Na ekranie rachunku pracujesz nad swoją częścią;
@@ -1417,6 +1440,17 @@ the verdict, and DESIGN.md
             </div>
             <div class="sheet-body">
                 <div id="receipt-preview-warning" class="hidden mb-3 text-sm text-owe bg-owe/10 rounded-block p-3"></div>
+                <!-- WALUTA Z PARAGONU. Model odczytuje ją razem z pozycjami, a do
+                     2026-08-16 wynik lądował w koszu: rachunek zostawał w walucie pokoju,
+                     więc pozycje z Chorwacji wchodziły jako złotówki i nikt się o tym nie
+                     dowiadywał aż do rozliczenia. Pas pojawia się WYŁĄCZNIE wtedy, gdy
+                     odczytana waluta różni się od waluty rachunku, i niczego nie zmienia
+                     sam z siebie — kurs zapisuje się w dniu dodania, więc to decyzja
+                     człowieka, nie modelu. -->
+                <div id="receipt-currency-note" class="hidden mb-3 rounded-block p-3 bg-surface-2 flex items-center justify-between gap-3 flex-wrap">
+                    <p class="text-sm text-ink-2 min-w-0"><span id="receipt-currency-text"></span></p>
+                    <button id="receipt-currency-apply" class="btn btn-dark flex-shrink-0" type="button"></button>
+                </div>
                 <div id="receipt-preview-items" class="space-y-1"></div>
                 <div id="receipt-preview-modifiers-wrap" class="hidden mt-5">
                     <div id="receipt-preview-modifiers" class="space-y-1"></div>

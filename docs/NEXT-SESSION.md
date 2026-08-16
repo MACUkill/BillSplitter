@@ -50,6 +50,15 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   pociągnął. Cała mechanika usunięta 2026-08-16. Z API widocznego obszaru okna zostało
   **tylko wykrywanie klawiatury** (`watchKeyboardForDeck`, próg 140 px — mniej to pasek
   przeglądarki, więcej to klawiatura).
+- **Token powiadomień zapisuje się PO wczytaniu pokoju, nie przy starcie.** Przy starcie
+  nie wiadomo jeszcze, do której osoby w którym pokoju należy, więc zapis kończył się
+  cichym wyjściem i nigdy nie był ponawiany — stąd „przypomnienia zadziałały raz, a potem
+  przestały". Strażnik `pushTokenSavedFor` trzyma klucz `pokój:osoba:token`; nie zamieniaj
+  go z powrotem na wartość logiczną, bo zapis w jednym pokoju zablokuje zapis w drugim.
+- **`puppeteer` jest w `devDependencies`** i musi tam zostać: bez niego oba narzędzia
+  audytowe padają na starcie. Audyt wymaga też **emulatorów Firebase** (`npm run emulators`)
+  i serwera deweloperskiego — bez emulatorów anonimowe logowanie nie przechodzi
+  i aplikacja nie wychodzi poza ekran wczytywania.
 - **`overscroll-behavior-y: none` na `html` i `body`** wyłącza rozciąganie strony na końcu
   przewijania. Bez tego iOS przy ciągnięciu w dół na krótkiej stronie odbija całym
   dokumentem i ciągnie za sobą elementy `position: fixed`, czyli pasek nawigacji.

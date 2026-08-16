@@ -1538,6 +1538,66 @@ rozpoznaje ją po kształcie i barwie, a jednakowy wygląd w obu motywach jest w
 niż zgodność ze współczynnikiem. **Wyjątek kończy się na logotypie** — reguła 4,5:1
 obowiązuje w całej reszcie aplikacji bez zmian.
 
+### 19.18 Partia 8 — paragon, koszty wspólne, powiadomienia (2026-08-16)
+
+**Wydruk ma teraz DWIE linie oderwania.** Dolna mówiła „to paragon", górna nie mówiła nic,
+więc blok zaczynał się jak zwykła karta, a kończył jak wydruk. Kształt jest ten sam,
+obrócony. Ząbek rysują dwie warstwy o wspólnej masce, przesunięte o półtora piksela:
+spodnia limonkowa, wierzchnia w kolorze papieru — dzięki temu **limonkowa ramka biegnie
+także po linii oderwania**, zamiast urywać się na niej. Zwykły `border` tego nie umie,
+bo maska wycina kształt razem z obramowaniem.
+
+**Koszty wspólne dostały tę samą formę i wreszcie mówią, czym są.** Zgłoszenie właściciela:
+„brakuje informacji, że koszt wspólny to faktycznie koszt wspólny". Teraz mówią to trzy
+rzeczy naraz — nagłówek sekcji, jedno zdanie o dzieleniu po równo między wszystkich,
+i kwota **na osobę** przy każdym wierszu. Ostatnie jest najważniejsze: dopiero „3,50/os."
+pokazuje, co ten koszt znaczy dla patrzącego. Przy procencie obok nazwy stoi sam procent,
+a po prawej kwota w złotówkach — razem mówią to, czego żadne z nich nie mówi osobno.
+
+**Oba przyciski są białe i mają ikony**: paragon przy „Dodaj pozycję", ekipa przy „Dodaj
+koszt wspólny". Ta sama waga, bo to dwie równorzędne drogi dopisania czegoś do rachunku;
+ikony rozstrzygają, która dotyczy jednej osoby, a która wszystkich.
+
+**Szukanie wśród pozycji** pojawia się od ósmej pozycji i stoi POD wydrukiem. Przy pięciu
+pozycjach szybciej spojrzeć niż pisać, a pole nad treścią zabierałoby miejsce tam, gdzie
+nikt go nie potrzebuje. Filtr nakładany jest po renderze, nie w danych — inaczej każdy
+cudzy zapis czyściłby wpisane słowo w połowie wpisywania.
+
+**Sposoby płatności uczestnika da się otworzyć w ustawieniach pokoju.** Wiersz mówił
+„2 sposoby płatności" i na tym kończył; teraz rozwija się w miejscu i pokazuje dokładnie
+te same wiersze, co okno „Ureguluj" — numer, „Otwórz", „Kopiuj".
+
+**Odstęp nad stopką arkusza jest jeden dla wszystkich arkuszy.** Wcześniej wynikał z tego,
+co akurat stało na końcu treści (pole z `mb-4` dawało 34 px, bez niej 18 px), więc nie było
+reguły, był przypadek. Margines ostatniego dziecka schodzi do zera, oddech należy do arkusza.
+
+**Waluta z paragonu przestała lądować w koszu.** Model odczytywał ją razem z pozycjami,
+ale nic z niej nie wynikało — pozycje z zagranicy wchodziły jako złotówki. Teraz, gdy
+odczytana waluta różni się od waluty rachunku, w podglądzie stoi pas z przyciskiem
+„Ustaw EUR”. Nic nie dzieje się samo: kurs zapisuje się w dniu dodania, więc to decyzja
+człowieka. Instrukcja dla modelu mówi wprost, żeby przy braku wskazówek na paragonie
+zwrócić `null` — zgadywanie waluty po języku nazw dań byłoby gorsze niż brak odpowiedzi.
+
+**Kwoty idą jednym krojem.** Cztery miejsca renderowały pieniądze zwykłym tekstem
+(Archivo) zamiast klasą `.amount` (Bricolage): wiersz „kto komu ile” w zwiniętej sekcji,
+rejestr wpłat, rozpiska pod saldem i modyfikatory w podglądzie paragonu. Zgłoszenie
+właściciela było trafne — to nie był zamysł, to był brak.
+
+**Powrót z rachunku gestem wygląda tak samo jak strzałką.** Gest wywołuje `popstate`,
+a obsługa tego zdarzenia zrywała wszystkie nasłuchy bazy i szła przez ponowne pobranie
+dokumentu pokoju z sieci: ekran rozbierało się do zera i składało po odpowiedzi serwera.
+Strzałka tego nie robiła, bo pracuje na danych z pamięci. Teraz powrót do tego samego
+pokoju idzie tą samą drogą, a przewinięcie listy rachunków wraca tam, gdzie było.
+
+**Przypomnienia na iPhonie: znaleziona przyczyna „raz zadziałało, potem nigdy".**
+Token FCM zmienia się (na iOS potrafi po każdym zamknięciu aplikacji). Aplikacja pobierała
+przy starcie świeży token i próbowała go zapisać, ale w tej chwili pokój nie był jeszcze
+wczytany, więc zapis kończył się cichym wyjściem — i **nikt nigdy nie próbował ponownie**.
+Do bazy nie trafiał żaden nowy token, a stary funkcja wysyłkowa usuwała jako martwy przy
+pierwszej nieudanej próbie. Zapis jest teraz ponawiany po każdym wczytaniu pokoju, a klucz
+`pokój:osoba:token` pilnuje, żeby nie pisać w kółko tego samego. (Poprzedni strażnik był
+zwykłym „true/false" i po zapisie w jednym pokoju blokował zapis w drugim.)
+
 ### 19.11 Stan audytu po partii
 
 Cztery szerokości z kontraktu (360 / 390 / 834 / 1280), 32 stany ekranu, **zero zgłoszeń**:

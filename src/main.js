@@ -274,6 +274,27 @@
         };
         
         const handleUrlChange = () => {
+            // POWRÓT Z RACHUNKU GESTEM OD KRAWĘDZI.
+            //
+            // Zgłoszenie właściciela: przy powrocie strzałką nie dzieje się nic dziwnego,
+            // a przy powrocie gestem ekran miga i przeskakuje przewinięcie. Powód siedział
+            // tutaj: gest wywołuje `popstate`, a ta funkcja zrywała WSZYSTKIE nasłuchy
+            // bazy i szła przez `handleGroupJoin`, czyli przez ponowne pobranie dokumentu
+            // pokoju z sieci. Ekran rozbierało się do zera i składało z powrotem po
+            // odpowiedzi serwera — stąd mignięcie. Strzałka tego nie robiła, bo woła
+            // `navigateToGroup` na danych, które już leżą w pamięci.
+            //
+            // Ten sam ruch ma wyglądać tak samo niezależnie od tego, czym się go wykonało.
+            const back = new URLSearchParams(window.location.search);
+            const backGroup = back.get('group');
+            const backBill = back.get('bill');
+            if (backGroup && backGroup === currentGroupId && !backBill && currentBillId && groupData) {
+                if (unsubscribeBill) unsubscribeBill();
+                unsubscribeBill = null;
+                navigateToGroup(backGroup, false);
+                return;
+            }
+
             if (unsubscribeGroup) unsubscribeGroup();
             if (unsubscribeBill) unsubscribeBill();
             if (unsubscribeSettlements) unsubscribeSettlements();
@@ -940,12 +961,29 @@
         };
 
         const navigateToGroup = (groupId, pushState = true) => {
+            const backFromBill = Boolean(currentBillId);
             currentGroupId = groupId;
             currentBillId = null;
             if (pushState) {
                 history.pushState(null, '', `?group=${groupId}`);
             }
             renderGroupDashboard();
+            // Przewinięcie przywracamy DOPIERO po tym, jak lista rachunków dojdzie z bazy
+            // i będzie miała swoją wysokość — wcześniej strona nie ma dokąd się przewinąć.
+            // Dwa podejścia wystarczą: pierwsze łapie dane z pamięci podręcznej Firestore,
+            // drugie odpowiedź z sieci.
+            if (backFromBill && dashboardScrollY > 0) {
+                const target = dashboardScrollY;
+                const tryRestore = () => {
+                    if (document.documentElement.scrollHeight - window.innerHeight < target) return false;
+                    window.scrollTo(0, target);
+                    return true;
+                };
+                requestAnimationFrame(() => {
+                    if (tryRestore()) return;
+                    setTimeout(tryRestore, 350);
+                });
+            }
         };
         
         // --- Faza 3: filtry i ukrywanie rachunków ---
@@ -966,6 +1004,10 @@
                 if (!docSnap.exists()) return;
                 groupData = docSnap.data();
                 const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
+                // Token powiadomień dopisujemy DOPIERO tutaj, bo dopiero teraz wiadomo,
+                // do której osoby w którym pokoju należy. Przy starcie aplikacji tej
+                // wiedzy nie ma — patrz komentarz przy `savePushToken`.
+                savePushToken();
                 document.getElementById('dashboard-group-name').textContent = groupData.groupName;
                 const userNameEl = document.getElementById('dashboard-user-name');
                 userNameEl.textContent = myMember ? myMember.name : '...';
@@ -1629,7 +1671,7 @@
                 const label = c.label || (isPay ? 'Wpłata' : 'Rachunek');
                 // Wpłata zbija dług, więc idzie kolorem należności i ze znakiem minus —
                 // dwa nośniki, bo sam kolor nie wystarcza przy daltonizmie.
-                return `<div class="flex justify-between gap-2 text-xs py-0.5"><span class="truncate text-ink-3">${escapeHtml(label)}</span><span class="flex-shrink-0 ${neg ? 'text-due' : 'text-ink-3'}">${neg ? '−' : ''}${fmtMoney(c.amountG, cur)}</span></div>`;
+                return `<div class="flex justify-between gap-2 text-xs py-0.5"><span class="truncate text-ink-3">${escapeHtml(label)}</span><span class="amount flex-shrink-0 ${neg ? 'text-due' : 'text-ink-3'}">${neg ? '−' : ''}${fmtMoney(c.amountG, cur)}</span></div>`;
             };
             return `<details class="mt-1.5"><summary class="text-xs text-ink-2 cursor-pointer select-none">Za co</summary>
                 <div class="mt-1 pl-2 border-l border-ink/15">${fwd.map(c => line(c, false)).join('')}${rev.map(c => line(c, true)).join('')}</div></details>`;
@@ -1718,7 +1760,7 @@
                                     <i class="fas fa-arrow-right text-ink-3 text-xs mx-0.5"></i>
                                     ${avatarHtml(memberName(t.to), t.to, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(t.to))}</span>
                                 </span>
-                                <span class="font-bold text-ink-2 flex-shrink-0">${fmtMoney(t.amountG, cur)}</span>
+                                <span class="amount text-ink-2 flex-shrink-0">${fmtMoney(t.amountG, cur)}</span>
                             </div>
                             ${detailOf(t)}
                         </div>`;
@@ -1799,7 +1841,7 @@
                     </span>
                     <span class="min-w-0 flex-grow">
                         <span class="block text-sm truncate"><b>${escapeHtml(memberName(s.from))}</b> dla <b>${escapeHtml(memberName(s.to))}</b></span>
-                        <span class="block font-bold text-lg leading-tight">${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}</span>
+                        <span class="amount block text-lg">${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}</span>
                         <span class="mt-1 flex items-center gap-2 flex-wrap">
                             ${badge}
                             ${time ? `<span class="text-xs text-ink-3">${escapeHtml(time)}</span>` : ''}
@@ -2533,13 +2575,30 @@
                 const pay = methods > 0
                     ? `${methods} ${plural(methods, 'sposób płatności', 'sposoby płatności', 'sposobów płatności')}`
                     : 'brak sposobu płatności';
-                return `<div class="person-row" aria-pressed="false" role="group">
-                    ${avatarHtml(m.name, id)}
+                const head = `${avatarHtml(m.name, id)}
                     <span class="flex-grow min-w-0">
                         <span class="block font-medium truncate">${escapeHtml(m.name)}${note ? ` <span class="text-xs text-ink-3">· ${escapeHtml(note)}</span>` : ''}</span>
                         <span class="block text-xs text-ink-3 truncate">${escapeHtml(pay)}</span>
-                    </span>
-                </div>`;
+                    </span>`;
+
+                // WIERSZ, KTÓRY MÓWI „mam dwa sposoby płatności", MA JE POKAZAĆ.
+                // Zgłoszenie właściciela: skoro w ustawieniach pokoju stoi informacja
+                // o sposobach płatności, powinno dać się w nią zajrzeć i użyć numeru,
+                // a nie tylko przeczytać, że istnieje. Wiersze są dokładnie te same,
+                // co w oknie „Ureguluj" (`paymentMethodRowHtml`) — otwórz albo skopiuj —
+                // więc nie dokładamy do aplikacji drugiego sposobu na tę samą rzecz.
+                if (methods === 0) {
+                    return `<div class="person-row" role="group">${head}</div>`;
+                }
+                return `<details class="member-pay">
+                    <summary class="person-row cursor-pointer">
+                        ${head}
+                        <i class="fas fa-chevron-down settle-others-chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="member-pay-body">
+                        ${getPaymentMethods(m).map(paymentMethodRowHtml).join('')}
+                    </div>
+                </details>`;
             }).join('');
         };
 
@@ -3008,7 +3067,14 @@
             try { again.setSelectionRange(snap.start, snap.end); } catch (_) {}
         };
 
+        // Ile było przewinięte na liście rachunków, gdy ktoś wszedł w rachunek.
+        // Bez tego powrót — obojętnie czy strzałką, czy gestem — stawiał człowieka
+        // na górze listy, choć wybrany rachunek stał w jej połowie. Przy dwudziestu
+        // rachunkach to znaczy szukanie tego samego miejsca drugi raz.
+        let dashboardScrollY = 0;
+
         const joinBill = async (groupId, billId) => {
+            dashboardScrollY = window.scrollY || document.documentElement.scrollTop || 0;
             currentGroupId = groupId;
             currentBillId = billId;
             history.pushState(null, '', `?group=${groupId}&bill=${billId}`);
@@ -3019,6 +3085,9 @@
             // Nowe wejście na rachunek to nowa okazja, żeby zapytać wskazanego płatnika,
             // czy to naprawdę on zapłacił.
             payerClaimAskedFor = null;
+            // Szukanie należy do jednego paragonu. Wpisane słowo przeniesione na następny
+            // rachunek ukryłoby połowę pozycji bez żadnego powodu widocznego na ekranie.
+            resetItemSearch();
             
             if (!groupData) {
                 const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, groupId);
@@ -3157,14 +3226,22 @@
             // Ząbkowana krawędź należy się WYŁĄCZNIE prawdziwemu paragonowi: pod stanem
             // pustym wyglądałaby jak oderwany kawałek niczego.
             const tear = document.getElementById('receipt-tear');
+            const tearTop = document.getElementById('receipt-tear-top');
+            const searchWrap = document.getElementById('item-search-wrap');
 
             if (items.length === 0) {
                 list.className = '';
                 if (tear) tear.classList.add('hidden');
+                if (tearTop) tearTop.classList.add('hidden');
+                if (searchWrap) searchWrap.classList.add('hidden');
                 list.innerHTML = `<p class="block-quiet p-5 text-sm text-ink-2">Brak pozycji. Zrób zdjęcie paragonu wyżej i odczytaj je albo dopisz pozycję ręcznie. Potem każdy stuknie to, co jadł.</p>`;
                 return;
             }
             if (tear) tear.classList.remove('hidden');
+            if (tearTop) tearTop.classList.remove('hidden');
+            // Wyszukiwarka pojawia się dopiero przy paragonie, na którym szukanie ma sens.
+            // Przy pięciu pozycjach jest szybciej spojrzeć niż pisać.
+            if (searchWrap) searchWrap.classList.toggle('hidden', items.length < ITEM_SEARCH_MIN);
 
             // ŻYWY PARAGON — znak tej aplikacji.
             //
@@ -3232,6 +3309,137 @@
             items.forEach(it => {
                 lastPickersByItem.set(it.id, new Set(itemPickers(it)));
             });
+
+            // Filtr nakładamy PO renderze, bo render przychodzi z bazy i zdarza się
+            // wtedy, gdy ktoś inny odklikuje swoje. Gdyby filtrowanie siedziało w danych,
+            // każdy cudzy zapis czyściłby szukanie w połowie wpisywania.
+            applyItemFilter();
+        };
+
+        // --- SZUKANIE WŚRÓD POZYCJI ------------------------------------------------
+        // Paragon z czterdziestoma pozycjami czyta się dobrze dopóki się po nim nie
+        // SZUKA. „Co ja jadłem" przy takiej długości to przewijanie w obie strony,
+        // więc pole szukania jest tu narzędziem, a nie ozdobą — i dlatego pokazuje się
+        // wyłącznie tam, gdzie jest potrzebne.
+        const ITEM_SEARCH_MIN = 8;
+        let itemQuery = '';
+
+        const applyItemFilter = () => {
+            const list = document.getElementById('shared-costs-list');
+            const countEl = document.getElementById('item-search-count');
+            if (!list) return;
+            const rows = [...list.querySelectorAll('[data-item-id]')];
+            const q = itemQuery.trim().toLowerCase();
+            let shown = 0;
+            rows.forEach((row) => {
+                const hit = !q || (row.textContent || '').toLowerCase().includes(q);
+                row.classList.toggle('hidden', !hit);
+                if (hit) shown += 1;
+            });
+            if (countEl) {
+                countEl.classList.toggle('hidden', !q);
+                // Liczba, nie pasek postępu: przy zerze człowiek ma wiedzieć, że pomylił
+                // słowo, a nie że paragon zniknął.
+                countEl.textContent = shown === 0
+                    ? 'Żadna pozycja nie pasuje do tego słowa.'
+                    : `Pokazane: ${shown} z ${rows.length}`;
+            }
+        };
+
+        const setupItemSearch = () => {
+            const input = document.getElementById('item-search');
+            const clear = document.getElementById('item-search-clear');
+            if (!input || input.dataset.wired === '1') return;
+            input.dataset.wired = '1';
+            input.oninput = () => {
+                itemQuery = input.value;
+                if (clear) clear.classList.toggle('hidden', !itemQuery);
+                applyItemFilter();
+            };
+            if (clear) {
+                clear.onclick = () => {
+                    input.value = '';
+                    itemQuery = '';
+                    clear.classList.add('hidden');
+                    applyItemFilter();
+                    input.focus();
+                };
+            }
+        };
+
+        // --- KOSZTY WSPÓLNE --------------------------------------------------------
+        // Zgłoszenie właściciela: „brakuje informacji, że koszt wspólny to faktycznie
+        // koszt wspólny". Nazwa sekcji tego nie niosła — napiwek stał na liście jako
+        // zwykły wiersz z kwotą i niczym nie różnił się od pozycji paragonu.
+        // Teraz mówią to trzy rzeczy naraz: nagłówek sekcji, jedno zdanie pod nim
+        // i kwota rozpisana NA OSOBĘ przy każdym wierszu. Ostatnie jest najważniejsze:
+        // dopiero „3,50/os." pokazuje, co ten koszt znaczy dla patrzącego.
+        const renderGlobalCosts = () => {
+            const list = document.getElementById('global-costs-list');
+            if (!list || !billData) return;
+            const costs = billData.globalCosts || [];
+            const cur = billData.currency || 'PLN';
+            const header = document.getElementById('global-costs-header');
+            const tear = document.getElementById('global-tear');
+            const tearTop = document.getElementById('global-tear-top');
+            const heads = Object.values(billData.participants || {})
+                .filter((p) => p.status !== PARTICIPANT_OUT).length;
+
+            if (header) {
+                header.innerHTML = `
+                    <div class="mb-3">
+                        <h3 class="font-display text-xl font-extrabold tracking-tight">Koszty wspólne${costs.length ? ` (${costs.length})` : ''}</h3>
+                        <p class="text-sm text-ink-2 mt-1">Dzielą się <strong class="text-ink">po równo między wszystkich</strong>, niezależnie od tego, kto co jadł: napiwek, serwis, opłata za rezerwację.</p>
+                    </div>`;
+            }
+
+            if (costs.length === 0) {
+                list.className = '';
+                if (tear) tear.classList.add('hidden');
+                if (tearTop) tearTop.classList.add('hidden');
+                list.innerHTML = '';
+                return;
+            }
+
+            if (tear) tear.classList.remove('hidden');
+            if (tearTop) tearTop.classList.remove('hidden');
+            list.className = 'receipt card overflow-hidden';
+            list.innerHTML = costs.map((gc) => {
+                // Number() zamiast .toFixed() wprost: koszt wspólny wpisany z konsoli jako tekst
+                // wywalał cały render listy (a z nim ekran rachunku).
+                const gcValue = Number(gc.value) || 0;
+                const isPercent = gc.type === 'percent';
+                // Procent liczymy od sumy pozycji — tak samo, jak liczy to rozliczenie.
+                const baseG = toGrosze(billData.totalAmount || 0);
+                const totalG = isPercent ? Math.round(baseG * gcValue / 100) : toGrosze(gcValue);
+                const perHeadG = heads > 0 ? Math.ceil(totalG / heads) : 0;
+                // Przy procencie zostaje na ekranie SAM procent obok nazwy, a po prawej
+                // stoi już kwota w złotówkach: „15%" i „18,30" mówią razem to, czego
+                // żadne z nich nie mówi osobno.
+                return `
+                    <div class="receipt-line">
+                        <span class="global-cost-mark" aria-hidden="true"><i class="fas fa-users"></i></span>
+                        <span class="flex-grow min-w-0">
+                            <span class="block font-bold leading-tight truncate">${escapeHtml(gc.description)}${isPercent ? ` <span class="text-ink-3 font-semibold">${gcValue}%</span>` : ''}</span>
+                            <span class="mt-1.5 flex items-center gap-2 min-h-[1.75rem]">
+                                <span class="text-xs text-ink-3">Dla wszystkich${heads > 0 ? ` · ${fmtMoney(perHeadG, cur)}/os.` : ''}</span>
+                            </span>
+                        </span>
+                        <span class="flex items-center gap-2 flex-shrink-0">
+                            <span class="text-xl">${amountHtml(totalG, cur, 'text-ink', { withCurrency: false })}</span>
+                            <button class="remove-global-cost-btn w-11 h-11 rounded-full flex items-center justify-center text-ink-3 flex-shrink-0" data-cost-id="${gc.id}" title="Usuń koszt wspólny" aria-label="Usuń koszt wspólny: ${escapeHtml(gc.description)}"><i class="fas fa-trash text-xs"></i></button>
+                        </span>
+                    </div>`;
+            }).join('');
+        };
+
+        const resetItemSearch = () => {
+            const input = document.getElementById('item-search');
+            const clear = document.getElementById('item-search-clear');
+            itemQuery = '';
+            if (input) input.value = '';
+            if (clear) clear.classList.add('hidden');
+            applyItemFilter();
         };
 
         // --- Faza 7B: odczyt paragonu przez AI ---
@@ -3321,9 +3529,43 @@
             }
         };
 
+        // Waluta odczytana z paragonu kontra waluta rachunku. Model bywa pewny siebie,
+        // więc dopuszczamy WYŁĄCZNIE waluty, które aplikacja realnie obsługuje — inaczej
+        // przycisk proponowałby ustawienie czegoś, czego nie da się rozliczyć.
+        const RECEIPT_CURRENCIES = ['PLN', 'EUR', 'USD'];
+
+        const renderReceiptCurrencyNote = () => {
+            const note = document.getElementById('receipt-currency-note');
+            const text = document.getElementById('receipt-currency-text');
+            const btn = document.getElementById('receipt-currency-apply');
+            if (!note || !text || !btn) return;
+            const billCur = (billData && billData.currency) || 'PLN';
+            const seen = receiptDraft && receiptDraft.currency;
+            const usable = seen && RECEIPT_CURRENCIES.includes(seen) && seen !== billCur;
+            note.classList.toggle('hidden', !usable);
+            if (!usable) return;
+            text.innerHTML = `Na paragonie widać <b>${escapeHtml(seen)}</b>, a rachunek jest w <b>${escapeHtml(billCur)}</b>. Kurs zapisze się z dzisiaj.`;
+            btn.textContent = `Ustaw ${seen}`;
+            btn.onclick = async () => {
+                btn.disabled = true;
+                try {
+                    const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId);
+                    await updateDoc(billDocRef, await currencyPatch(seen));
+                    showToast(`Waluta rachunku: ${seen}.`);
+                    note.classList.add('hidden');
+                } catch (err) {
+                    console.error('[Billiada] Zmiana waluty z paragonu nieudana:', err);
+                    showToast('Nie udało się zmienić waluty.', true);
+                } finally {
+                    btn.disabled = false;
+                }
+            };
+        };
+
         const renderReceiptPreview = () => {
             if (!receiptDraft) return;
             const cur = (billData && billData.currency) || 'PLN';
+            renderReceiptCurrencyNote();
             const wrap = document.getElementById('receipt-preview-items');
 
             wrap.innerHTML = receiptDraft.items.map((it, i) => `
@@ -3341,7 +3583,7 @@
                 <div class="flex items-center gap-2 p-2 rounded-lg ${m.__use ? '' : 'opacity-50'}">
                     <input type="checkbox" class="rp-mod-use w-5 h-5 flex-shrink-0 accent-ink" data-i="${i}" ${m.__use ? 'checked' : ''}>
                     <span class="flex-grow min-w-0 truncate">${escapeHtml(m.description)}</span>
-                    <span class="font-semibold ${Number(m.value) < 0 ? 'text-due' : 'text-ink-2'}">${m.type === 'percent' ? `${Number(m.value)}%` : fmtMoney(toGrosze(m.value), cur)}</span>
+                    <span class="amount ${Number(m.value) < 0 ? 'text-due' : 'text-ink-2'}">${m.type === 'percent' ? `${Number(m.value)}%` : fmtMoney(toGrosze(m.value), cur)}</span>
                 </div>`).join('');
 
             renderReceiptPreviewSummaryOnly();
@@ -3900,23 +4142,8 @@
             renderItemTiles();
             renderBillHistory();
 
-            document.getElementById('global-costs-list').innerHTML = (billData.globalCosts || []).map(gc => {
-                // Number() zamiast .toFixed() wprost: koszt wspólny wpisany z konsoli jako tekst
-                // wywalał cały render listy (a z nim ekran rachunku).
-                const gcValue = Number(gc.value) || 0;
-                const valueText = gc.type === 'percent' ? `${gcValue}%` : `${gcValue.toFixed(2).replace('.', ',')} ${escapeHtml(billData.currency)}`;
-                // Koszt ogólny dotyczy wszystkich, więc czyta się jak dopisek na banknocie:
-                // pasek mikrodruku po lewej, kwota po prawej, bez własnego koloru.
-                return `
-                    <div class="card p-3 flex justify-between items-center gap-2">
-                        <p class="font-semibold truncate">${escapeHtml(gc.description)}</p>
-                        <span class="flex items-center gap-3 flex-shrink-0">
-                            <span class="font-semibold text-ink-2">${valueText}</span>
-                            <button class="remove-global-cost-btn tap w-9 h-9 rounded-lg flex items-center justify-center text-ink-3" data-cost-id="${gc.id}" title="Usuń koszt wspólny"><i class="fas fa-trash text-sm"></i></button>
-                        </span>
-                    </div>`;
-            }).join('');
-            
+            renderGlobalCosts();
+
             document.getElementById('add-shared-cost-btn').disabled = false;
             document.getElementById('add-global-cost-btn').disabled = false;
             // FIX: The variable to check if the delete button should be shown is now `isCurrentUserThePayer`
@@ -3929,6 +4156,11 @@
             const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId);
             // (Usunięta lokalna kopia `parseLocalFloat` — istnieje wersja modułowa. Dublet już raz
             // wywołał cichy ReferenceError, gdy jedna z kopii zniknęła przy refaktorze.)
+
+            // Pole szukania podpinamy raz na cały pobyt na rachunku (`dataset.wired`):
+            // ta funkcja biegnie przy KAŻDYM zapisie z bazy, a przepinanie nasłuchu pod
+            // palcem gubi znak wpisany w tej samej chwili.
+            setupItemSearch();
 
             document.getElementById('back-to-dashboard-btn').onclick = () => {
                 if (unsubscribeBill) unsubscribeBill();
@@ -4272,18 +4504,40 @@
         // Wysyłką zajmie się backend (docelowo trigger na nudges/{id}); klient tylko rejestruje token.
         const VAPID_KEY = env.VITE_FCM_VAPID_KEY || '';
         let pushToken = null;
-        let pushTokenSaved = false;
+        // Dla KTÓREJ pary pokój+osoba ten token jest już zapisany. Zwykłe „true/false"
+        // było tu błędem: po zapisie w jednym pokoju blokowało zapis w drugim.
+        let pushTokenSavedFor = null;
 
         const pushSupported = () => 'Notification' in window && 'serviceWorker' in navigator && !!VAPID_KEY;
 
+        // POWÓD, DLA KTÓREGO PRZYPOMNIENIA „ZADZIAŁAŁY RAZ, A POTEM PRZESTAŁY".
+        //
+        // Token FCM zmienia się — na iPhonie potrafi się zmienić po każdym zamknięciu
+        // aplikacji dodanej do ekranu początkowego. `setupPush()` pobiera przy starcie
+        // świeży token i próbuje go zapisać, ale w tej chwili pokój NIE JEST jeszcze
+        // wczytany (`groupData` puste), więc zapis kończył się cichym `return` — i nikt
+        // nigdy nie próbował ponownie. Do bazy nie trafiał żaden nowy token, a stary
+        // funkcja wysyłkowa usuwała jako martwy przy pierwszej nieudanej próbie.
+        // Efekt z punktu widzenia człowieka: raz przyszło, potem cisza bez powodu.
+        //
+        // Teraz zapis jest PONAWIANY po każdym wczytaniu pokoju, a klucz pilnuje, żeby
+        // nie pisać w kółko tego samego.
         const savePushToken = async () => {
-            if (!pushToken || pushTokenSaved || !currentGroupId || !groupData) return;
+            if (!pushToken || !currentGroupId || !groupData) return;
             const my = myMemberNow();
             if (!my) return;
-            await updateDoc(doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId), {
-                [`members.${my.id}.fcmTokens`]: arrayUnion(pushToken),
-            });
-            pushTokenSaved = true;
+            const key = `${currentGroupId}:${my.id}:${pushToken}`;
+            if (pushTokenSavedFor === key) return;
+            try {
+                await updateDoc(doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId), {
+                    [`members.${my.id}.fcmTokens`]: arrayUnion(pushToken),
+                });
+                pushTokenSavedFor = key;
+            } catch (err) {
+                // Bez rzucania dalej: brak zapisu tokenu nie ma prawa wywalić ekranu.
+                // Następne wejście do pokoju spróbuje jeszcze raz.
+                console.warn('[Billiada] Nie udało się zapisać tokenu powiadomień:', err);
+            }
         };
 
         const renderPushToggle = () => {
@@ -4317,7 +4571,7 @@
                 vapidKey: VAPID_KEY,
                 serviceWorkerRegistration: swRegistration || undefined,
             });
-            pushTokenSaved = false;
+            pushTokenSavedFor = null;
             console.info('[Billiada] Token FCM tego urządzenia:', pushToken);
             await savePushToken();
             return pushToken;
