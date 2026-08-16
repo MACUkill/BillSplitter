@@ -220,7 +220,7 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     gap: 0.125rem;
     max-width: calc(100vw - 1rem);
     padding: 0.5rem 0.625rem;
-    border-radius: 0.75rem;
+    border-radius: theme('borderRadius.inner');
     background-color: rgb(var(--ink) / 0.88);
     color: rgb(var(--surface));
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

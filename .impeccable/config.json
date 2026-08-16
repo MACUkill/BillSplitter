@@ -53,6 +53,16 @@
         "value": "#181a20",
         "createdAt": "2026-08-15T21:07:41.545Z",
         "reason": "Druga z dwoch barw znaku firmowego (obok limonki C6F03A). DESIGN.md sekcja Znak firmowy opisuje to jako jedyny jawny wyjatek: barwy znaku nie ida za motywem"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "sfmono-regular",
+        "createdAt": "2026-08-16T11:07:08.995Z"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "menlo",
+        "createdAt": "2026-08-16T11:07:22.217Z"
       }
     ]
   }
