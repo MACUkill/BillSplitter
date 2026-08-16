@@ -69,12 +69,19 @@ export const sendNudgePush = onDocumentCreated(
     const groupDoc = await db.doc(`artifacts/${APP_ID}/public/data/groups/${groupId}`).get();
     if (!groupDoc.exists) return;
 
-    // ANTY-SPAM PO STRONIE SERWERA (audyt 2026-07-27).
-    // Zasada „jedno przypomnienie na 6 h" żyła wyłącznie w przeglądarce, a reguły pozwalają
-    // każdemu zalogowanemu utworzyć dowolnie wiele dokumentów `nudges`. Bez tej bramki
-    // ktoś mógł w pętli zasypać czyjś telefon powiadomieniami. Wpis w skrzynce powstaje
-    // normalnie — blokujemy tylko DYMEK, bo to on budzi telefon w środku nocy.
-    const SIX_HOURS_MS = 6 * 3600 * 1000;
+    // ANTY-SPAM PO STRONIE SERWERA. Reguły pozwalają każdemu zalogowanemu utworzyć dowolnie
+    // wiele dokumentów `nudges`, więc bez bramki ktoś mógłby w pętli zasypać czyjś telefon.
+    //
+    // BRAMKA TO DZIESIĘĆ SEKUND, NIE SZEŚĆ GODZIN (audyt 2026-08-16).
+    // Właściciel rozstrzygnął 2026-08-05, że blokujemy wyłącznie walenie w przycisk co
+    // sekundę: produkt ma domykać dług, a nie chronić dłużnika przed wierzycielem. Zmiana
+    // trafiła wtedy do przeglądarki (`NUDGE_GATE_MS` w src/main.js), ale TU ZOSTAŁO SZEŚĆ
+    // GODZIN — i to jest najpewniejsze wyjaśnienie zgłoszenia „powiadomienia czasem
+    // działały, zwykle nie". Wpis w skrzynce powstawał normalnie, więc nadawca widział
+    // sukces, a telefon odbiorcy milczał przez kolejne sześć godzin od poprzedniego
+    // przypomnienia. Przy testowaniu w kilka osób tego samego wieczoru trafiał jeden push
+    // na całą sesję.
+    const GATE_MS = 10 * 1000;
     const createdAtMs = nudge.createdAt && nudge.createdAt.toMillis
       ? nudge.createdAt.toMillis()
       : Date.now();
@@ -87,10 +94,10 @@ export const sendNudgePush = onDocumentCreated(
       if (d.id === event.params.nudgeId) return false;
       const ts = d.data().createdAt;
       const ms = ts && ts.toMillis ? ts.toMillis() : 0;
-      return ms > 0 && createdAtMs - ms < SIX_HOURS_MS;
+      return ms > 0 && createdAtMs - ms < GATE_MS;
     });
     if (hasRecent) {
-      logger.info(`Pominięto push do ${nudge.to}: przypomnienie od ${nudge.from} było w ciągu ostatnich 6 h.`);
+      logger.info(`Pominięto push do ${nudge.to}: przypomnienie od ${nudge.from} poszło mniej niż ${GATE_MS / 1000} s temu.`);
       return;
     }
 

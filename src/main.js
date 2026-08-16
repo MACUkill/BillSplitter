@@ -4277,18 +4277,36 @@
         // Wysyłką zajmie się backend (docelowo trigger na nudges/{id}); klient tylko rejestruje token.
         const VAPID_KEY = env.VITE_FCM_VAPID_KEY || '';
         let pushToken = null;
-        let pushTokenSaved = false;
+        // TOKEN NALEŻY ZAPISAĆ W KAŻDYM POKOJU, NIE W JEDNYM (audyt 2026-08-16).
+        // Tokeny mieszkają w `members.{id}.fcmTokens` WEWNĄTRZ dokumentu grupy, a wysyłka
+        // (`sendNudgePush`) szuka ich w grupie, z której poszło przypomnienie. Wcześniej
+        // stała tu jedna flaga „już zapisane", więc token trafiał wyłącznie do pokoju
+        // otwartego w chwili włączania powiadomień. Kto należał do dwóch pokoi, dostawał
+        // push tylko z jednego — a z drugiego funkcja widziała pustą listę urządzeń
+        // i po cichu odpuszczała. Zbiór zamiast flagi zapisuje token raz na pokój.
+        const pushTokenSavedIn = new Set();
 
-        const pushSupported = () => 'Notification' in window && 'serviceWorker' in navigator && !!VAPID_KEY;
+        // Na iPhonie Push API istnieje WYŁĄCZNIE w aplikacji dodanej do ekranu początkowego.
+        // W zwykłej karcie Safari `Notification` bywa zdefiniowane, więc sam jego widok
+        // niczego nie dowodzi — bez `PushManager` zgoda i tak donikąd nie prowadzi.
+        const isStandaloneApp = () => window.matchMedia('(display-mode: standalone)').matches
+            || window.navigator.standalone === true;
+        const isIosDevice = () => /iphone|ipad|ipod/i.test(navigator.userAgent)
+            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const pushNeedsInstall = () => isIosDevice() && !isStandaloneApp();
+
+        const pushSupported = () => 'Notification' in window && 'serviceWorker' in navigator
+            && 'PushManager' in window && !!VAPID_KEY;
 
         const savePushToken = async () => {
-            if (!pushToken || pushTokenSaved || !currentGroupId || !groupData) return;
+            if (!pushToken || !currentGroupId || !groupData) return;
+            if (pushTokenSavedIn.has(currentGroupId)) return;
             const my = myMemberNow();
             if (!my) return;
             await updateDoc(doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId), {
                 [`members.${my.id}.fcmTokens`]: arrayUnion(pushToken),
             });
-            pushTokenSaved = true;
+            pushTokenSavedIn.add(currentGroupId);
         };
 
         const renderPushToggle = () => {
@@ -4296,9 +4314,20 @@
             const label = document.getElementById('push-toggle-label');
             const note = document.getElementById('push-toggle-note');
             if (!btn || !label || !note) return;
+            // Na iPhonie mówimy WPROST, czego brakuje, zamiast dawać przełącznik, który
+            // i tak nie zadziała: w karcie Safari powiadomień po prostu nie ma, są dopiero
+            // w skrócie z ekranu początkowego. Wcześniej ta różnica ginęła w jednym zdaniu
+            // o „przeglądarce, która nie obsługuje".
+            if (pushNeedsInstall()) {
+                label.textContent = 'Najpierw dodaj do ekranu początkowego';
+                note.textContent = 'iPhone wysyła powiadomienia tylko do aplikacji dodanej do ekranu początkowego — w karcie Safari nie zadziałają.';
+                btn.disabled = true;
+                btn.classList.add('opacity-60');
+                return;
+            }
             if (!pushSupported()) {
                 label.textContent = 'Powiadomienia niedostępne';
-                note.textContent = 'Ta przeglądarka ich nie obsługuje (na iPhonie dodaj apkę do ekranu początkowego).';
+                note.textContent = 'Ta przeglądarka ich nie obsługuje.';
                 btn.disabled = true;
                 btn.classList.add('opacity-60');
                 return;
@@ -4318,11 +4347,18 @@
 
         const acquirePushToken = async () => {
             const messaging = getMessaging(app);
-            pushToken = await getToken(messaging, {
+            const fresh = await getToken(messaging, {
                 vapidKey: VAPID_KEY,
                 serviceWorkerRegistration: swRegistration || undefined,
             });
-            pushTokenSaved = false;
+            // Safari potrafi unieważnić subskrypcję po cichu, więc przy każdym uruchomieniu
+            // token bywa NOWY. Wtedy zapis do pokoi trzeba powtórzyć od zera — inaczej
+            // wysyłka celowałaby w martwy token zapisany poprzednim razem.
+            if (fresh !== pushToken) pushTokenSavedIn.clear();
+            pushToken = fresh;
+            // Log zostaje celowo: to jedyna droga, żeby wyjąć token z urządzenia i wysłać
+            // na nie próbny dymek przez `scripts/send-test-push.mjs`. Token nie daje dostępu
+            // do niczego poza wysłaniem powiadomienia na to jedno urządzenie.
             console.info('[Billiada] Token FCM tego urządzenia:', pushToken);
             await savePushToken();
             return pushToken;
