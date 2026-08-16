@@ -266,17 +266,29 @@ body:has(#offline-banner:not(.hidden)) #app-container {
 
   .wordmark-bill { color: #C6F03A; }
 
-  /* JASNE PODŁOŻE: ZNAK ZOSTAJE KOLOROWY.
-     Wcześniej stała tu wersja jednobarwna — koń i nazwa schodziły na jasnym motywie
-     na atrament (`brightness(0)`), bo limonka na bieli ma kontrast około 1,5:1.
-     Decyzja właściciela (2026-08-16) jest inna i to jest decyzja o znaku firmowym,
-     nie o tekście: koń ma być zielony wszędzie, „Bill" zielone, „iada" czarne.
-     Kryteria czytelności dla tekstu logotypu nie obowiązują — nazwy marki nikt tu
-     nie czyta jako treści, rozpoznaje ją po kształcie i barwie, a jednakowy wygląd
-     w obu motywach jest wart więcej niż zgodność ze współczynnikiem.
-     Reguła kontrastu zostaje wiążąca dla WSZYSTKIEGO poza tym blokiem. */
-  :root[data-theme='light'] .wordmark { color: rgb(var(--ink)); }
-  :root[data-theme='light'] .wordmark-bill { color: #C6F03A; }
+  /* JASNE PODŁOŻE: ZNAK DOSTAJE WŁASNE, CIEMNE TŁO.
+     Limonka na bieli ma kontrast około 1,5:1 — znak po prostu blaknie. Były trzy
+     wyjścia: wersja jednobarwna (koń i nazwa atramentem — próbowane, właściciel
+     odrzucił: znak przestaje być znakiem), limonka wprost na bieli (odrzucone
+     z tego samego powodu, dla którego pytanie w ogóle wróciło) i to trzecie:
+     znak zachowuje swoje barwy, a dostaje pod spód swoje własne podłoże.
+     Tak działa większość znaków firmowych — kolory są związane ze znakiem,
+     nie z tłem, na którym akurat leży.
+
+     Podłoże to drugi kolor znaku, `#181A20`, wpisany wprost, a nie przez zmienną
+     motywu: to jest kolor MARKI, który ma zostać ten sam także wtedy, gdy tło
+     aplikacji kiedyś się zmieni. W ciemnym motywie plakietki nie ma — tam ten
+     kolor już leży na ekranie i ramka wokół znaku byłaby ramką wokół niczego. */
+  :root[data-theme='light'] .brand-lockup {
+    background-color: #181A20;
+    padding: 0.875rem 1.25rem 1rem;
+    border-radius: 1.25rem;
+  }
+
+  :root[data-theme='light'] .brand-lockup-lg {
+    padding: 1.25rem 1.75rem 1.375rem;
+    border-radius: 1.75rem;
+  }
 
   /* Wersja duża — ekran wczytywania, gdzie znak jest jedyną treścią. */
   .brand-lockup-lg { gap: 0.875rem; }
