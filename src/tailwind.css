@@ -249,6 +249,31 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     background-color: rgb(var(--bg));
   }
 
+  /* NADROBIENIE WYSOKOŚCI ZABRANEJ PRZEZ PASEK STANU NA iOS.
+     ===========================================================================
+     To jest wyjaśnienie czarnego pasa na dole i zarazem domknięcie sprawy paska
+     nawigacji, którą ciągnęliśmy przez cztery podejścia.
+
+     Przy `apple-mobile-web-app-status-bar-style: black-translucent` aplikacja
+     uruchomiona z ikony dostaje CAŁY ekran — treść wchodzi pod pasek stanu i pod
+     wcięcie u góry. Ale blok, od którego liczą się wszystkie wysokości (i do którego
+     przypina się `position: fixed`), zostaje przy tym KRÓTSZY o wysokość górnego
+     wcięcia. Efekt: `inset: 0` kończy się kilkadziesiąt pikseli nad dolną krawędzią
+     ekranu, a poniżej widać czerń systemu. Na iPhonie 12 to jakieś 47 px — dokładnie
+     tyle, ile widać na zrzutach właściciela.
+
+     Stąd też pasek nawigacji stał w tym trybie wyżej, niż powinien: jego odległość
+     od dołu liczyła się od tej samej, za krótkiej podstawy.
+
+     Poprawka jest wąska i celowo obwarowana dwoma warunkami:
+     `-webkit-touch-callout` mają wyłącznie przeglądarki WebKit na iOS, a
+     `display-mode: standalone` zawęża rzecz do uruchomienia z ikony. W przeglądarce
+     i na Androidzie nic się nie zmienia — tam ten deficyt nie istnieje i dodatek
+     wypchnąłby układ poza ekran.
+
+     Sama reguła mieszka na KOŃCU PLIKU, poza warstwami — inaczej `.deck` z warstwy
+     komponentów by ją nadpisał i poprawka działałaby tylko na połowie układu. */
+
   /* PASEK PRZEWIJANIA UKRYTY.
      Aplikacja to jedna kolumna kart, nie dokument — o długości treści mówi sama lista,
      nie kreska przy krawędzi. Wskaźnik przewijania DOKUMENTU na iPhonie rysuje system
@@ -2197,5 +2222,24 @@ body:has(#offline-banner:not(.hidden)) #app-container {
       animation: none;
       transition: none;
     }
+  }
+}
+
+/* KOMPENSACJA WYSOKOŚCI NA iOS Z IKONY — POZA WARSTWAMI I TO JEST WARUNEK DZIAŁANIA.
+   Pełne wyjaśnienie stoi przy `#app-scroll` w warstwie podstawowej. W skrócie: przy
+   `black-translucent` blok, od którego liczą się wysokości i do którego przypina się
+   `position: fixed`, jest krótszy o wysokość górnego wcięcia — stąd czarny pas na dole
+   i pasek nawigacji stojący za wysoko.
+
+   Reguła musi stać POZA `@layer`, bo `.deck` mieszka w warstwie komponentów i stamtąd
+   wygrywa z każdą deklaracją zapisaną w warstwie podstawowej. Ten sam trap, który już
+   dwa razy zjadł odstępy liczone z `env()` (patrz komentarz przy `#app-container`).
+
+   Oba warunki są potrzebne: `-webkit-touch-callout` mają tylko przeglądarki WebKit
+   na iOS, a `display-mode: standalone` zawęża rzecz do uruchomienia z ikony. */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    #app-scroll { bottom: calc(-1 * env(safe-area-inset-top)); }
+    .deck { bottom: calc(max(1.5rem, env(safe-area-inset-bottom)) - env(safe-area-inset-top)); }
   }
 }

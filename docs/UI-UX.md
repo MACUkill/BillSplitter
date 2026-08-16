@@ -1677,6 +1677,38 @@ bo lupa pokazuje się dopiero od ósmej). Pierwszy z nich od razu znalazł realn
 którego nie widziało żadne oko: przycisk usuwania sposobu płatności miał 36 px zamiast
 44 px wymaganych dla celu dotykowego — przy operacji nieodwracalnej.
 
+### 19.22 Czarny pas na dole: wyjaśnienie i koniec serii (2026-08-16)
+
+Czwarte podejście do tej samej rodziny objawów — i pierwsze z wyjaśnieniem, które
+tłumaczy WSZYSTKIE naraz, zamiast łatać po jednym.
+
+**Mechanizm.** Przy `apple-mobile-web-app-status-bar-style: black-translucent` aplikacja
+uruchomiona z ikony dostaje cały ekran: treść wchodzi pod pasek stanu i pod wcięcie u góry.
+Ale blok, od którego liczą się wysokości i do którego przypina się `position: fixed`,
+zostaje przy tym **krótszy o wysokość górnego wcięcia**. Na iPhonie 12 to około 47 px —
+i dokładnie tyle czerni widać na zrzutach właściciela pod paskiem nawigacji. Ta sama
+krótsza podstawa stawiała pasek nawigacji wyżej, niż powinien stać.
+
+To jest opisane i powtarzalne, nie nasza pomyłka: rozwiązania krążące w sieci sprowadzają
+się do tej samej korekty, zwykle w postaci `min-height: calc(100% + env(safe-area-inset-top))`
+na korzeniu dokumentu. Ta wersja pasuje do układów, w których przewija się dokument —
+u nas dokument nie przewija się wcale (patrz 19.19), więc korekta idzie tam, gdzie realnie
+działa: na przypięty kontener i na pasek.
+
+**Zasięg poprawki jest wąski celowo.** `@supports (-webkit-touch-callout: none)` odsiewa
+wszystko poza WebKit na iOS, `@media (display-mode: standalone)` — wszystko poza
+uruchomieniem z ikony. W przeglądarce i na Androidzie deficytu nie ma, a dodatek
+wypchnąłby układ poza ekran.
+
+**Reguła stoi poza `@layer`** i to jest warunek działania: `.deck` mieszka w warstwie
+komponentów i z warstwy podstawowej nie da się go nadpisać. Ten sam trap zjadł już
+wcześniej odstępy liczone z `env()` — trzeci raz w tym projekcie.
+
+**Do sprawdzania na miejscu został podgląd wymiarów okna**: pięć stuknięć w znak firmowy
+albo w numer pokoju. Powstał, bo trzy poprzednie podejścia były zgadywaniem — przeglądarka
+na komputerze pokazuje inne liczby niż iPhone z ikony, a zdalnie nie da się ich zmierzyć
+inaczej niż prosząc o zrzut. Różnica między `screen` a `inner` to dokładnie ten deficyt.
+
 ### 19.11 Stan audytu po partii
 
 Cztery szerokości z kontraktu (360 / 390 / 834 / 1280), 32 stany ekranu, **zero zgłoszeń**:

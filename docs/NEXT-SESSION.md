@@ -68,6 +68,21 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   objawu nie było widać, bo tam gest obsługuje sama przeglądarka; zgłoszenie dotyczyło
   wyłącznie trybu z ikony. `overscroll-behavior-y` zostaje jako druga warstwa dla
   przeglądarek, które ją honorują.
+- **NA iOS Z IKONY UKŁAD JEST KRÓTSZY O WYSOKOŚĆ GÓRNEGO WCIĘCIA — i to jest wyjaśnienie
+  całej serii zgłoszeń o pasku nawigacji i o czarnym pasie na dole.** Przy
+  `apple-mobile-web-app-status-bar-style: black-translucent` aplikacja dostaje cały ekran,
+  ale blok, od którego liczą się wysokości i do którego przypina się `position: fixed`,
+  zostaje krótszy o `env(safe-area-inset-top)` (na iPhonie 12 jakieś 47 px). Dlatego
+  `inset: 0` kończył się nad dolną krawędzią, a pasek nawigacji stał za wysoko.
+  Kompensacja stoi **na końcu `src/tailwind.css`, poza `@layer`** (w warstwie podstawowej
+  przegrałaby z `.deck` z warstwy komponentów) i jest obwarowana dwoma warunkami:
+  `@supports (-webkit-touch-callout: none)` plus `@media (display-mode: standalone)`.
+  W przeglądarce i na Androidzie deficytu nie ma — tam ta poprawka wypchnęłaby układ
+  poza ekran, więc nie wolno rozszerzać jej zasięgu.
+- **Podgląd wymiarów okna: PIĘĆ STUKNIĘĆ w znak firmowy albo w numer pokoju** (albo
+  `?diag=1` na komputerze). Pokazuje naraz `screen`, `inner`, `docEl`, widoczny obszar,
+  wysokość kontenera, odległość paska od dołu i wcięcia bezpieczne. Różnica między
+  `screen` a `inner` to dokładnie omawiany deficyt.
 - **Pozycję przewijania czytaj i ustawiaj przez `#app-scroll`.** `window.scrollY` zwraca
   teraz zawsze zero, a `window.scrollTo` nic nie robi. W kodzie są do tego trzy pomocnicze
   funkcje: `appScroll`, `appScrollTop`, `appScrollTo`. To samo dotyczy **narzędzia
