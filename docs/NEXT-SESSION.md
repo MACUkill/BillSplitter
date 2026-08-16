@@ -4,11 +4,14 @@ Napisane 2026-08-05, zaktualizowane **2026-08-16** po pełnym audycie.
 
 > ### ⚠️ ZACZNIJ OD `docs/AUDYT-2026-08.md`
 >
-> Audyt z 2026-08-16 znalazł i naprawił **sześć usterek**, w tym dwie pieniężne
-> (kwota znikała z rachunku; rabat już wliczony odejmowany drugi raz) i przyczynę
-> zgłoszenia „powiadomienia na iPhonie działały rzadko". Ma też **sekcję Decyzje
-> z jedną sprawą pilną**: dziesięć commitów pracy stoi niescalonych i niewydanych
-> na gałęzi `worktree-ux-poprawki-v2`.
+> Audyt z 2026-08-16 znalazł i naprawił **siedem usterek**, w tym trzy pieniężne
+> (kwota znikała z rachunku; rabat już wliczony odejmowany drugi raz; kwota podatku
+> czytana jako procent) oraz przyczynę zgłoszenia „powiadomienia na iPhonie działały
+> rzadko". Ma sekcję **Decyzje** z pytaniami do właściciela.
+>
+> Gałąź `worktree-ux-poprawki-v2` **została scalona 2026-08-17**. Zajrzyj do §Decyzje
+> punkt 1 — jest tam opis pułapki „scalone bez konfliktu, a mimo to zepsute", która
+> przy tym scaleniu unieważniła jedną z poprawek.
 >
 > Dopiero potem ten plik, `docs/UI-UX.md`, `DESIGN.md`, `PRODUCT.md`.
 
@@ -58,15 +61,46 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   pociągnął. Cała mechanika usunięta 2026-08-16. Z API widocznego obszaru okna zostało
   **tylko wykrywanie klawiatury** (`watchKeyboardForDeck`, próg 140 px — mniej to pasek
   przeglądarki, więcej to klawiatura).
-- **`overscroll-behavior-y: none` na `html` i `body`** wyłącza rozciąganie strony na końcu
-  przewijania. Bez tego iOS przy ciągnięciu w dół na krótkiej stronie odbija całym
-  dokumentem i ciągnie za sobą elementy `position: fixed`, czyli pasek nawigacji.
-  Aplikacja nie ma odświeżania pociągnięciem, więc nic na tym nie tracimy.
-- **Paska przewijania dokumentu na iPhonie NIE da się ukryć stylami.** `::-webkit-scrollbar`
-  i `scrollbar-width` załatwiają komputer i Androida; wskaźnik przewijania całego dokumentu
-  na iOS rysuje system. Zniknąłby dopiero, gdyby przewijał kontener wewnątrz strony
-  zamiast samego dokumentu — a to przebudowa układu ze skutkami dla nawigacji
-  i narzędzia sprawdzającego układ, nie zmiana stylu.
+- **Token powiadomień zapisuje się PO wczytaniu pokoju, nie przy starcie.** Przy starcie
+  nie wiadomo jeszcze, do której osoby w którym pokoju należy, więc zapis kończył się
+  cichym wyjściem i nigdy nie był ponawiany — stąd „przypomnienia zadziałały raz, a potem
+  przestały". Strażnik `pushTokenSavedFor` trzyma klucz `pokój:osoba:token`; nie zamieniaj
+  go z powrotem na wartość logiczną, bo zapis w jednym pokoju zablokuje zapis w drugim.
+- **`puppeteer` jest w `devDependencies`** i musi tam zostać: bez niego oba narzędzia
+  audytowe padają na starcie. Audyt wymaga też **emulatorów Firebase** (`npm run emulators`)
+  i serwera deweloperskiego — bez emulatorów anonimowe logowanie nie przechodzi
+  i aplikacja nie wychodzi poza ekran wczytywania.
+- **PRZEWIJA SIĘ `#app-scroll`, A NIE DOKUMENT — i to musi tak zostać.** `html` i `body`
+  mają `height: 100%` oraz `overflow: hidden`; cała treść siedzi w jednym przewijanym
+  kontenerze, a pasek nawigacji, okna i pasek offline stoją poza nim. Powód: w aplikacji
+  uruchamianej z ikony na ekranie początkowym iPhone'a rozciąganie dokumentu na końcu
+  przewijania obsługuje warstwa systemowa, która **`overscroll-behavior` na dokumencie
+  ignoruje** — a to rozciąganie ciągnęło za sobą pasek nawigacji. W Safari i Firefoksie
+  objawu nie było widać, bo tam gest obsługuje sama przeglądarka; zgłoszenie dotyczyło
+  wyłącznie trybu z ikony. `overscroll-behavior-y` zostaje jako druga warstwa dla
+  przeglądarek, które ją honorują.
+- **CZARNY PAS NA DOLE W APLIKACJI Z IKONY: SPRAWA OTWARTA. NIE PRZESUWAJ NICZEGO W DÓŁ.**
+  Hipoteza „blok pozycjonowania jest krótszy o `env(safe-area-inset-top)`, więc trzeba
+  dodać tyle na dole" została **sprawdzona na telefonie i obalona**: pasek nawigacji
+  i dół treści wyjechały poza ekran. To dowodzi, że `inset: 0` sięga dolnej krawędzi
+  WIDOKU — a pas leży poniżej widoku, czyli widok nie zajmuje całego ekranu.
+  Aktualna próba to `html { min-height: calc(100% + env(safe-area-inset-top)) }`
+  pod `@supports (-webkit-touch-callout: none)` i `@media (display-mode: standalone)`;
+  nic nie przesuwa, więc nic nie może uciąć. Jeśli nie pomogła, następny krok to pomiar
+  (`screen` obok `inner` w podglądzie wymiarów), a nie kolejna korekta na wyczucie.
+- **Podgląd wymiarów okna: PIĘĆ STUKNIĘĆ w znak firmowy albo w numer pokoju** (albo
+  `?diag=1` na komputerze). Pokazuje naraz `screen`, `inner`, `docEl`, widoczny obszar,
+  wysokość kontenera, odległość paska od dołu i wcięcia bezpieczne. Różnica między
+  `screen` a `inner` to dokładnie omawiany deficyt.
+- **Pozycję przewijania czytaj i ustawiaj przez `#app-scroll`.** `window.scrollY` zwraca
+  teraz zawsze zero, a `window.scrollTo` nic nie robi. W kodzie są do tego trzy pomocnicze
+  funkcje: `appScroll`, `appScrollTop`, `appScrollTo`. To samo dotyczy **narzędzia
+  audytowego** — mierzy zapas przewijania na tym kontenerze, nie na dokumencie.
+- **Wskaźnik przewijania znika przy okazji.** Systemowego wskaźnika DOKUMENTU na iOS nie
+  da się ukryć stylami; wskaźnik zwykłego kontenera już tak (`::-webkit-scrollbar`,
+  `scrollbar-width`). To był drugi powód tej przebudowy.
+- **Komentarze wewnątrz `AUDIT` w `tools/audit-layout.mjs` nie mogą zawierać znaku
+  wstecznego** — cały blok jest literałem szablonowym i jeden taki znak rozwala skrypt.
 - **NIE ustawiaj `touch-action` na `html` ani `body`.** Deklaracja na korzeniu dokumentu
   zabiera iOS **gest cofania przesunięciem od krawędzi**, czyli podstawową drogę wstecz
   na iPhonie. Przybliżanie szczypaniem blokuje atrybut `viewport` plus odrzucenie zdarzeń

@@ -12,9 +12,10 @@ ZASADY:
 7. Kilka zdjęć to JEDEN paragon sfotografowany we fragmentach: sklej je i NIE powielaj pozycji widocznych na dwóch zdjęciach.
 8. Liczby zwracaj jako liczby (kropka dziesiętna), bez symboli walut.
 9. Linie podsumowujące — "SUMA", "RAZEM", "SUBTOTAL", "TOTAL", "DO ZAPŁATY", "GOTÓWKA", "KARTA", "RESZTA" — to NIE są pozycje ani modyfikatory. Suma trafia wyłącznie do "receiptTotal".
-10. Gdy paragon ma i "SUMA", i "DO ZAPŁATY" (albo "TOTAL" i "AMOUNT DUE"), do "receiptTotal" bierz KWOTĘ FAKTYCZNIE ZAPŁACONĄ, czyli tę niżej — to ona jest rachunkiem do podziału.
-11. Kaucja za opakowanie ("kaucja", "opakowania zwrotne", "Pfand", "deposit") to nie danie — trafia do "modifiers" jako "service" z wartością DODATNIĄ.
-12. "quantity" to liczba sztuk. Przy towarze na wagę ("0,122 kg × 9,99") wpisz quantity 1, a totalPrice weź z wydruku.
+10. WALUTA jest ważna — aplikacja pyta na jej podstawie, czy przestawić rachunek. Podaj trzyliterowy kod ISO odczytany ze ZNAKÓW NA PARAGONIE: symbol przy kwotach ("zł" to PLN, "€" to EUR, "$" to USD, "£" to GBP, "Kč" to CZK, "€" na chorwackim paragonie też EUR), kod wydrukowany wprost, adres lub NIP lokalu. Gdy na paragonie nie ma ŻADNEJ z tych wskazówek, zwróć null — zgadywanie po języku nazw dań jest gorsze niż brak odpowiedzi, bo aplikacja zaproponuje wtedy zmianę waluty na podstawie niczego.
+11. Gdy paragon ma i "SUMA", i "DO ZAPŁATY" (albo "TOTAL" i "AMOUNT DUE"), do "receiptTotal" bierz KWOTĘ FAKTYCZNIE ZAPŁACONĄ, czyli tę niżej — to ona jest rachunkiem do podziału.
+12. Kaucja za opakowanie ("kaucja", "opakowania zwrotne", "Pfand", "deposit") to nie danie — trafia do "modifiers" jako "service" z wartością DODATNIĄ.
+13. "quantity" to liczba sztuk. Przy towarze na wagę ("0,122 kg × 9,99") wpisz quantity 1, a totalPrice weź z wydruku.
 
 TO NIE JEST PARAGON — kiedy nie zwracać nic:
 Zdjęcie bywa czymś innym niż rachunkiem. Potwierdzenie przelewu, wyciąg z konta, etykieta produktu,

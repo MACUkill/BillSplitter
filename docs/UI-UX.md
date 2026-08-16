@@ -1560,6 +1560,170 @@ rozpoznaje ją po kształcie i barwie, a jednakowy wygląd w obu motywach jest w
 niż zgodność ze współczynnikiem. **Wyjątek kończy się na logotypie** — reguła 4,5:1
 obowiązuje w całej reszcie aplikacji bez zmian.
 
+### 19.18 Partia 8 — paragon, koszty wspólne, powiadomienia (2026-08-16)
+
+**Wydruk ma teraz DWIE linie oderwania.** Dolna mówiła „to paragon", górna nie mówiła nic,
+więc blok zaczynał się jak zwykła karta, a kończył jak wydruk. Kształt jest ten sam,
+obrócony. Ząbek rysują dwie warstwy o wspólnej masce, przesunięte o półtora piksela:
+spodnia limonkowa, wierzchnia w kolorze papieru — dzięki temu **limonkowa ramka biegnie
+także po linii oderwania**, zamiast urywać się na niej. Zwykły `border` tego nie umie,
+bo maska wycina kształt razem z obramowaniem.
+
+**Koszty wspólne dostały tę samą formę i wreszcie mówią, czym są.** Zgłoszenie właściciela:
+„brakuje informacji, że koszt wspólny to faktycznie koszt wspólny". Teraz mówią to trzy
+rzeczy naraz — nagłówek sekcji, jedno zdanie o dzieleniu po równo między wszystkich,
+i kwota **na osobę** przy każdym wierszu. Ostatnie jest najważniejsze: dopiero „3,50/os."
+pokazuje, co ten koszt znaczy dla patrzącego. Przy procencie obok nazwy stoi sam procent,
+a po prawej kwota w złotówkach — razem mówią to, czego żadne z nich nie mówi osobno.
+
+**Oba przyciski są białe i mają ikony**: paragon przy „Dodaj pozycję", ekipa przy „Dodaj
+koszt wspólny". Ta sama waga, bo to dwie równorzędne drogi dopisania czegoś do rachunku;
+ikony rozstrzygają, która dotyczy jednej osoby, a która wszystkich.
+
+**Szukanie wśród pozycji** pojawia się od ósmej pozycji i stoi POD wydrukiem. Przy pięciu
+pozycjach szybciej spojrzeć niż pisać, a pole nad treścią zabierałoby miejsce tam, gdzie
+nikt go nie potrzebuje. Filtr nakładany jest po renderze, nie w danych — inaczej każdy
+cudzy zapis czyściłby wpisane słowo w połowie wpisywania.
+
+**Sposoby płatności uczestnika da się otworzyć w ustawieniach pokoju.** Wiersz mówił
+„2 sposoby płatności" i na tym kończył; teraz rozwija się w miejscu i pokazuje dokładnie
+te same wiersze, co okno „Ureguluj" — numer, „Otwórz", „Kopiuj".
+
+**Odstęp nad stopką arkusza jest jeden dla wszystkich arkuszy.** Wcześniej wynikał z tego,
+co akurat stało na końcu treści (pole z `mb-4` dawało 34 px, bez niej 18 px), więc nie było
+reguły, był przypadek. Margines ostatniego dziecka schodzi do zera, oddech należy do arkusza.
+
+**Waluta z paragonu przestała lądować w koszu.** Model odczytywał ją razem z pozycjami,
+ale nic z niej nie wynikało — pozycje z zagranicy wchodziły jako złotówki. Teraz, gdy
+odczytana waluta różni się od waluty rachunku, w podglądzie stoi pas z przyciskiem
+„Ustaw EUR”. Nic nie dzieje się samo: kurs zapisuje się w dniu dodania, więc to decyzja
+człowieka. Instrukcja dla modelu mówi wprost, żeby przy braku wskazówek na paragonie
+zwrócić `null` — zgadywanie waluty po języku nazw dań byłoby gorsze niż brak odpowiedzi.
+
+**Kwoty idą jednym krojem.** Cztery miejsca renderowały pieniądze zwykłym tekstem
+(Archivo) zamiast klasą `.amount` (Bricolage): wiersz „kto komu ile” w zwiniętej sekcji,
+rejestr wpłat, rozpiska pod saldem i modyfikatory w podglądzie paragonu. Zgłoszenie
+właściciela było trafne — to nie był zamysł, to był brak.
+
+**Powrót z rachunku gestem wygląda tak samo jak strzałką.** Gest wywołuje `popstate`,
+a obsługa tego zdarzenia zrywała wszystkie nasłuchy bazy i szła przez ponowne pobranie
+dokumentu pokoju z sieci: ekran rozbierało się do zera i składało po odpowiedzi serwera.
+Strzałka tego nie robiła, bo pracuje na danych z pamięci. Teraz powrót do tego samego
+pokoju idzie tą samą drogą, a przewinięcie listy rachunków wraca tam, gdzie było.
+
+**Przypomnienia na iPhonie: znaleziona przyczyna „raz zadziałało, potem nigdy".**
+Token FCM zmienia się (na iOS potrafi po każdym zamknięciu aplikacji). Aplikacja pobierała
+przy starcie świeży token i próbowała go zapisać, ale w tej chwili pokój nie był jeszcze
+wczytany, więc zapis kończył się cichym wyjściem — i **nikt nigdy nie próbował ponownie**.
+Do bazy nie trafiał żaden nowy token, a stary funkcja wysyłkowa usuwała jako martwy przy
+pierwszej nieudanej próbie. Zapis jest teraz ponawiany po każdym wczytaniu pokoju, a klucz
+`pokój:osoba:token` pilnuje, żeby nie pisać w kółko tego samego. (Poprzedni strażnik był
+zwykłym „true/false" i po zapisie w jednym pokoju blokował zapis w drugim.)
+
+### 19.19 Pasek nawigacji: trzecie i ostatnie podejście (2026-08-16)
+
+Rozstrzygnęła obserwacja właściciela: **w Safari i Firefoksie pasek stoi, a w aplikacji
+uruchomionej z ikony na ekranie początkowym przeskakuje w zakładce Profil.** To wyklucza
+wszystko, co robiliśmy do tej pory, bo arkusz stylów jest w obu przypadkach ten sam.
+
+Research potwierdził rzecz znaną i opisaną: **`overscroll-behavior` na dokumencie iOS
+ignoruje**. Rozciąganie strony na końcu przewijania obsługuje tam warstwa systemowa,
+a nie silnik strony — w Safari gest przechwytuje sama przeglądarka i objawu nie widać,
+w trybie z ikony nie ma tej warstwy pośredniej i dokument odbija razem ze wszystkim,
+co jest do niego przypięte.
+
+Wyjście jest jedno i stosują je aplikacje, które na iOS działają poprawnie: **dokument
+przestaje się przewijać**. `html` i `body` dostają stałą wysokość i ukryte przepełnienie,
+a treść przewija się w jednym kontenerze wewnątrz strony (`#app-scroll`). Czego nie da się
+rozciągnąć, to nie pociągnie za sobą niczego przypiętego.
+
+Trzy skutki, wszystkie dobre:
+1. Pasek nawigacji stoi nieruchomo we wszystkich zakładkach, także na krótkim Profilu.
+2. **Znika systemowy wskaźnik przewijania** — tego dokumentu nie dało się ukryć stylami,
+   wskaźnik zwykłego kontenera już tak. Zgłoszenie z tej samej tury zamyka się samo.
+3. Zawartość pod otwartym oknem nie ma jak drgnąć, bo poza kontenerem nie ma czego przewijać.
+
+Koszt: pozycję przewijania czyta się i ustawia przez ten kontener, nie przez okno
+(`window.scrollY` zwraca zero). Dotyczy to także narzędzia audytowego.
+
+### 19.20 Dwa kolory z decyzji właściciela (2026-08-16)
+
+**Twoja część rachunku to teraz pełna limonka**, a nie limonka na 16 % krycia. Przy kilku
+kartach na ekranie ledwie zabarwiona karta ginęła. Wyspa w kolorze marki jest tym samym
+blokiem, co saldo w Bilansie i koło [+] w pasku — wszędzie tam limonka znaczy „to jest
+twoja liczba, po nią tu przyszedłeś".
+
+Pełny kolor wymusił własny zestaw tonów, bo tekst pomocniczy aplikacji jest liczony pod tło
+karty, nie pod limonkę: wszystko wewnątrz przechodzi na atrament z limonki w trzech mocach,
+kreski i pola też. Osobno trzeba było rozstrzygnąć **barwy pieniężne**: zieleń „dostajesz"
+i błękit stanu mają na limonce kontrast rzędu 1,5–2,5:1, a ich rola jest tam już obsadzona
+przez samo tło — schodzą więc na atrament i niosą treść słowem. **Czerwień długu zostaje
+kolorem**, bo tej informacji nie wolno zgubić, tyle że w wersji przyciemnionej
+(`--owe-on-brand`, 6,5:1). Wyszło to na zrzucie z audytu: „Płatnik · potwierdzony" świecił
+turkusem na limonce.
+
+**Przycisk „Odczytaj paragon" dostał fiolet spoza palety** (`--ai`). To jedyne miejsce
+w aplikacji, za którym stoi model, i jedyny fiolet: limonka znaczy „to jest twoje", barwy
+pieniężne znaczą kierunek długu, a ten przycisk nie należy do żadnej z tych rodzin. Fiolet
+niesie dziś skojarzenie z modelami tak samo, jak koperta niesie pocztę — korzystamy z tego
+zamiast tłumaczyć to słowami. Do tego ikona różdżki i delikatna poświata, bo przy pierwszym
+rachunku nikt nie wie, że zdjęcie paragonu da się w ogóle odczytać.
+
+### 19.21 Poprawki po testach partii 8 (2026-08-16)
+
+**Martwy pas na dole ekranu** — mój błąd z przebudowy przewijania. Kontener brał wysokość
+z rodzica (`height: 100%`) i na iPhonie z ikony wychodził o kilkadziesiąt pikseli za krótki:
+pod paskiem nawigacji zostawała czarna przestrzeń, a ostatni kafelek listy urywał się
+w połowie. `position: fixed; inset: 0` nie ma o co pytać — kontener JEST oknem.
+
+**Sposoby płatności w ustawieniach pokoju rozjeżdżały się poza kartę.** Wiersz z numerem
+konta i dwoma przyciskami dostawał 3,5 rem wcięcia „pod awatarem" i przestawał się mieścić.
+Wcięcie było ozdobą, więc wyleciało, a wiersz układa się teraz w dwóch poziomach: ikona
+i numer w rzędzie, przyciski pod spodem. W oknie „Ureguluj" zostaje jednym rzędem, bo tam
+ma dla siebie całą szerokość arkusza.
+
+**Szukanie po pozycjach to teraz TEN SAM mechanizm, co szukanie osoby.** Pierwsza wersja
+była osobnym kodem z własnym polem i własnym zachowaniem — i wyszło dokładnie to, czego
+należało się spodziewać: pole bez klasy `field` nie miało tła ani koloru tekstu („nie widać
+napisów"), a filtr działał inaczej niż przy osobach. Wspólny mechanizm sterują teraz
+atrybuty w znacznikach (`data-search-rows`, `data-search-empty`), więc lupa rozwija pole
+identycznie w obu miejscach. Pole przeniesione **nad** wydruk: tam patrzy oko, kiedy szuka.
+
+**Opis pod „Koszty wspólne" usunięty** (decyzja właściciela). To samo mówi podpis przy
+każdym wierszu — „Dla wszystkich · 3,50/os." — i mówi to w złotówkach, w miejscu, gdzie
+ktoś patrzy.
+
+**Audyt zobaczył trzy nowe stany**: sposoby płatności w profilu, rozwinięty wiersz
+uczestnika w ustawieniach pokoju i szukanie po paragonie (lista wydłużona do ośmiu pozycji,
+bo lupa pokazuje się dopiero od ósmej). Pierwszy z nich od razu znalazł realny błąd,
+którego nie widziało żadne oko: przycisk usuwania sposobu płatności miał 36 px zamiast
+44 px wymaganych dla celu dotykowego — przy operacji nieodwracalnej.
+
+### 19.22 Czarny pas na dole: hipoteza sprawdzona i obalona (2026-08-16)
+
+Czwarte podejście do tej samej rodziny objawów, tym razem z researchem — i **hipoteza
+okazała się błędna**. Zapisuję ją, bo wygląda przekonująco i ktoś jej jeszcze spróbuje.
+
+**Co zakładałem.** Że przy `apple-mobile-web-app-status-bar-style: black-translucent` blok,
+od którego liczą się wysokości i do którego przypina się `position: fixed`, jest krótszy
+o wysokość górnego wcięcia (~47 px na iPhonie 12) — bo tyle właśnie czerni widać na dole.
+Dodałem więc tyle na dole kontenerowi i paskowi nawigacji.
+
+**Co się stało.** Pasek nawigacji i dół treści **wyjechały poza ekran**. To jest dowód
+w drugą stronę: `inset: 0` sięgało dolnej krawędzi widoku już wcześniej. Czarny pas leży
+**poniżej widoku**, czyli sam widok nie zajmuje całego ekranu — a tego nie naprawi się
+przesuwaniem czegokolwiek wewnątrz niego.
+
+**Co zostało.** `html { min-height: calc(100% + env(safe-area-inset-top)) }` pod tymi
+samymi dwoma warunkami. Nic nie przesuwa i nic nie może uciąć — dokument ma ukryte
+przepełnienie, a wszystko widoczne jest przypięte do okna. Jeśli iOS rozciągnie widok
+do wysokości dokumentu, pas zniknie; jeśli nie, reguła po prostu nic nie robi.
+
+**Wniosek na przyszłość.** Trzy z czterech podejść do tej rodziny objawów były zgadywaniem
+na podstawie zrzutu, i trzy razy trafiły obok. Panel z wymiarami okna (pięć stuknięć w znak
+firmowy) istnieje właśnie po to, żeby czwarty raz zacząć od liczb: `screen` obok `inner`
+mówi wprost, czy widok jest krótszy od ekranu, i o ile.
+
 ### 19.11 Stan audytu po partii
 
 Cztery szerokości z kontraktu (360 / 390 / 834 / 1280), 32 stany ekranu, **zero zgłoszeń**:

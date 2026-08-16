@@ -92,6 +92,20 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     --due: 0 138 92;             /* dostajesz — 4,9:1 */
     --info: 45 74 235;           /* stan i informacja — 6,7:1 */
 
+    /* ODCZYT PARAGONU — JEDYNE MIEJSCE, GDZIE PRACUJE MODEL.
+       Fiolet stoi poza paletą aplikacji świadomie: limonka znaczy „to jest twoje",
+       barwy pieniężne znaczą kierunek długu, a ten przycisk nie należy do żadnej z tych
+       rodzin — robi rzecz, której nie robi nic innego w aplikacji, i ma się o to
+       dopominać. Fiolet niesie dziś skojarzenie z modelami językowymi tak samo, jak
+       koperta niesie pocztę; korzystamy z tego zamiast tłumaczyć to słowami.
+       6,1:1 z bielą, więc napis na nim jest czytelny także w słońcu. */
+    --ai: 107 70 245;
+
+    /* Czerwień DŁUGU NA LIMONCE. Zwykła (`--owe`) ma na limonkowym tle około 2,4:1
+       i jest nieczytelna, a akurat tej informacji nie wolno zgubić — dlatego zamiast
+       zdjąć kolor, przyciemniamy go do 6,5:1. Znaczenie zostaje, czytelność wraca. */
+    --owe-on-brand: 138 14 34;
+
     --shadow: 14 15 19;
     --ring: 45 74 235;           /* obwódka skupienia */
     --scrim-photo: 0 0 0;        /* przyciemnienie pod podglądem zdjęcia */
@@ -117,6 +131,14 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     --due: 45 214 152;
     --info: 122 141 255;
 
+    /* Ten sam fiolet rozjaśniony: na ciemnym tle wersja z jasnego motywu zapada się
+       w tło tak samo, jak czerwień. Napis na nim zostaje biały. */
+    --ai: 138 108 255;
+
+    /* Czerwień NA LIMONCE — patrz komentarz w motywie jasnym. Limonka jest w obu
+       motywach ta sama, więc i ta czerwień jest ta sama. */
+    --owe-on-brand: 138 14 34;
+
     --shadow: 0 0 0;
     --ring: 122 141 255;
   }
@@ -137,15 +159,32 @@ body:has(#offline-banner:not(.hidden)) #app-container {
        (to drugie jest na iOS jedyną skuteczną). Dwustuknięcie zdejmuje
        `touch-action: manipulation` nałożone WYŁĄCZNIE na przyciski, nie na dokument. */
 
-    /* KONIEC ROZCIĄGANIA STRONY NA KOŃCU PRZEWIJANIA.
-       Na iOS ciągnięcie w dół na krótkiej stronie odbija całym dokumentem, a razem
-       z nim potrafią jechać elementy przypięte przez `position: fixed` — czyli pasek
-       nawigacji. Widać to najmocniej tam, gdzie nie ma czego przewijać, bo wtedy
-       gumka jest jedyną reakcją na gest (zgłoszenie: „w zakładce Profil nawigacja
-       zaczyna się przemieszczać przy próbie przeciągania w dół").
-       Nie tracimy przy tym nic: aplikacja nie ma odświeżania pociągnięciem, a listy
-       wewnątrz arkuszy mają własne `overscroll-behavior: contain`. */
+    /* DOKUMENT NIE PRZEWIJA SIĘ W OGÓLE — przewija się `#app-scroll`.
+       Historia tej decyzji, żeby nikt jej nie cofnął przez pomyłkę:
+       1. Pasek nawigacji jeździł przy ciągnięciu strony w dół. Pierwsza próba to była
+          kompensacja liczona w JavaScripcie — okazała się sama sobie usterką (patrz
+          komentarz przy `.deck`).
+       2. Druga próba to `overscroll-behavior-y: none` na `html` i `body`. Załatwia
+          komputer i Androida, a na iPhonie NIE DZIAŁA: rozciąganie dokumentu na końcu
+          przewijania obsługuje tam warstwa systemowa, która tej własności nie honoruje.
+          W Safari i Firefoksie problemu nie było widać, bo tam gest obsługuje sama
+          przeglądarka — objaw zostawał wyłącznie w aplikacji uruchamianej z ikony.
+       3. To jest trzecie i właściwe wyjście, zgodne z tym, co robią aplikacje, które
+          na iOS działają poprawnie: dokument dostaje stałą wysokość i zero przewijania,
+          a treść przewija się w kontenerze wewnątrz strony. Czego nie ma jak rozciągnąć,
+          to nie pociągnie za sobą niczego przypiętego.
+       `overscroll-behavior-y` zostaje jako druga warstwa dla przeglądarek, które ją
+       honorują — nic nie kosztuje, a zapobiega przenoszeniu gestu na dokument. */
+    height: 100%;
+    overflow: hidden;
     overscroll-behavior-y: none;
+    /* TŁO MALOWANE JAWNIE NA KORZENIU DOKUMENTU, nie tylko na `body`.
+       Zwykle wystarcza `body`, bo przeglądarka przenosi jego tło na całe płótno —
+       ale ta propagacja działa tylko wtedy, gdy korzeń tła NIE MA. Odkąd `body` ma
+       ustaloną wysokość i ukryte przepełnienie, na iPhonie z ikony zostawał na dole
+       pas w cudzym kolorze (zgłoszenie właściciela). Malujemy więc obie warstwy
+       i nie zostawiamy ani jednego piksela do zgadywania. */
+    background-color: rgb(var(--bg));
   }
 
   body {
@@ -155,21 +194,77 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     color: rgb(var(--ink));
     /* Bez `touch-action` — patrz komentarz przy `html`. Deklaracja na korzeniu dokumentu
        zabierała iOS gest cofania przesunięciem od krawędzi. */
-    /* Powtórzone za `html`, bo o tym, czy strona się rozciąga, decyduje ten z dwóch
-       elementów, który realnie przewija — a to zależy od przeglądarki. */
+    height: 100%;
+    overflow: hidden;
     overscroll-behavior-y: none;
   }
 
+  /* SONDY WCIĘĆ BEZPIECZNYCH. Wartości `env()` da się odczytać z JavaScriptu wyłącznie
+     wtedy, gdy najpierw wpiszemy je do własnych stałych — samo `env()` nie jest widoczne
+     przez `getComputedStyle`. Kosztuje to dwie stałe i nic nie maluje. */
+  :root {
+    --probe-top: env(safe-area-inset-top, 0px);
+    --probe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Panel diagnostyczny — pokazuje się WYŁĄCZNIE po dopisaniu `?diag=1` do adresu
+     (patrz `showViewportDiagnostics`). Leży nad wszystkim, bo ma być czytelny na zrzucie
+     zrobionym telefonem, i nie łapie dotyku poza sobą. */
+  #viewport-diag {
+    position: fixed;
+    left: 0.5rem;
+    top: 0.5rem;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    max-width: calc(100vw - 1rem);
+    padding: 0.5rem 0.625rem;
+    border-radius: theme('borderRadius.inner');
+    background-color: rgb(var(--ink) / 0.88);
+    color: rgb(var(--surface));
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.6875rem;
+    line-height: 1.35;
+  }
+
+  /* JEDYNY PRZEWIJANY ELEMENT APLIKACJI.
+     Poza nim zostają wyłącznie rzeczy, które mają stać w miejscu: pasek nawigacji,
+     okna i arkusze, pasek offline. Wszystkie są `position: fixed` względem okna,
+     a skoro okno się nie rusza, one też nie. */
+  #app-scroll {
+    /* PRZYPIĘTY DO CZTERECH KRAWĘDZI OKNA, nie liczony jako `height: 100%`.
+       Pierwsza wersja brała wysokość z rodzica i na iPhonie z ikony wychodziła
+       o kilkadziesiąt pikseli za krótka — pod paskiem nawigacji zostawał martwy,
+       czarny pas, a ostatni kafelek listy urywał się w połowie. `inset: 0` nie ma
+       o co pytać: kontener JEST oknem. */
+    position: fixed;
+    inset: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    /* Gest, który dojedzie do końca tej listy, nie przechodzi wyżej. */
+    overscroll-behavior-y: contain;
+    /* Trzecia warstwa tego samego tła — patrz komentarz przy `html`. */
+    background-color: rgb(var(--bg));
+  }
+
+  /* O CZARNYM PASIE NA DOLE W APLIKACJI Z IKONY — stan wiedzy, nie rozwiązanie.
+     Sprawdzone i ODRZUCONE: przesuwanie tego kontenera oraz paska nawigacji w dół
+     o wysokość górnego wcięcia. Skutek na telefonie: oba wyjechały poza ekran, czyli
+     `inset: 0` już wcześniej sięgało dolnej krawędzi WIDOKU. Pas leży poniżej widoku.
+     Aktualna próba (rozciągnięcie dokumentu) stoi na końcu pliku. */
+
   /* PASEK PRZEWIJANIA UKRYTY.
      Aplikacja to jedna kolumna kart, nie dokument — o długości treści mówi sama lista,
-     nie kreska przy krawędzi. Na komputerze i Androidzie to załatwia sprawę.
-     Na iPhonie wskaźnik przewijania CAŁEGO DOKUMENTU rysuje system i stąd się go nie
-     zdejmie; znikłby dopiero wtedy, gdyby przewijał kontener wewnątrz strony zamiast
-     samego dokumentu — a to przebudowa układu, nie reguła stylu. */
+     nie kreska przy krawędzi. Wskaźnik przewijania DOKUMENTU na iPhonie rysuje system
+     i stylami się go nie zdejmuje; wskaźnik zwykłego kontenera już tak — i to jest
+     drugi powód, dla którego przewijanie mieszka teraz w `#app-scroll`. */
+  #app-scroll::-webkit-scrollbar,
   html::-webkit-scrollbar,
   body::-webkit-scrollbar { display: none; }
 
-  html, body {
+  html, body, #app-scroll {
     scrollbar-width: none;
     -ms-overflow-style: none;
   }
@@ -266,17 +361,29 @@ body:has(#offline-banner:not(.hidden)) #app-container {
 
   .wordmark-bill { color: #C6F03A; }
 
-  /* JASNE PODŁOŻE: ZNAK ZOSTAJE KOLOROWY.
-     Wcześniej stała tu wersja jednobarwna — koń i nazwa schodziły na jasnym motywie
-     na atrament (`brightness(0)`), bo limonka na bieli ma kontrast około 1,5:1.
-     Decyzja właściciela (2026-08-16) jest inna i to jest decyzja o znaku firmowym,
-     nie o tekście: koń ma być zielony wszędzie, „Bill" zielone, „iada" czarne.
-     Kryteria czytelności dla tekstu logotypu nie obowiązują — nazwy marki nikt tu
-     nie czyta jako treści, rozpoznaje ją po kształcie i barwie, a jednakowy wygląd
-     w obu motywach jest wart więcej niż zgodność ze współczynnikiem.
-     Reguła kontrastu zostaje wiążąca dla WSZYSTKIEGO poza tym blokiem. */
-  :root[data-theme='light'] .wordmark { color: rgb(var(--ink)); }
-  :root[data-theme='light'] .wordmark-bill { color: #C6F03A; }
+  /* JASNE PODŁOŻE: ZNAK DOSTAJE WŁASNE, CIEMNE TŁO.
+     Limonka na bieli ma kontrast około 1,5:1 — znak po prostu blaknie. Były trzy
+     wyjścia: wersja jednobarwna (koń i nazwa atramentem — próbowane, właściciel
+     odrzucił: znak przestaje być znakiem), limonka wprost na bieli (odrzucone
+     z tego samego powodu, dla którego pytanie w ogóle wróciło) i to trzecie:
+     znak zachowuje swoje barwy, a dostaje pod spód swoje własne podłoże.
+     Tak działa większość znaków firmowych — kolory są związane ze znakiem,
+     nie z tłem, na którym akurat leży.
+
+     Podłoże to drugi kolor znaku, `#181A20`, wpisany wprost, a nie przez zmienną
+     motywu: to jest kolor MARKI, który ma zostać ten sam także wtedy, gdy tło
+     aplikacji kiedyś się zmieni. W ciemnym motywie plakietki nie ma — tam ten
+     kolor już leży na ekranie i ramka wokół znaku byłaby ramką wokół niczego. */
+  :root[data-theme='light'] .brand-lockup {
+    background-color: #181A20;
+    padding: 0.875rem 1.25rem 1rem;
+    border-radius: 1.25rem;
+  }
+
+  :root[data-theme='light'] .brand-lockup-lg {
+    padding: 1.25rem 1.75rem 1.375rem;
+    border-radius: 1.75rem;
+  }
 
   /* Wersja duża — ekran wczytywania, gdzie znak jest jedyną treścią. */
   .brand-lockup-lg { gap: 0.875rem; }
@@ -388,6 +495,15 @@ body:has(#offline-banner:not(.hidden)) #app-container {
   .btn-dark { background-color: rgb(var(--ink)); color: rgb(var(--surface)); }
   .btn-quiet { background-color: rgb(var(--surface-2)); color: rgb(var(--ink)); }
   .btn-danger { background-color: rgb(var(--owe)); color: rgb(255 255 255); }
+
+  /* PRZYCISK ODCZYTU PARAGONU. Jedyny w aplikacji, za którym stoi model — i jedyny
+     fiolet. Delikatna poświata pod spodem, bo to przycisk, który ma zapraszać:
+     przy pierwszym rachunku nikt nie wie, że zdjęcie paragonu da się w ogóle odczytać. */
+  .btn-ai {
+    background-color: rgb(var(--ai));
+    color: rgb(255 255 255);
+    box-shadow: 0 6px 20px rgb(var(--ai) / 0.35);
+  }
 
   /* Okrągły przycisk-ikona z podpisem pod spodem — rząd akcji nad treścią,
      wprost z referencji: cztery koła, cztery słowa, zero opisów. */
@@ -624,10 +740,18 @@ body:has(#offline-banner:not(.hidden)) #app-container {
      Współbieżność przestaje być obietnicą w opisie i staje się obrazem. */
   .receipt {
     background-color: rgb(var(--surface));
-    /* Dolne narożniki proste, bo pod spodem doklejamy ząbki (`.receipt-tear`).
-       Zaokrąglenie zostawiłoby między nimi widoczny uskok. */
-    border-radius: 1.5rem 1.5rem 0 0;
+    /* WSZYSTKIE narożniki proste: ząbki doklejamy teraz z GÓRY i z DOŁU, więc
+       zaokrąglenie zostawiałoby przy każdym z nich widoczny uskok. Wydruk nie ma
+       zaokrąglonych rogów — ma dwie linie oderwania. */
+    border-radius: 0;
     overflow: hidden;
+    /* SUBTELNA LIMONKOWA RAMKA (zgłoszenie właściciela): pozycje i koszty wspólne to
+       jedyne miejsca na ekranie, gdzie ekipa coś ODKLIKUJE, więc mają się wyróżniać
+       jako rzecz do ruszenia. Ramka idzie cieniem wewnętrznym, nie `border`, bo karta
+       nie może przez nią urosnąć o dwa piksele i rozjechać się z paskiem ząbków.
+       Krycie 0,45: przy pełnej limonce ramka zaczyna konkurować z limonkową linią
+       „to moje", a ta niesie znaczenie. */
+    box-shadow: inset 1px 0 0 rgb(var(--brand) / 0.45), inset -1px 0 0 rgb(var(--brand) / 0.45);
   }
 
   /* ZĄBKOWANA KRAWĘDŹ — oderwany paragon.
@@ -640,8 +764,20 @@ body:has(#offline-banner:not(.hidden)) #app-container {
      jest potrzebny: pasek ząbków leży bezpośrednio pod kartą i czyta się jako jej
      dalszy ciąg. */
   .receipt-tear {
+    position: relative;
     height: 0.4375rem;
-    background-color: rgb(var(--surface));
+  }
+
+  /* Ząbek rysują DWIE warstwy o tej samej masce, przesunięte względem siebie o półtora
+     piksela: spodnia w limonce, wierzchnia w kolorze papieru. Widać z tego wyłącznie
+     ten półtora piksela limonki na skosach — czyli ramka karty biegnie dalej po
+     linii oderwania, zamiast urywać się na niej.
+     Zwykły `border` tego nie umie: maska wycina kształt razem z obramowaniem. */
+  .receipt-tear::before,
+  .receipt-tear::after {
+    content: '';
+    position: absolute;
+    inset: 0;
     /* Stożkowy gradient zaczepiony na dolnej krawędzi wycina trójkąt w każdym kaflu
        o szerokości 0,875 rem. Powtórzony w poziomie daje regularne ząbki.
        Ząbek jest niski i gęsty świadomie: ma się czytać jako oderwany papier, a nie
@@ -650,11 +786,34 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / 0.875rem 100% repeat-x;
   }
 
+  .receipt-tear::before {
+    background-color: rgb(var(--brand) / 0.45);
+    transform: translateY(1.5px);
+  }
+
+  .receipt-tear::after { background-color: rgb(var(--surface)); }
+
+  /* GÓRNA LINIA ODERWANIA. Zgłoszenie właściciela: dolna krawędź mówiła „to wydruk",
+     a górna nie mówiła nic — paragon zaczynał się jak zwykła karta i kończył jak
+     paragon. Ten sam kształt obrócony o pół obrotu, z limonką przesuniętą w drugą
+     stronę, bo kontur ma leżeć po zewnętrznej. */
+  .receipt-tear-top::before,
+  .receipt-tear-top::after {
+    -webkit-mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / 0.875rem 100% repeat-x;
+    mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / 0.875rem 100% repeat-x;
+  }
+
+  .receipt-tear-top::before { transform: translateY(-1.5px); }
+
   /* Przeglądarka bez masek dostaje po prostu prostą krawędź — paragon zostaje
-     paragonem dzięki wierszom i włoskom, ząbki są dodatkiem, nie warunkiem. */
+     paragonem dzięki wierszom i włoskom, ząbki są dodatkiem, nie warunkiem.
+     Ramka zostaje, bo nie zależy od masek: zamyka się wtedy dookoła prostokąta. */
   @supports not ((-webkit-mask: conic-gradient(#000, #000)) or (mask: conic-gradient(#000, #000))) {
     .receipt-tear { display: none; }
-    .receipt { border-radius: 1.5rem; }
+    .receipt {
+      border-radius: 1.5rem;
+      box-shadow: inset 0 0 0 1px rgb(var(--brand) / 0.45);
+    }
   }
 
   /* ZNACZNIK „TO MOJE" przy każdej linii paragonu.
@@ -683,6 +842,23 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     background-color: rgb(var(--brand));
     border-color: rgb(var(--brand));
     color: rgb(var(--brand-ink));
+  }
+
+  /* ZNACZNIK KOSZTU WSPÓLNEGO. Ta sama metryka co `.pick-mark`, żeby oba rodzaje
+     wierszy stały w jednej kolumnie, ale bez obwódki i bez stanu: kosztu wspólnego
+     nikt nie odklikuje, on po prostu dotyczy wszystkich. Ikona ekipy mówi to samo,
+     co przycisk, którym się go dodaje — jeden znak, jedno znaczenie. */
+  .global-cost-mark {
+    flex-shrink: 0;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6875rem;
+    background-color: rgb(var(--ink) / 0.08);
+    color: rgb(var(--ink-3));
   }
 
   .receipt-line {
@@ -900,8 +1076,16 @@ body:has(#offline-banner:not(.hidden)) #app-container {
        do końca listy przewijało pulpit ukryty za przyciemnieniem. */
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    padding: 0 1.25rem 0.25rem;
+    padding: 0 1.25rem 1rem;
   }
+
+  /* ODSTĘP NAD STOPKĄ JEST TERAZ JEDEN NA WSZYSTKIE ARKUSZE.
+     Wcześniej wynikał z tego, co akurat stało na końcu treści: pole z klasą `mb-4`
+     dawało 34 px, pole bez niej 18 px, lista niosła własny odstęp. Stąd zgłoszenie,
+     że „czasami jest problem z odstępem nad przyciskami" — nie było reguły, był
+     przypadek. Margines ostatniego dziecka schodzi do zera, a cały oddech nad kreską
+     należy do arkusza. */
+  .sheet-body > *:last-child { margin-bottom: 0; }
 
   /* Gdy nie ma stopki, oddech na dole (plus pasek gestów) należy się treści. */
   .sheet-body:last-child {
@@ -1046,6 +1230,43 @@ body:has(#offline-banner:not(.hidden)) #app-container {
   details[open] > .settle-others-summary .fa-chevron-down {
     transform: rotate(180deg);
   }
+
+  /* SPOSOBY PŁATNOŚCI UCZESTNIKA W USTAWIENIACH POKOJU.
+     Wiersz osoby rozwija się w miejscu, a w środku stoją dokładnie te same wiersze,
+     co w oknie „Ureguluj": numer, „Otwórz", „Kopiuj". Rozwijanie idzie znacznikiem
+     `details`, tym samym co „Ekipa" i „Historia zmian" — jeden mechanizm zwijania
+     na całą aplikację. */
+  .member-pay > summary {
+    list-style: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .member-pay > summary::-webkit-details-marker { display: none; }
+
+  .member-pay-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    /* BEZ WCIĘCIA POD ZNAK. Pierwsza wersja miała 3,5 rem wcięcia „pod awatarem"
+       i wiersz z numerem konta plus dwoma przyciskami przestawał się mieścić —
+       rozjeżdżał się poza kartę (zgłoszenie właściciela ze zrzutem). Wcięcie było
+       ozdobą, a numer konta jest tu jedyną treścią, po którą ktoś zagląda. */
+    padding: 0.25rem 0 0.75rem;
+  }
+
+  /* Wiersz sposobu płatności W TYM MIEJSCU układa się w dwóch poziomach: opis
+     i numer zajmują całą szerokość, przyciski schodzą pod spód. W oknie „Ureguluj"
+     zostaje jednym rzędem, bo tam ma całą szerokość arkusza dla siebie. */
+  .member-pay-body .pay-method { flex-wrap: wrap; }
+  /* 75 % zamiast 100 %: ikona rodzaju zostaje OBOK opisu (razem mieszczą się w rzędzie),
+     a przyciski — którym brakuje wtedy miejsca — schodzą do drugiego poziomu. Przy 100 %
+     ikona lądowała we własnej linii nad tekstem i wiersz robił się trzypoziomowy. */
+  .member-pay-body .pay-method > .flex-grow { flex: 1 1 75%; }
+  .member-pay-body .pay-method > .pay-method-open,
+  .member-pay-body .pay-method > .copy-account-btn { flex: 0 0 auto; }
+  /* Ikona rodzaju schodzi z osi pionowej, bo wiersz jest teraz wysoki na dwa poziomy
+     i wyśrodkowana zawisałaby obok pustego miejsca. */
+  .member-pay-body .pay-method { align-items: flex-start; }
+  .member-pay-body .pay-method > i { margin-top: 0.25rem; }
 
   /* Nagłówek dnia nad grupą rachunków. Data przestaje być mikrodrukiem na każdym
      kafelku, bo przy dwudziestu rachunkach czyta się ją raz na grupę, nie raz
@@ -1572,22 +1793,68 @@ body:has(#offline-banner:not(.hidden)) #app-container {
                          (DESIGN.md, reguła rozdziału kolorów) i dokładnie tak samo
                          działa już na twojej linii paragonu. Zero nowego języka:
                          ten sam kolor w tej samej roli, o piętro wyżej. */
+  /* TWOJA CZĘŚĆ RACHUNKU — PEŁNA LIMONKA (decyzja właściciela, 2026-08-16).
+     Wcześniej stała tu limonka na 16 % krycia, czyli ledwie zabarwiona karta; przy
+     kilku kartach na ekranie różnica ginęła i „mój udział" zlewał się z resztą.
+     Teraz to jest wyspa w kolorze marki — ten sam blok, co saldo w Bilansie i koło
+     [+] w pasku: tam też limonka znaczy „to jest twoja liczba, po nią tu przyszedłeś".
+
+     Pełny kolor wymaga własnego zestawu tonów, bo tekst pomocniczy z reszty aplikacji
+     (`--ink-2`, `--ink-3`) jest liczony pod tło karty, nie pod limonkę. Wszystko wewnątrz
+     przechodzi więc na atrament z limonki (`--brand-ink`) w trzech mocach. Bez tego
+     podpisy na limonce miałyby kontrast poniżej progu. */
   .card-mine {
-    background-color: rgb(var(--brand) / 0.16);
+    background-color: rgb(var(--brand));
+    color: rgb(var(--brand-ink));
     border-radius: 1.5rem;
     box-shadow:
-      0 1px 2px rgb(var(--shadow) / 0.04),
-      0 8px 24px rgb(var(--shadow) / 0.06);
+      0 1px 2px rgb(var(--shadow) / 0.06),
+      0 10px 28px rgb(var(--shadow) / 0.10);
   }
 
-  /* Pod lampą ta sama limonka na 16 % daje brudną oliwkę — schodzi do cienkiej
-     warstwy, a rolę „to jest twoje" przejmuje limonkowa obwódka. Ta sama decyzja,
-     co przy `receipt-line-mine`. */
+  /* Ta sama farba w innym świetle — jak przy bloku bilansu, limonka NIE zmienia się
+     w ciemnym motywie i nadal nosi czarny tekst. */
   :root[data-theme='dark'] .card-mine {
-    background-color: rgb(var(--brand) / 0.10);
-    box-shadow:
-      0 0 0 1px rgb(var(--brand) / 0.28),
-      0 8px 24px rgb(0 0 0 / 0.3);
+    box-shadow: 0 10px 28px rgb(var(--shadow) / 0.35);
+  }
+
+  .card-mine .text-ink,
+  .card-mine .amount { color: rgb(var(--brand-ink)); }
+  .card-mine .text-ink-2 { color: rgb(var(--brand-ink) / 0.78); }
+  .card-mine .text-ink-3 { color: rgb(var(--brand-ink) / 0.66); }
+
+  /* Barwy pieniężne na limonce. Zieleń „dostajesz" i błękit stanu mają na niej
+     kontrast rzędu 1,5–2,5:1 — na limonkowej wyspie ich rola jest zresztą już
+     obsadzona przez samo tło, więc schodzą na atrament i niosą treść słowem.
+     Czerwień długu zostaje kolorem, bo tej informacji nie wolno zgubić — tyle że
+     w wersji przyciemnionej (`--owe-on-brand`). */
+  .card-mine .text-due,
+  .card-mine .text-info,
+  .card-mine .text-brand { color: rgb(var(--brand-ink) / 0.78); }
+  .card-mine .text-owe { color: rgb(var(--owe-on-brand)); }
+
+  /* Kreski i tła wewnątrz wyspy też liczą się od atramentu, nie od tła aplikacji —
+     inaczej włos oddzielający „Twój udział" znikał, a pola do wpisywania wyglądały
+     jak dziury w kolorze. */
+  .card-mine .border-ink\/10 { border-color: rgb(var(--brand-ink) / 0.20); }
+  .card-mine .chip {
+    background-color: rgb(var(--brand-ink) / 0.14);
+    color: rgb(var(--brand-ink));
+  }
+  .card-mine .settle-others-summary {
+    background-color: rgb(var(--brand-ink) / 0.10);
+    color: rgb(var(--brand-ink));
+  }
+  .card-mine .settle-others-summary:active { background-color: rgb(var(--brand-ink) / 0.16); }
+  .card-mine .settle-others-chevron { color: rgb(var(--brand-ink) / 0.66); }
+  .card-mine .field {
+    background-color: rgb(var(--brand-ink) / 0.10);
+    color: rgb(var(--brand-ink));
+  }
+  .card-mine .field::placeholder { color: rgb(var(--brand-ink) / 0.5); }
+  .card-mine .bg-surface-2 {
+    background-color: rgb(var(--brand-ink) / 0.10);
+    color: rgb(var(--brand-ink));
   }
 
   /* Nagłówek sekcji na rachunku: jeden stopień, jeden odstęp, jeden ton.
@@ -1936,5 +2203,28 @@ body:has(#offline-banner:not(.hidden)) #app-container {
       animation: none;
       transition: none;
     }
+  }
+}
+
+/* PRÓBA ROZCIĄGNIĘCIA WIDOKU NA CAŁĄ WYSOKOŚĆ EKRANU NA iOS Z IKONY.
+   ==========================================================================
+   HISTORIA, ŻEBY NIKT NIE POWTÓRZYŁ MOJEGO BŁĘDU:
+
+   Postawiłem hipotezę, że przy `black-translucent` blok pozycjonowania jest KRÓTSZY
+   o wysokość górnego wcięcia, i przesunąłem `#app-scroll` oraz pasek nawigacji o tyle
+   w dół. Efekt na telefonie właściciela: pasek nawigacji i dół treści WYJECHAŁY POZA
+   EKRAN. To znaczy, że `inset: 0` już wcześniej sięgało dolnej krawędzi widoku —
+   a czarny pas leży PONIŻEJ widoku, czyli sam widok nie zajmuje całego ekranu.
+   Kompensacja z tamtej hipotezy została usunięta w całości.
+
+   Zostaje próba zgodna z tym, co opisują rozwiązania tego objawu: pozwolić dokumentowi
+   być WYŻSZYM od okna o wysokość górnego wcięcia. Nic to nie przesuwa i nic nie może
+   uciąć — dokument i tak ma ukryte przepełnienie, a wszystko, co widać, jest przypięte
+   do okna. Jeśli iOS rozciągnie widok do wysokości dokumentu, pas zniknie; jeśli nie,
+   ta reguła po prostu nic nie robi i trzeba szukać dalej (pomiar: pięć stuknięć w znak
+   firmowy pokazuje `screen` obok `inner`). */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    html { min-height: calc(100% + env(safe-area-inset-top)); }
   }
 }

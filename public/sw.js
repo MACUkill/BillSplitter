@@ -9,9 +9,10 @@
 // same, ale `/icons/icon-192x192.png` nazywa się tak samo przed i po podmianie rysunku.
 //
 // PODBIJ TĘ WERSJĘ przy każdej zmianie nazwy aplikacji, ikon albo manifestu.
-// v4 (audyt 2026-08-16): z listy cache'owanych hostów wypadły martwe CDN-y. Podbicie
-// nazwy każe handlerowi `activate` skasować starą pamięć razem z odpowiedziami z tych
-// adresów, które mogły w niej jeszcze leżeć u kogoś na telefonie.
+// v4 podbity NIEZALEŻNIE w dwóch liniach pracy i scalony 2026-08-17 — obie miały ten sam
+// powód formalny (trzeba wyrzucić starą pamięć), ale różne merytoryczne. Ze strony audytu:
+// z listy cache'owanych hostów wypadły martwe CDN-y, więc odpowiedzi z tych adresów mogły
+// jeszcze leżeć komuś na telefonie i trzeba je skasować.
 const CACHE = 'billiada-v4';
 
 self.addEventListener('install', () => {

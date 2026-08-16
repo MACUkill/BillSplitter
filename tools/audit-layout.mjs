@@ -31,7 +31,13 @@ const VIEWPORT = {
 
 const AUDIT = `(() => {
   const vw = document.documentElement.clientWidth;
-  const out = { overflow: [], smallTaps: [], overlaps: [], covered: [], scrollX: document.documentElement.scrollWidth > vw + 1 };
+  // Przewijanie w poziomie sprawdzamy na kontenerze, który realnie przewija.
+  // Na dokumencie ta miara od 2026-08-16 zawsze pokazuje „nie ma", bo dokument ma
+  // ukryte przepełnienie — sprawdzanie go dawałoby fałszywe „czysto".
+  // (Ten blok mieszka w literale ze znacznikami wstecznymi, więc w komentarzach
+  //  wewnątrz niego nie wolno użyć ani jednego takiego znaku.)
+  const scRoot = document.getElementById('app-scroll') || document.documentElement;
+  const out = { overflow: [], smallTaps: [], overlaps: [], covered: [], scrollX: scRoot.scrollWidth > vw + 1 };
 
   // PROSTOKĄT PO PRZYCIĘCIU, nie surowy.
   //
@@ -174,8 +180,13 @@ const AUDIT = `(() => {
   const deckEl = document.querySelector('.deck');
   if (deckEl && visible(deckEl) && !document.querySelector('.modal.active')) {
     const deckR = deckEl.getBoundingClientRect();
-    const y = window.scrollY || document.documentElement.scrollTop || 0;
-    const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    // Przewija się kontener o identyfikatorze app-scroll, a nie dokument (patrz komentarz
+    // przy nim w znacznikach), więc pozycję i zapas czytamy z niego: window.scrollY jest zerem.
+    const sc = document.getElementById('app-scroll');
+    const y = sc ? sc.scrollTop : (window.scrollY || 0);
+    const maxScroll = sc
+      ? Math.max(0, sc.scrollHeight - sc.clientHeight)
+      : Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     const bandTop = maxScroll + deckR.top;
     const bandBottom = maxScroll + deckR.bottom;
     for (const { el, r, layer } of boxes) {
@@ -314,7 +325,13 @@ const run = async () => {
   await shot('07a-rachunek-tryb-wlasne-koszty');
 
   // Pozycje przez okno „Dodaj pozycję".
-  for (const [desc, amount] of [['Pierogi ruskie', '48'], ['Żurek w chlebie', '38'], ['Kotlet schabowy z frytkami', '56'], ['Woda gazowana duża', '18']]) {
+  // Osiem pozycji, nie cztery: od ósmej pokazuje się lupa szukania po paragonie
+  // (`ITEM_SEARCH_MIN`), więc krótsza lista nigdy jej nie pokazywała na zrzucie.
+  for (const [desc, amount] of [
+    ['Pierogi ruskie', '48'], ['Żurek w chlebie', '38'], ['Kotlet schabowy z frytkami', '56'],
+    ['Woda gazowana duża', '18'], ['Placki ziemniaczane', '32'], ['Kompot owocowy', '12'],
+    ['Sernik na zimno', '24'], ['Herbata z imbirem', '14'],
+  ]) {
     await click('#add-shared-cost-btn');
     await new Promise((r) => setTimeout(r, 400));
     await type('#shared-cost-desc', desc);
@@ -333,12 +350,50 @@ const run = async () => {
   }
   await shot('09-paragon-moje-pozycje');
 
+  // Sam wydruk w kadrze. Audyt do 2026-08-16 fotografował ekran rachunku wyłącznie
+  // od góry, więc bohater tego ekranu — paragon z ząbkowanymi krawędziami — nie trafiał
+  // na żaden zrzut i zmiany w nim sprawdzało się wyłącznie okiem na telefonie.
+  await page.evaluate(() => document.getElementById('items-section')?.scrollIntoView({ block: 'start' }));
+  await new Promise((r) => setTimeout(r, 500));
+  await shot('09a-paragon-w-kadrze');
+
+  // Szukanie po pozycjach: lupa rozwija pole dokładnie tak, jak przy wyborze osoby.
+  await page.evaluate(() => document.querySelector('#item-search-wrap .person-search-toggle')?.click());
+  await new Promise((r) => setTimeout(r, 500));
+  await type('#item-search-wrap .person-search-input', 'zure');
+  await new Promise((r) => setTimeout(r, 400));
+  await shot('09b-paragon-szukanie');
+  await page.evaluate(() => {
+    const i = document.querySelector('#item-search-wrap .person-search-input');
+    if (i) { i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); }
+    document.querySelector('#item-search-wrap .person-search-toggle')?.click();
+  });
+  await new Promise((r) => setTimeout(r, 400));
+
   // Koszt wspólny.
   await click('#add-global-cost-btn');
   await new Promise((r) => setTimeout(r, 500));
   await shot('10-okno-koszt-wspolny');
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 400));
+
+  // Koszt wspólny zapisany: sekcja ma teraz nagłówek, zdanie o dzieleniu po równo
+  // i wiersz z kwotą na osobę — czyli wszystko, czego audyt nie widział, dopóki
+  // lista kosztów wspólnych była pusta.
+  await click('#add-global-cost-btn');
+  await new Promise((r) => setTimeout(r, 400));
+  await type('#global-cost-value', '10');
+  await click('#save-global-cost');
+  await new Promise((r) => setTimeout(r, 900));
+  await page.evaluate(() => document.getElementById('global-costs-section')?.scrollIntoView({ block: 'center' }));
+  await new Promise((r) => setTimeout(r, 400));
+  await shot('10a-koszty-wspolne');
+
+  // Limonkowa wyspa „twoja część rachunku" — po decyzji o pełnym kolorze (2026-08-16)
+  // to jest miejsce, w którym najłatwiej o nieczytelny podpis na jasnym tle.
+  await page.evaluate(() => document.querySelector('.card-mine')?.scrollIntoView({ block: 'center' }));
+  await new Promise((r) => setTimeout(r, 400));
+  await shot('10b-twoj-udzial');
 
   // Powrót na pulpit z danymi.
   await click('#back-to-dashboard-btn');
@@ -384,6 +439,31 @@ const run = async () => {
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 400));
 
+  // Sposoby płatności: dwa, żeby wiersz z numerem konta i dwoma przyciskami trafił
+  // na zrzut. Bez tego kroku audyt nigdy nie widział rozwiniętej listy w ustawieniach
+  // pokoju — a to właśnie tam wiersz rozjeżdżał się poza kartę.
+  await click('#nav-me');
+  await new Promise((r) => setTimeout(r, 500));
+  await click('#dashboard-payment-btn');
+  await new Promise((r) => setTimeout(r, 600));
+  await type('#pm-add-value', 'PL61109010140000071219812874');
+  await click('#pm-add-btn');
+  await new Promise((r) => setTimeout(r, 700));
+  await click('#pm-add-type');
+  await new Promise((r) => setTimeout(r, 500));
+  await page.evaluate(() => {
+    const opt = [...document.querySelectorAll('#choice-options .choice-option')]
+      .find((b) => /revolut/i.test(b.textContent || ''));
+    if (opt) opt.click();
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  await type('#pm-add-value', 'macu');
+  await click('#pm-add-btn');
+  await new Promise((r) => setTimeout(r, 700));
+  await shot('15c-sposoby-platnosci');
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 400));
+
   // Ustawienia pokoju — arkusz spod nazwy pokoju.
   await click('#nav-room');
   await new Promise((r) => setTimeout(r, 500));
@@ -396,6 +476,14 @@ const run = async () => {
   await page.evaluate(() => { const b = document.querySelector('#room-settings-modal .sheet-body'); if (b) b.scrollTop = b.scrollHeight; });
   await new Promise((r) => setTimeout(r, 500));
   await shot('14b-ustawienia-pokoju-dol');
+
+  // Rozwinięty wiersz uczestnika ze sposobami płatności — miejsce zgłoszonego rozjazdu.
+  await page.evaluate(() => {
+    const d = document.querySelector('#room-members-list details.member-pay');
+    if (d) { d.open = true; d.scrollIntoView({ block: 'center' }); }
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  await shot('14c-sposoby-platnosci-rozwiniete');
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 500));
 

@@ -153,8 +153,19 @@ the verdict, and DESIGN.md
         <i class="fas fa-triangle-exclamation mr-2"></i>Jesteś offline. Zmiany zapiszą się lokalnie i zsynchronizują po odzyskaniu połączenia.
     </div>
 
-    <!-- Zapas na dole liczy arkusz stylów (`#app-container`), bo tylko tam da się dodać
+    <!-- PRZEWIJA SIĘ TEN KONTENER, A NIE DOKUMENT.
+         Powód jest jeden i konkretny: w aplikacji uruchomionej z ikony na ekranie
+         początkowym iPhone'a dokument, który da się rozciągnąć na końcu przewijania,
+         ciągnie za sobą elementy `position: fixed` — czyli pasek nawigacji. W Safari
+         i Firefoksie tego nie widać, bo tam gest obsługuje przeglądarka; z ikony
+         obsługuje go warstwa systemowa, która `overscroll-behavior` na dokumencie
+         IGNORUJE (rzecz znana i opisana, nie nasza pomyłka).
+         Gdy dokument nie ma czego przewijać, nie ma się co rozciągać, a pasek stoi.
+         Skutek uboczny w prezencie: znika systemowy wskaźnik przewijania dokumentu,
+         bo wskaźnik wewnętrznego kontenera da się już ukryć stylami.
+         Zapas na dole liczy arkusz stylów (`#app-container`), bo tylko tam da się dodać
          wysokość paska gestów przez `env(safe-area-inset-bottom)`. -->
+    <div id="app-scroll">
     <div id="app-container" class="max-w-4xl mx-auto p-4 md:p-8">
 
         <!-- Ekran wczytywania jest jedynym miejscem, w którym znak firmowy dostaje całą
@@ -604,7 +615,8 @@ the verdict, and DESIGN.md
                     </div>
                 </div>
                 <div class="mt-3 flex items-center gap-3 flex-wrap">
-                    <button id="parse-receipt-btn" class="btn btn-primary hidden">
+                    <button id="parse-receipt-btn" class="btn btn-ai hidden">
+                        <i class="fas fa-wand-magic-sparkles" aria-hidden="true"></i>
                         <span id="parse-receipt-label">Odczytaj paragon</span>
                     </button>
                     <span id="parse-receipt-note" class="text-sm text-ink-3"></span>
@@ -617,17 +629,41 @@ the verdict, and DESIGN.md
                  do rachunku, a nie luźna lista kafelków. -->
             <section id="items-section" class="mb-3 mt-6">
                 <div id="items-section-header"></div>
+                <!-- SZUKANIE POZYCJI — dokładnie ten sam mechanizm, co szukanie osoby:
+                     zwinięta lupa, która rozwija pole po stuknięciu. Stoi NAD wydrukiem,
+                     bo tam patrzy oko, kiedy szuka swojej pozycji, i pojawia się dopiero
+                     przy paragonie, na którym szukanie ma sens (`ITEM_SEARCH_MIN`). -->
+                <div id="item-search-wrap" class="person-search mb-2 hidden"
+                     data-search-for="shared-costs-list"
+                     data-search-rows=".receipt-line"
+                     data-search-empty="Żadna pozycja nie pasuje do tego słowa.">
+                    <button type="button" class="person-search-toggle tap w-11 h-11 rounded-full flex items-center justify-center bg-surface-2 text-ink-2 flex-shrink-0" aria-expanded="false" aria-label="Szukaj pozycji" title="Szukaj pozycji">
+                        <i class="fas fa-magnifying-glass"></i>
+                    </button>
+                    <input type="text" class="person-search-input field min-h-tap" placeholder="Szukaj pozycji" autocomplete="off" spellcheck="false" aria-label="Szukaj pozycji">
+                </div>
+                <div id="receipt-tear-top" class="receipt-tear receipt-tear-top hidden" aria-hidden="true"></div>
                 <div id="shared-costs-list"></div>
                 <div id="receipt-tear" class="receipt-tear hidden" aria-hidden="true"></div>
-                <button id="add-shared-cost-btn" class="btn btn-dark w-full mt-3">Dodaj pozycję</button>
+                <button id="add-shared-cost-btn" class="btn btn-dark w-full mt-3">
+                    <i class="fas fa-receipt" aria-hidden="true"></i>
+                    Dodaj pozycję
+                </button>
             </section>
 
             <!-- KOSZTY WSPÓLNE — działają w OBU trybach podziału: napiwek dzieli się po
-                 równo niezależnie od tego, czy pozycje są rozpisane. Lista stoi przy
-                 przycisku, który ją zapełnia. -->
-            <section class="mb-3 mt-6">
-                <div id="global-costs-list" class="space-y-2 mb-3"></div>
-                <button id="add-global-cost-btn" class="btn btn-quiet w-full">Dodaj koszt wspólny</button>
+                 równo niezależnie od tego, czy pozycje są rozpisane.
+                 Sekcja wygląda jak druga część wydruku (ta sama ramka, te same linie
+                 oderwania), bo tym właśnie jest: dopiskiem na dole paragonu. -->
+            <section id="global-costs-section" class="mb-3 mt-6">
+                <div id="global-costs-header"></div>
+                <div id="global-tear-top" class="receipt-tear receipt-tear-top hidden" aria-hidden="true"></div>
+                <div id="global-costs-list"></div>
+                <div id="global-tear" class="receipt-tear hidden" aria-hidden="true"></div>
+                <button id="add-global-cost-btn" class="btn btn-dark w-full mt-3">
+                    <i class="fas fa-users" aria-hidden="true"></i>
+                    Dodaj koszt wspólny
+                </button>
             </section>
 
             <!-- UCZESTNICY — ZWINIĘCI. Na ekranie rachunku pracujesz nad swoją częścią;
@@ -672,6 +708,7 @@ the verdict, and DESIGN.md
 
 
     </div>
+    </div><!-- /#app-scroll -->
 
     <!-- DOLNA NAWIGACJA — kciuk pracuje w dolnej trzeciej ekranu, a cała aplikacja żyje
          na telefonie trzymanym jedną ręką. W V1 każda akcja wymagała sięgnięcia na górę.
@@ -1417,6 +1454,17 @@ the verdict, and DESIGN.md
             </div>
             <div class="sheet-body">
                 <div id="receipt-preview-warning" class="hidden mb-3 text-sm text-owe bg-owe/10 rounded-block p-3"></div>
+                <!-- WALUTA Z PARAGONU. Model odczytuje ją razem z pozycjami, a do
+                     2026-08-16 wynik lądował w koszu: rachunek zostawał w walucie pokoju,
+                     więc pozycje z Chorwacji wchodziły jako złotówki i nikt się o tym nie
+                     dowiadywał aż do rozliczenia. Pas pojawia się WYŁĄCZNIE wtedy, gdy
+                     odczytana waluta różni się od waluty rachunku, i niczego nie zmienia
+                     sam z siebie — kurs zapisuje się w dniu dodania, więc to decyzja
+                     człowieka, nie modelu. -->
+                <div id="receipt-currency-note" class="hidden mb-3 rounded-block p-3 bg-surface-2 flex items-center justify-between gap-3 flex-wrap">
+                    <p class="text-sm text-ink-2 min-w-0"><span id="receipt-currency-text"></span></p>
+                    <button id="receipt-currency-apply" class="btn btn-dark flex-shrink-0" type="button"></button>
+                </div>
                 <div id="receipt-preview-items" class="space-y-1"></div>
                 <div id="receipt-preview-modifiers-wrap" class="hidden mt-5">
                     <div id="receipt-preview-modifiers" class="space-y-1"></div>
