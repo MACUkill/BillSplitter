@@ -1,0 +1,318 @@
+{
+  "_README": "Wzorce spisane RĘCZNIE ze zdjęć w pełnej rozdzielczości (audyt 2026-08-16). Podatek WLICZONY w ceny (PTU, MwSt, incl. VAT) NIE należy do wzorca — model ma go pominąć. Doliczany (Sales Tax) należy.",
+  "r009.jpg": {
+    "_opis": "Lewiatan, PL — 4 pozycje, dwie IDENTYCZNE linie Coca Cola (test: nie scalać), PTU wliczone",
+    "currency": "PLN",
+    "items": [
+      {
+        "description": "ŚM.18 200g PIĄTNICA",
+        "amount": 2.99
+      },
+      {
+        "description": "TWARÓG SER/KANAP. 1kg WIELUŃ WIADERKO",
+        "amount": 21.39
+      },
+      {
+        "description": "COCA COLA 0.5L PET",
+        "amount": 4.89
+      },
+      {
+        "description": "COCA COLA 0.5L PET",
+        "amount": 4.89
+      }
+    ],
+    "modifiers": [],
+    "receiptTotal": 34.16,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/0/0f/Paragon_fiskalny_-_24.08.2024.jpg",
+    "_commons": "File:Paragon fiskalny - 24.08.2024.jpg"
+  },
+  "r014.jpg": {
+    "_opis": "ALDI, PL — 6 pozycji, ilości 1/2/4 szt oraz pozycja na WAGĘ (0,122 kg), trzy stawki PTU",
+    "currency": "PLN",
+    "items": [
+      {
+        "description": "GOŹDZIKI 10 SZT.",
+        "amount": 9.99
+      },
+      {
+        "description": "GUMA ORBIT/AIRWAV. 29G",
+        "amount": 4.99
+      },
+      {
+        "description": "KONCENTRAT DO NACZ 500M",
+        "amount": 11.98
+      },
+      {
+        "description": "COCACOLA Z/FAN/SPR 2L",
+        "amount": 10.49
+      },
+      {
+        "description": "COLA COLA 0,5L",
+        "amount": 19.96
+      },
+      {
+        "description": "PIETR. KORZ. KG",
+        "amount": 1.22
+      }
+    ],
+    "modifiers": [],
+    "receiptTotal": 58.63,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/2/27/Paragon_fiskalny-_14.05.2025.jpg",
+    "_commons": "File:Paragon fiskalny- 14.05.2025.jpg"
+  },
+  "r019.jpg": {
+    "_opis": "CukrOFFnia, PL — kawiarnia, wzorcowy przypadek do dzielenia: 2 cappuccino + 2 ciasta",
+    "currency": "PLN",
+    "hint": "kawiarnia",
+    "items": [
+      {
+        "description": "CAPPUCCINO",
+        "amount": 30
+      },
+      {
+        "description": "CIASTO Z KREMEM ORZECHOWYM",
+        "amount": 16
+      },
+      {
+        "description": "CIASTO CZEKOLADOWE Z WIŚNIĄ",
+        "amount": 16
+      }
+    ],
+    "modifiers": [],
+    "receiptTotal": 62,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/b/b9/Paragon_fiskalny-30.10.2025.jpg",
+    "_commons": "File:Paragon fiskalny-30.10.2025.jpg"
+  },
+  "r028.jpg": {
+    "_opis": "Mechanika pojazdowa, PL — 7 pozycji, nazwy ZAWIJANE na dwie linie (cena w następnym wierszu)",
+    "currency": "PLN",
+    "items": [
+      {
+        "description": "OLEJ CASTROL EDGE C3 5W30 4L",
+        "amount": 178
+      },
+      {
+        "description": "FILTR OLEJU",
+        "amount": 19.5
+      },
+      {
+        "description": "AKUMUL. BOSCH S4 52AH/470A",
+        "amount": 295
+      },
+      {
+        "description": "PODKŁ. K. MISKI OL. 14.5X22X2 FORD",
+        "amount": 3
+      },
+      {
+        "description": "Wymiana oleju w silniku",
+        "amount": 70
+      },
+      {
+        "description": "Uruchomienie silnika",
+        "amount": 50
+      },
+      {
+        "description": "Wymiana akumulatora",
+        "amount": 30
+      }
+    ],
+    "modifiers": [],
+    "receiptTotal": 645.5,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/7/75/Paragon_fiskalny_-24.06.2021.jpg",
+    "_commons": "File:Paragon fiskalny -24.06.2021.jpg"
+  },
+  "r025.jpg": {
+    "_opis": "VERITAX, PL — 2 pozycje, PTU wliczone",
+    "currency": "PLN",
+    "items": [
+      {
+        "description": "ARTYKUŁ DEKO",
+        "amount": 29
+      },
+      {
+        "description": "TORBA PREZENTOWA",
+        "amount": 1.7
+      }
+    ],
+    "modifiers": [],
+    "receiptTotal": 30.7,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/d/dd/Paragon_fiskalny_-_12.02.2026.jpg",
+    "_commons": "File:Paragon fiskalny - 12.02.2026.jpg"
+  },
+  "r004.jpg": {
+    "_opis": "PUŁAPKA: rabat JUŻ UWZGLĘDNIONY w cenie ('Uwzgl. rabat: -20,00'). Odjęcie go drugi raz zaniża rachunek o 20 zł.",
+    "currency": "PLN",
+    "items": [
+      {
+        "description": "NIVEA SOFT KREM 3\\AX",
+        "amount": 29.98
+      }
+    ],
+    "modifiers": [],
+    "receiptTotal": 29.98,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/4/44/Paragon_fiskalny_-_08.08.2024.jpg",
+    "_commons": "File:Paragon fiskalny - 08.08.2024.jpg"
+  },
+  "r012.jpg": {
+    "_opis": "PUŁAPKA: rabat 1+1 -40% jako podlinia pod pierwszą pozycją. Oczekiwany zapis to CENA PO RABACIE (53,99) bez osobnego modyfikatora — tak każe reguła RABAT w promptcie i tak jest wygodniej przy dzieleniu, bo każda bluzka ma swoją prawdziwą cenę.",
+    "currency": "PLN",
+    "items": [
+      {
+        "description": "Bluzka BASELG Granat XL",
+        "amount": 53.99
+      },
+      {
+        "description": "Bluzka BASELG Czarny XL",
+        "amount": 89.99
+      }
+    ],
+    "modifiers": [],
+    "receiptTotal": 143.98,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/9/92/Paragon_fiskalny_-_CCI24072025.jpg",
+    "_commons": "File:Paragon fiskalny - CCI24072025.jpg"
+  },
+  "r022.jpg": {
+    "_opis": "PUŁAPKA: Żabka — OPUST (rabat) -2,00 ORAZ kaucja za butelki +1,50. SUMA 21,97, ale DO ZAPŁATY 23,47. Oczekiwany zapis: napój w cenie PO opuście (21,97), kaucja osobno jako modyfikator, receiptTotal z linii DO ZAPŁATY.",
+    "currency": "PLN",
+    "items": [
+      {
+        "description": "NAPÓJ COCA 850ml",
+        "amount": 21.97
+      }
+    ],
+    "modifiers": [
+      {
+        "description": "Kaucja za butelkę plastikową",
+        "type": "amount",
+        "value": 1.5
+      }
+    ],
+    "receiptTotal": 23.47,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/8/80/Paragon_fiskalny_-_2026.03.02.jpg",
+    "_commons": "File:Paragon fiskalny - 2026.03.02.jpg"
+  },
+  "r083.jpg": {
+    "_opis": "PRZYPADEK B (podatek DOLICZANY): Subtotal 57.500 + Sales Tax 8% 4.830 + Service Charge 2.875 = 65.205. Bar hotelowy w Jordanii, waluta niewydrukowana.",
+    "currency": null,
+    "hint": "bar hotelowy",
+    "items": [
+      {
+        "description": "Petra 5% 50cl",
+        "amount": 7.5
+      },
+      {
+        "description": "Herbata ziołowa",
+        "amount": 2
+      },
+      {
+        "description": "JR Classic Sauvignon",
+        "amount": 33
+      },
+      {
+        "description": "Mezze jordańskie",
+        "amount": 8
+      },
+      {
+        "description": "Jägermeister",
+        "amount": 7
+      }
+    ],
+    "modifiers": [
+      {
+        "description": "Sales Tax 8%",
+        "type": "amount",
+        "value": 4.83
+      },
+      {
+        "description": "Service Charge",
+        "type": "amount",
+        "value": 2.88
+      }
+    ],
+    "receiptTotal": 65.21,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/7/75/Cave_Bar_Petra_receipt_2021.jpg",
+    "_commons": "File:Cave Bar Petra receipt 2021.jpg"
+  },
+  "r046.jpg": {
+    "_opis": "Restauracja DE — MwSt WLICZONY (rozbicie Netto/MwSt/Brutto pod sumą). Test tłumaczenia nazw na polski.",
+    "currency": "EUR",
+    "hint": "restauracja",
+    "items": [
+      {
+        "description": "Espresso",
+        "amount": 2.2
+      },
+      {
+        "description": "Szprycer z białego wina",
+        "amount": 3.8
+      },
+      {
+        "description": "Danie dnia 2",
+        "amount": 8.2
+      }
+    ],
+    "modifiers": [],
+    "receiptTotal": 14.2,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/2/20/Baden-Baden-Wallstreet-34-Kassenzettel-2015-gje.jpg",
+    "_commons": "File:Baden-Baden-Wallstreet-34-Kassenzettel-2015-gje.jpg"
+  },
+  "r029.jpg": {
+    "_opis": "Berghotel CH — 'Incl. 7.6% MwSt' pod sumą, podatek WLICZONY. Waluta CHF. 2x Latte Macchiato w jednej linii.",
+    "currency": "CHF",
+    "hint": "restauracja górska",
+    "items": [
+      {
+        "description": "Latte Macchiato",
+        "amount": 9
+      },
+      {
+        "description": "Gloki",
+        "amount": 5
+      },
+      {
+        "description": "Sznycel wieprzowy",
+        "amount": 22
+      },
+      {
+        "description": "Chässpätzli",
+        "amount": 18.5
+      }
+    ],
+    "modifiers": [],
+    "receiptTotal": 54.5,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/0/0b/ReceiptSwiss.jpg",
+    "_commons": "File:ReceiptSwiss.jpg"
+  },
+  "r039.jpg": {
+    "_opis": "PUŁAPKA: zdjęcie OBRÓCONE O 90 STOPNI, paragon leży bokiem, częściowo zasłonięty nożyczkami. MwSt wliczony.",
+    "currency": "EUR",
+    "items": [
+      {
+        "description": "Plastiktasche 80x12x55cm",
+        "amount": 1.2
+      }
+    ],
+    "modifiers": [],
+    "receiptTotal": 1.2,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/4/40/2023-10-20_Ausstellung_%22The_Mystery_of_Banksy_-_A_genius_Mind%22_im_Aufhof_in_Hannover%2C_Rechnung_Cofo_Entertainment_GmbH_%26_Co._KG_in_Passau%2C_Plastiktasche.jpg",
+    "_commons": "File:2023-10-20 Ausstellung \"The Mystery of Banksy - A genius Mind\" im Aufhof in Hannover, Rechnung Cofo Entertainment GmbH & Co. KG in Passau, Plastiktasche.jpg"
+  },
+  "r041.jpg": {
+    "_opis": "NEGATYWNY: potwierdzenie PRZELEWU (OPay, 70 000 NGN). Nie ma żadnych pozycji — model nie ma prawa niczego wymyślić.",
+    "currency": null,
+    "items": [],
+    "modifiers": [],
+    "receiptTotal": null,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/5/56/Wikipedia_Receipt_For_Food.jpg",
+    "_commons": "File:Wikipedia Receipt For Food.jpg"
+  },
+  "r049.jpg": {
+    "_opis": "NEGATYWNY: francuskie OGŁOSZENIE o wycofaniu pizz mrożonych, nie paragon. Zero pozycji, zero kwot.",
+    "currency": null,
+    "items": [],
+    "modifiers": [],
+    "receiptTotal": null,
+    "_source": "https://upload.wikimedia.org/wikipedia/commons/3/31/2023-02-19_23-37-01_-_Ticket_de_caisse_rappel_de_produit.jpg",
+    "_commons": "File:2023-02-19 23-37-01 - Ticket de caisse rappel de produit.jpg"
+  }
+}

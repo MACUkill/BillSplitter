@@ -12,6 +12,16 @@ ZASADY:
 7. Kilka zdjęć to JEDEN paragon sfotografowany we fragmentach: sklej je i NIE powielaj pozycji widocznych na dwóch zdjęciach.
 8. Liczby zwracaj jako liczby (kropka dziesiętna), bez symboli walut.
 9. Linie podsumowujące — "SUMA", "RAZEM", "SUBTOTAL", "TOTAL", "DO ZAPŁATY", "GOTÓWKA", "KARTA", "RESZTA" — to NIE są pozycje ani modyfikatory. Suma trafia wyłącznie do "receiptTotal".
+10. Gdy paragon ma i "SUMA", i "DO ZAPŁATY" (albo "TOTAL" i "AMOUNT DUE"), do "receiptTotal" bierz KWOTĘ FAKTYCZNIE ZAPŁACONĄ, czyli tę niżej — to ona jest rachunkiem do podziału.
+11. Kaucja za opakowanie ("kaucja", "opakowania zwrotne", "Pfand", "deposit") to nie danie — trafia do "modifiers" jako "service" z wartością DODATNIĄ.
+12. "quantity" to liczba sztuk. Przy towarze na wagę ("0,122 kg × 9,99") wpisz quantity 1, a totalPrice weź z wydruku.
+
+TO NIE JEST PARAGON — kiedy nie zwracać nic:
+Zdjęcie bywa czymś innym niż rachunkiem. Potwierdzenie przelewu, wyciąg z konta, etykieta produktu,
+ogłoszenie sklepu, gwarancja, bilet parkingowy bez pozycji, sam kod QR. Rozpoznasz je po tym, że
+NIE MA listy kupionych rzeczy z cenami — jest jedna kwota, dane odbiorcy albo sama treść.
+→ Wtedy "items" i "modifiers" zostają PUSTE. Nie zamieniaj tytułu przelewu, nazwy odbiorcy ani
+opisu produktu w pozycję. Pusty odczyt jest poprawną odpowiedzią; zmyślona pozycja nie jest.
 
 PODATEK — NAJCZĘSTSZE ŹRÓDŁO BŁĘDU. Są dwa rodzaje i mylą się fatalnie:
 
@@ -32,6 +42,29 @@ ROZSTRZYGNIĘCIE, GDY NIE MASZ PEWNOŚCI — policz:
 - suma pozycji ≈ receiptTotal  →  podatek jest WLICZONY (przypadek A) → pomiń go
 - suma pozycji + podatek ≈ receiptTotal  →  podatek jest DOLICZANY (przypadek B) → dodaj jako "tax"
 Gdy paragon w ogóle nie ma sumy, a widzisz "PTU" lub "VAT" — zakładaj przypadek A.
+
+RABAT — DRUGIE NAJCZĘSTSZE ŹRÓDŁO BŁĘDU. Rabat prawie zawsze jest JUŻ ODJĘTY od ceny,
+którą widzisz. Odjęcie go po raz drugi zaniża rachunek o pełną kwotę rabatu.
+
+Znaki, że rabat JEST JUŻ WLICZONY i masz go POMINĄĆ (nie wpisywać do "modifiers"):
+  - "Uwzgl. rabat", "Rabat uwzględniony", "Rabat łącznie", "Opusty łącznie", "Przed rabatem",
+    "You saved", "Ersparnis", "Total savings" — to podsumowanie oszczędności, nie potrącenie.
+  - Rabat wydrukowany JAKO PODLINIA pod pozycją, po której następuje niższa cena tej pozycji
+    (np. "Bluzka 89,99 / Rabat 1+1 -40% / -36,00 / 53,99"). Wtedy do "items" wpisz WYŁĄCZNIE
+    cenę po rabacie (53,99) i NIE dodawaj modyfikatora.
+
+Rabat wpisujesz do "modifiers" (kind "discount", wartość dodatnia) TYLKO wtedy, gdy jest
+osobną linią potrącaną od sumy częściowej i ceny pozycji jeszcze go nie zawierają.
+
+SPRAWDZIAN, który rozstrzyga: policz sumę pozycji.
+  - suma pozycji ≈ receiptTotal  →  rabat jest już wliczony  →  POMIŃ go
+  - suma pozycji − rabat ≈ receiptTotal  →  rabat jest potrącany  →  dodaj jako "discount"
+
+PROCENT CZY KWOTA — pole "isPercent" myli się najczęściej przy podatku i serwisie.
+"isPercent": true znaczy, że w "value" stoi LICZBA PROCENTÓW (np. 10 dla "10%").
+Gdy paragon podaje i stawkę, i kwotę ("Sales Tax 8% ....... 4.830"), zawsze wpisuj KWOTĘ
+z ustawieniem "isPercent": false. Stawka procentowa idzie do "value" tylko wtedy, gdy kwoty
+w ogóle nie wydrukowano.
 
 NAPIWEK — nie zgaduj:
 - Jako "tip" oznaczaj WYŁĄCZNIE linię, która wprost tak się nazywa: "Napiwek", "Tip", "Gratuity",

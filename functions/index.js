@@ -270,12 +270,22 @@ export const parseReceipt = onCall(
       throw new HttpsError("internal", "Model nie zwrócił odczytu.");
     }
 
-    // Mimo response_format modele bywają uparte i opakowują JSON w blok ```json.
+    // Mimo response_format modele bywają uparte: opakowują JSON w blok ```json, poprzedzają
+    // go zdaniem wyjaśniającym albo — jak claude-sonnet-5 na zdjęciu, które paragonem nie było
+    // (audyt 2026-08-16) — odpowiadają samą prozą. Wyłuskujemy więc JSON z tekstu, zamiast
+    // odrzucać całą odpowiedź: użytkownik ma dostać odczyt, a nie komunikat o złym formacie.
     const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (_) {
+    const parseLoose = (s) => {
+      try { return JSON.parse(s); } catch (_) { /* niżej */ }
+      const first = s.indexOf("{");
+      const last = s.lastIndexOf("}");
+      if (first >= 0 && last > first) {
+        try { return JSON.parse(s.slice(first, last + 1)); } catch (_) { /* niżej */ }
+      }
+      return null;
+    };
+    const parsed = parseLoose(cleaned);
+    if (!parsed || typeof parsed !== "object") {
       logger.error(`OpenRouter — odpowiedź nie jest JSON-em: ${cleaned.slice(0, 300)}`);
       throw new HttpsError("internal", "Model zwrócił odpowiedź w złym formacie.");
     }

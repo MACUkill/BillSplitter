@@ -272,3 +272,114 @@ describe('mapowanie na rachunek', () => {
     expect(receiptModifiersToGlobalCosts(undefined)).toEqual([]);
   });
 });
+
+// ====================================================================
+// AUDYT 2026-08-16 — uzgadnianie modyfikatorów z sumą paragonu.
+//
+// Pomiar na czternastu prawdziwych paragonach (tools/receipt-bench.mjs) wykazał trzy
+// błędy, wszystkie ZANIŻAJĄCE rachunek i wszystkie w modyfikatorach, nie w pozycjach:
+// rabat już wliczony w cenę odjęty drugi raz, cena po rabacie plus rabat osobno,
+// oraz kwota podatku zgłoszona jako procent. Poniższe testy pilnują naprawy.
+// ====================================================================
+describe('uzgodnienie modyfikatorów z sumą paragonu', () => {
+  it('rabat JUŻ UWZGLĘDNIONY w cenie nie jest odejmowany drugi raz', () => {
+    // Rossmann: „NIVEA 2 x14,99 29,98" + „Uwzgl. rabat: -20,00", SUMA 29,98.
+    // Bez tej reguły rachunek spadał do 9,98 zł.
+    const out = normalizeReceipt({
+      items: [{ name: 'Nivea Soft krem', quantity: 2, totalPrice: 29.98 }],
+      modifiers: [{ kind: 'discount', name: 'Uwzgl. rabat', value: 20 }],
+      receiptTotal: 29.98,
+    });
+    expect(out.modifiers).toEqual([]);
+    expect(out.itemsTotal).toBe(29.98);
+  });
+
+  it('rabat, który NAPRAWDĘ jest potrącany, zostaje', () => {
+    // Ten sam kształt danych, ale suma paragonu potwierdza potrącenie.
+    const out = normalizeReceipt({
+      items: [{ name: 'Bluzka', quantity: 1, totalPrice: 89.99 }],
+      modifiers: [{ kind: 'discount', name: 'Rabat', value: 36 }],
+      receiptTotal: 53.99,
+    });
+    expect(out.modifiers).toEqual([{ description: 'Rabat', type: 'amount', value: -36 }]);
+  });
+
+  it('kwota podatku zgłoszona jako procent jest czytana jako kwota', () => {
+    // Petra Guest House: „Sales Tax 8% … 4.830" wróciło jako isPercent + value 4.83.
+    // Jako procent dałoby 2,78 zamiast 4,83 — rachunek niższy o 2,05.
+    const out = normalizeReceipt({
+      items: [
+        { name: 'Petra 5% 50cl', totalPrice: 7.5 },
+        { name: 'Tea', totalPrice: 2 },
+        { name: 'JR Classic', totalPrice: 33 },
+        { name: 'Mezzeh', totalPrice: 8 },
+        { name: 'Jagermeister', totalPrice: 7 },
+      ],
+      modifiers: [
+        { kind: 'tax', name: 'Sales Tax 8%', isPercent: true, value: 4.83 },
+        { kind: 'service', name: 'Service Charge', isPercent: false, value: 2.875 },
+      ],
+      receiptTotal: 65.205,
+    });
+    const sumG = toGrosze(out.itemsTotal)
+      + out.modifiers.reduce((s, m) => s + (m.type === 'percent'
+        ? Math.round(toGrosze(out.itemsTotal) * m.value / 100)
+        : toGrosze(m.value)), 0);
+    expect(sumG).toBe(toGrosze(out.receiptTotal));
+    expect(out.modifiers.find((m) => /Sales Tax/.test(m.description)))
+      .toEqual({ description: 'Sales Tax 8%', type: 'amount', value: 4.83 });
+  });
+
+  it('prawdziwy procent zostaje procentem, gdy to on domyka sumę', () => {
+    const out = normalizeReceipt({
+      items: [{ name: 'Danie', totalPrice: 100 }],
+      modifiers: [{ kind: 'service', name: 'Serwis 10%', isPercent: true, value: 10 }],
+      receiptTotal: 110,
+    });
+    expect(out.modifiers).toEqual([{ description: 'Serwis 10%', type: 'percent', value: 10 }]);
+  });
+
+  it('podatek wliczony (PTU) wypada, bo bez niego suma się spina', () => {
+    const out = normalizeReceipt({
+      items: [{ name: 'Pizza', totalPrice: 42 }, { name: 'Cola', totalPrice: 12 }],
+      modifiers: [{ kind: 'tax', name: 'SP.OP.PTU A 8%', value: 4 }],
+      receiptTotal: 54,
+    });
+    expect(out.modifiers).toEqual([]);
+  });
+
+  it('podatek doliczany (Sales Tax) zostaje, bo bez niego suma się nie spina', () => {
+    const out = normalizeReceipt({
+      items: [{ name: 'Burger', totalPrice: 12 }, { name: 'Fries', totalPrice: 4 }],
+      modifiers: [
+        { kind: 'tax', name: 'Sales Tax', value: 1.32 },
+        { kind: 'tip', name: 'Tip', value: 3 },
+      ],
+      receiptTotal: 20.32,
+    });
+    expect(out.modifiers).toHaveLength(2);
+    expect(out.modifiers.map((m) => m.value)).toEqual([1.32, 3]);
+  });
+
+  it('gdy nic nie domyka sumy, modyfikatory zostają nietknięte', () => {
+    // Przeoczona pozycja: nie wolno „naprawiać" tego kasowaniem prawdziwego napiwku.
+    const out = normalizeReceipt({
+      items: [{ name: 'Danie', totalPrice: 40 }],
+      modifiers: [{ kind: 'tip', name: 'Napiwek', value: 5 }],
+      receiptTotal: 95,
+    });
+    expect(out.modifiers).toEqual([{ description: 'Napiwek', type: 'amount', value: 5 }]);
+  });
+
+  it('bez sumy paragonu decyduje nazwa — PTU precz, napiwek zostaje', () => {
+    const out = normalizeReceipt({
+      items: [{ name: 'Pizza', totalPrice: 42 }],
+      modifiers: [
+        { kind: 'tax', name: 'PTU A 23%', value: 8 },
+        { kind: 'tip', name: 'Napiwek', value: 5 },
+      ],
+      receiptTotal: null,
+    });
+    expect(out.modifiers).toEqual([{ description: 'Napiwek', type: 'amount', value: 5 }]);
+  });
+});

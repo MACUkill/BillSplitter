@@ -89,6 +89,60 @@ const TOLERANCE_G = 2; // grosze — luz na zaokrąglenia przy porównywaniu z s
 const modifierGrosze = (m, itemsG) =>
   m.type === 'percent' ? Math.round(itemsG * m.value / 100) : toGrosze(m.value);
 
+// --- UZGODNIENIE Z SUMĄ PARAGONU ---
+//
+// Suma wydrukowana na paragonie jest jedyną liczbą, której model nie musi składać sam —
+// odczytuje ją wprost. Gdy „pozycje + modyfikatory" się z nią nie spinają, to modyfikator
+// jest podejrzany, bo pozycje model przepisuje jedna do jednej, a modyfikatory INTERPRETUJE.
+// Trzy błędy zaobserwowane w audycie 2026-08-16, wszystkie zaniżające rachunek:
+//
+//   1. Rabat JUŻ UWZGLĘDNIONY w cenie doliczony drugi raz. Paragon Rossmanna drukuje
+//      „Uwzgl. rabat: -20,00" pod ceną, która ten rabat ma już w sobie. Model odjął go
+//      ponownie: 29,98 zł zamieniło się w 9,98 zł.
+//   2. To samo w wariancie „cena po rabacie + rabat osobno" (Diverse, -36 zł).
+//   3. Kwota podatku oznaczona jako PROCENT: „Sales Tax 8% … 4.830" wróciło jako
+//      `isPercent: true, value: 4.83`, czyli 4,83 % zamiast 4,83 waluty.
+//
+// Zamiast łatać każdy przypadek osobno, sprawdzamy WSZYSTKIE sensowne odczytania
+// modyfikatorów i wybieramy to, które domyka sumę paragonu. Rozstrzyga arytmetyka, więc
+// działa niezależnie od języka paragonu i od tego, jak model nazwał linię.
+//
+// Kolejność preferencji przy remisie: zostaw jak jest → przeczytaj procent jako kwotę →
+// odrzuć. Dzięki temu nic nie znika, dopóki da się to wytłumaczyć łagodniej.
+const MAX_RECONCILED = 6; // 3^6 = 729 kombinacji; wyżej i tak nie ma realnych paragonów
+
+const reconcileModifiers = (mods, itemsG, receiptTotalG) => {
+  if (!receiptTotalG || !mods.length || mods.length > MAX_RECONCILED) return null;
+
+  // Warianty odczytania jednego modyfikatora, od najtańszego do najdroższego.
+  const optionsFor = (m) => {
+    const out = [{ cost: 0, mod: m }];
+    if (m.type === 'percent') {
+      // „4.83 %" może być w rzeczywistości kwotą 4,83 — model myli te dwa pola.
+      out.push({ cost: 1, mod: { ...m, type: 'amount', value: fromGrosze(toGrosze(m.value)) } });
+    }
+    out.push({ cost: 2, mod: null }); // linia, której w ogóle nie należało doliczać
+    return out;
+  };
+
+  let best = null;
+  const walk = (i, chosen, sumG, cost) => {
+    if (best && cost >= best.cost) return; // gorsze od już znalezionego — nie ma po co schodzić
+    if (i === mods.length) {
+      if (Math.abs(itemsG + sumG - receiptTotalG) <= TOLERANCE_G) {
+        best = { cost, mods: chosen.filter(Boolean) };
+      }
+      return;
+    }
+    for (const opt of optionsFor(mods[i])) {
+      const add = opt.mod ? modifierGrosze(opt.mod, itemsG) : 0;
+      walk(i + 1, [...chosen, opt.mod], sumG + add, cost + opt.cost);
+    }
+  };
+  walk(0, [], 0, 0);
+  return best ? best.mods : null;
+};
+
 // Zwraca true, gdy podatek należy DOLICZYĆ (przypadek amerykański), false gdy jest już
 // wliczony w ceny (przypadek polski). Rozstrzyga arytmetyka, bo tylko ona jest niezależna
 // od nazewnictwa i od języka paragonu.
@@ -163,21 +217,31 @@ export const normalizeReceipt = (raw) => {
   const receiptTotal = parseMoney(src.receiptTotal ?? src.total);
 
   const itemsG = items.reduce((s, i) => s + toGrosze(i.amount), 0);
-  const taxes = parsedModifiers.filter((m) => m.__tax);
-  const others = parsedModifiers.filter((m) => !m.__tax);
-  const keepTaxes = taxes.length === 0
-    ? true
-    : shouldKeepTaxes(taxes, others, itemsG, receiptTotal ? toGrosze(receiptTotal) : 0);
+  const receiptTotalG = receiptTotal ? toGrosze(receiptTotal) : 0;
 
-  const modifiers = parsedModifiers
-    .filter((m) => {
-      if (!m.__tax) return true;
-      // Suma paragonu rozstrzygnęła — trzymamy się jej.
-      if (keepTaxes !== null) return keepTaxes;
-      // Bez sumy zostaje sama nazwa: „PTU"/„VAT" znaczy podatek wliczony, więc precz.
-      return !INCLUDED_TAX_RE.test(m.description);
-    })
-    .map(({ __tax, ...m }) => m);
+  // Najpierw arytmetyka: jeśli któreś odczytanie modyfikatorów domyka sumę paragonu,
+  // to ono jest prawdą — niezależnie od nazw i od tego, co model zadeklarował.
+  const reconciled = reconcileModifiers(parsedModifiers, itemsG, receiptTotalG);
+
+  let modifiers;
+  if (reconciled) {
+    modifiers = reconciled.map(({ __tax, ...m }) => m);
+  } else {
+    // Suma się nie domyka (albo jej nie ma) — zostaje stara reguła podatkowa oparta na nazwie.
+    const taxes = parsedModifiers.filter((m) => m.__tax);
+    const others = parsedModifiers.filter((m) => !m.__tax);
+    const keepTaxes = taxes.length === 0
+      ? true
+      : shouldKeepTaxes(taxes, others, itemsG, receiptTotalG);
+    modifiers = parsedModifiers
+      .filter((m) => {
+        if (!m.__tax) return true;
+        if (keepTaxes !== null) return keepTaxes;
+        // Bez sumy zostaje sama nazwa: „PTU"/„VAT" znaczy podatek wliczony, więc precz.
+        return !INCLUDED_TAX_RE.test(m.description);
+      })
+      .map(({ __tax, ...m }) => m);
+  }
   const currency = typeof src.currency === 'string' && /^[A-Za-z]{3}$/.test(src.currency.trim())
     ? src.currency.trim().toUpperCase()
     : null;

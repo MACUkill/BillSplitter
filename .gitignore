@@ -25,3 +25,7 @@ emulator-data
 
 # zrzuty i pomiary z przebiegow audytowych (odtwarzalne: node tools/audit-layout.mjs)
 shots
+
+# Korpus zdjęć paragonów do tools/receipt-bench.mjs — odtwarzany przez --fetch,
+# nie trzymamy kilkunastu megabajtów cudzych fotografii w repozytorium.
+tools/receipt-corpus/
