@@ -9,7 +9,10 @@
 // same, ale `/icons/icon-192x192.png` nazywa się tak samo przed i po podmianie rysunku.
 //
 // PODBIJ TĘ WERSJĘ przy każdej zmianie nazwy aplikacji, ikon albo manifestu.
-const CACHE = 'billiada-v3';
+// v4 (audyt 2026-08-16): z listy cache'owanych hostów wypadły martwe CDN-y. Podbicie
+// nazwy każe handlerowi `activate` skasować starą pamięć razem z odpowiedziami z tych
+// adresów, które mogły w niej jeszcze leżeć u kogoś na telefonie.
+const CACHE = 'billiada-v4';
 
 self.addEventListener('install', () => {
   // Nowy SW przejmuje od razu — bez czekania na zamknięcie kart.
@@ -83,16 +86,15 @@ self.addEventListener('fetch', (event) => {
   // Ruch do Firebase (Firestore, Storage, Auth, Functions) NIE MOŻE iść przez nasz cache:
   // to dane na żywo, a przechwycona odpowiedź potrafi wrócić do strony w postaci,
   // której `fetch` nie umie odczytać (TypeError: Failed to fetch przy pobieraniu zdjęcia).
-  // Cache'ujemy wyłącznie własne zasoby i znane CDN-y z bibliotekami.
+  //
+  // CACHE'UJEMY WYŁĄCZNIE WŁASNE ZASOBY (audyt 2026-08-16).
+  // Stała lista dozwolonych CDN-ów (cdnjs, jsdelivr, fonts.googleapis, fonts.gstatic)
+  // była już w całości martwa: kroje, ikony, QR i arkusz stylów idą z paczek npm i lądują
+  // w buildzie jako zasoby własne (§18 w docs/UI-UX.md). Sprawdzone przeszukaniem całego
+  // `dist/`, `index.html` i `src/` — zero odwołań do któregokolwiek z tych adresów.
+  // Zostawiona lista sugerowałaby, że aplikacja nadal wisi na cudzych serwerach.
   const url = new URL(req.url);
-  // Tailwind wypadł z tej listy przy przejściu z CDN na kompilację — arkusz jest teraz
-  // własnym zasobem (same-origin), więc wpis o hoście CDN był już tylko martwym kodem.
-  const CACHEABLE_HOSTS = [
-    'cdnjs.cloudflare.com', 'cdn.jsdelivr.net',
-    'fonts.googleapis.com', 'fonts.gstatic.com',
-  ];
-  const sameOrigin = url.origin === self.location.origin;
-  if (!sameOrigin && !CACHEABLE_HOSTS.includes(url.hostname)) return;
+  if (url.origin !== self.location.origin) return;
 
   // TOŻSAMOŚĆ APLIKACJI IDZIE ZAWSZE Z SIECI, nie z pamięci podręcznej.
   //
@@ -103,7 +105,7 @@ self.addEventListener('fetch', (event) => {
   //
   // Te pliki są malutkie i pobierane rzadko (raz na wejście), więc „najpierw sieć"
   // nic nie kosztuje, a offline i tak spada do kopii z pamięci.
-  const isIdentity = sameOrigin && (url.pathname === '/manifest.json' || url.pathname.startsWith('/icons/'));
+  const isIdentity = url.pathname === '/manifest.json' || url.pathname.startsWith('/icons/');
   if (isIdentity) {
     event.respondWith((async () => {
       try {
@@ -127,8 +129,8 @@ self.addEventListener('fetch', (event) => {
     const cache = await caches.open(CACHE);
     const cached = await cache.match(req);
     const network = fetch(req).then((res) => {
-      // Cache'uj tylko udane odpowiedzi (same-origin ok) lub opaque (cross-origin CDN).
-      if (res && (res.ok || res.type === 'opaque')) {
+      // Tylko udane odpowiedzi — po wypadnięciu CDN-ów wszystko tu jest same-origin.
+      if (res && res.ok) {
         cache.put(req, res.clone()).catch(() => {});
       }
       return res;

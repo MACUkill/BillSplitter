@@ -1,9 +1,9 @@
         // Style: Tailwind kompilowany w buildzie (dawniej skrypt z cdn.tailwindcss.com).
         import './tailwind.css';
         // Importy Firebase (npm) + moduł obliczeń
-        import { calculateAll, calculateAllForBill, calculateSimple, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
+        import { calculateAll, calculateAllForBill, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
         import { unreadNudgeCount, hasRecentNudge, inboxItems, badgeCount, hasDot } from './nudges.js';
-        import { itemQuantity, itemPickers, itemPickerCount, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
+        import { itemQuantity, itemPickers, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
         import {
             identityColor, initials, IDENTITY_COLORS,
             readableInk, colorFromControls, controlsFromColor, nearestAllowedHue, isReservedColor,
@@ -13,7 +13,7 @@
         import qrcode from 'qrcode-generator';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
-        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, writeBatch, getDocs, runTransaction, increment, limit } from "firebase/firestore";
+        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, getDocs, runTransaction, increment, limit } from "firebase/firestore";
         import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, connectStorageEmulator } from "firebase/storage";
         import { getMessaging, getToken, onMessage, isSupported as isMessagingSupported } from "firebase/messaging";
         import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
