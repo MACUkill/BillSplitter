@@ -37,7 +37,22 @@ function advancedExactSharesGrosze(bill) {
   const numActive = active.length;
 
   const individualSubtotalG = active.reduce((s, p) => s + toGrosze(p.individualAmount || 0), 0);
-  const sharedTotalG = (bill.sharedCosts || []).reduce((s, sc) => s + toGrosze(sc.amount || 0), 0);
+
+  // POZYCJE OSIEROCONE — patrz calculateAll. Pozycja, której nie wziął ani jeden AKTYWNY
+  // uczestnik (pusta lista chętnych albo sami wykluczeni „nie dotyczy"), nie ma komu
+  // obciążyć. Liczymy ją osobno, bo wchodzi do kwoty rachunku, ale NIE do niczyjego udziału.
+  let sharedAssignedG = 0;
+  let sharedOrphanG = 0;
+  (bill.sharedCosts || []).forEach((sc) => {
+    const g = toGrosze(sc.amount || 0);
+    const hasTaker = (sc.sharedBy || []).some((id) => active.some((a) => a.id === id));
+    if (hasTaker) sharedAssignedG += g;
+    else sharedOrphanG += g;
+  });
+  const sharedTotalG = sharedAssignedG + sharedOrphanG;
+
+  // Podstawa procentu to WSZYSTKIE wpisane pozycje, także osierocone: napiwek 10% od
+  // rachunku nie maleje dlatego, że nikt jeszcze nie kliknął, co jadł.
   const subtotalForGlobalG = individualSubtotalG + sharedTotalG;
 
   // Koszty ogólne (kwota lub procent). Procent może dać ułamek grosza.
@@ -65,7 +80,7 @@ function advancedExactSharesGrosze(bill) {
     return { participant: p, individualG, sharedG, globalG, exactG: individualG + sharedG + globalG };
   });
 
-  return { shares, individualSubtotalG, sharedTotalG, globalTotalG };
+  return { shares, individualSubtotalG, sharedTotalG, sharedAssignedG, sharedOrphanG, globalTotalG };
 }
 
 // Kontrola poprawności: suma DOKŁADNYCH pozycji vs kwota rachunku.
@@ -109,14 +124,28 @@ function computeControl(enteredSubtotalG, billTotalG) {
 // Teraz brak pozycji znaczy „to było wspólne", co odpowiada temu, jak ludzie realnie
 // dzielą rachunek: kilka rzeczy imiennie, reszta po równo.
 export const calculateAll = (bill) => {
-  const { shares, individualSubtotalG, sharedTotalG, globalTotalG } = advancedExactSharesGrosze(bill);
+  const {
+    shares, individualSubtotalG, sharedTotalG, sharedAssignedG, sharedOrphanG, globalTotalG,
+  } = advancedExactSharesGrosze(bill);
 
   const activeCount = shares.filter((s) => isActive(s.participant)).length;
-  const allocatedG = individualSubtotalG + sharedTotalG + globalTotalG;
+
+  // POZYCJA OSIEROCONA IDZIE DO RESZTY, NIE W POWIETRZE.
+  // Do 2026-08-16 kwota pozycji, której nikt nie wybrał, liczyła się jako rozpisana,
+  // choć nie trafiała do żadnego udziału. Skutek był cichy i kosztowny: paragon odczytany
+  // przez AI tworzy pozycje z pustą listą chętnych, więc rachunek na 100 zł pokazywał
+  // udziały 0 zł i kontrolę „rozpisane co do grosza" — całość zostawała na płatniku,
+  // a aplikacja twierdziła, że wszystko się zgadza. Teraz taka kwota wpada do puli
+  // nierozpisanej i dzieli się po równo, zgodnie z regułą „brak wyboru znaczy wspólne".
+  const allocatedG = individualSubtotalG + sharedAssignedG + globalTotalG;
+  const enteredG = individualSubtotalG + sharedTotalG + globalTotalG; // wszystko, co wpisane
   const billTotalG = toGrosze(bill.totalAmount || 0);
+  // Bez wpisanej kwoty rachunku miarą całości są same pozycje — wtedy resztą jest
+  // dokładnie to, co osierocone.
+  const effectiveTotalG = billTotalG > 0 ? billTotalG : enteredG;
   // Nadwyżka pozycji ponad kwotę rachunku NIE staje się ujemną resztą — to błąd wpisu,
   // który zgłasza kontrola, a nie powód, żeby komukolwiek odejmować od udziału.
-  const unallocatedG = billTotalG > 0 ? Math.max(0, billTotalG - allocatedG) : 0;
+  const unallocatedG = Math.max(0, effectiveTotalG - allocatedG);
   const perPersonUnallocatedG = activeCount > 0 ? unallocatedG / activeCount : 0;
 
   const participantTotals = shares.map((s) => {
@@ -135,7 +164,10 @@ export const calculateAll = (bill) => {
   });
 
   const controlSum = participantTotals.reduce((sum, pt) => sum + pt.total, 0);
-  const control = computeControl(allocatedG, billTotalG);
+  // Kontrola mówi o POPRAWNOŚCI WPISU (czy pozycje spinają się z kwotą rachunku), więc
+  // liczy wszystkie wpisane pozycje — także te, których nikt jeszcze nie wybrał. To, kto
+  // je bierze na siebie, jest osobnym pytaniem i odpowiada na nie kwota nierozpisana.
+  const control = computeControl(enteredG, billTotalG);
 
   return {
     participantTotals,
@@ -289,20 +321,13 @@ export function buildLedger(bills, settlements) {
   return result;
 }
 
-// Minimalizacja liczby przelewów (standardowy zachłanny „max dłużnik ↔ max wierzyciel").
-// Wejście: [{ from, to, amountG }] JEDNEJ waluty. Wynik: minimalny zestaw przelewów (≤ n-1).
-// Deterministyczny (sort malejąco po kwocie, remis po id) → stabilny i testowalny.
-export function simplifyDebts(debts) {
-  const balance = new Map();
-  (debts || []).forEach((d) => {
-    balance.set(d.from, (balance.get(d.from) || 0) - d.amountG);
-    balance.set(d.to, (balance.get(d.to) || 0) + d.amountG);
-  });
-  const creditors = [], debtors = [];
-  for (const [id, bal] of balance) {
-    if (bal > 0) creditors.push({ id, amt: bal });
-    else if (bal < 0) debtors.push({ id, amt: -bal });
-  }
+// Rozliczenie JEDNEJ grupy o zerowej sumie sald metodą zachłanną („max dłużnik ↔ max
+// wierzyciel"). Dla grupy, której nie da się rozbić na mniejsze zerowe podgrupy, daje
+// dokładnie n−1 przelewów, czyli tyle, ile wynosi optimum. Deterministyczna: sort malejąco
+// po kwocie, remis po identyfikatorze.
+function settleGroupGreedy(people) {
+  const creditors = people.filter((p) => p.amt > 0).map((p) => ({ id: p.id, amt: p.amt }));
+  const debtors = people.filter((p) => p.amt < 0).map((p) => ({ id: p.id, amt: -p.amt }));
   const cmp = (x, y) => (y.amt - x.amt) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0);
   creditors.sort(cmp); debtors.sort(cmp);
   const transfers = [];
@@ -316,4 +341,112 @@ export function simplifyDebts(debts) {
     if (c.amt === 0) j++;
   }
   return transfers;
+}
+
+// Powyżej tylu osób w jednej podgrupie rezygnujemy z dokładnego podziału na rzecz
+// wyszukiwania małych zerowych podgrup. 3^14 ≈ 4,8 mln kroków liczy się w kilkadziesiąt
+// milisekund; wyżej rośnie trzykrotnie na osobę i zaczęłoby zamrażać telefon.
+const EXACT_PARTITION_LIMIT = 14;
+
+// Maksymalny podział zbioru sald na rozłączne podgrupy sumujące się do zera (dokładny,
+// programowanie dynamiczne po maskach). Liczba przelewów = liczba osób − liczba podgrup,
+// więc maksymalizacja podgrup to dokładnie minimalizacja przelewów.
+function exactZeroSumGroups(people) {
+  const n = people.length;
+  const size = 1 << n;
+  const sum = new Int32Array(size);
+  for (let m = 1; m < size; m++) {
+    const low = m & -m;
+    sum[m] = sum[m ^ low] + people[31 - Math.clz32(low)].amt;
+  }
+  const best = new Int32Array(size).fill(-1);
+  const pick = new Int32Array(size);
+  best[0] = 0;
+  for (let m = 1; m < size; m++) {
+    const low = m & -m; // podgrupa musi zawierać najniższy bit — bez tego liczylibyśmy
+    let b = -1;         // ten sam podział wielokrotnie w różnej kolejności
+    for (let s = m; s > 0; s = (s - 1) & m) {
+      if (!(s & low) || sum[s] !== 0) continue;
+      const prev = best[m ^ s];
+      if (prev >= 0 && prev + 1 > b) { b = prev + 1; pick[m] = s; }
+    }
+    best[m] = b;
+  }
+  const groups = [];
+  let mask = size - 1;
+  while (mask > 0 && best[mask] > 0) {
+    const s = pick[mask];
+    const group = [];
+    for (let k = 0; k < n; k++) if (s & (1 << k)) group.push(people[k]);
+    groups.push(group);
+    mask ^= s;
+  }
+  return groups.length ? groups : [people];
+}
+
+// Wyszukiwanie zerowych podgrup rozmiaru 2 i 3 przy dużej liczbie osób. Pary są bezpieczne
+// zawsze (wycięcie pary o przeciwnych saldach z większej zerowej grupy zostawia grupę nadal
+// zerową, więc nigdy nie zmniejsza liczby podgrup). Trójki są już heurystyką, ale nie
+// pogarszają wyniku względem samego zachłannego rozliczenia.
+function heuristicZeroSumGroups(people) {
+  const rest = [...people];
+  const groups = [];
+  for (let sizeWanted = 2; sizeWanted <= 3; sizeWanted++) {
+    let found = true;
+    while (found) {
+      found = false;
+      outer:
+      for (let a = 0; a < rest.length; a++) {
+        for (let b = a + 1; b < rest.length; b++) {
+          if (sizeWanted === 2) {
+            if (rest[a].amt + rest[b].amt === 0) {
+              groups.push([rest[a], rest[b]]);
+              rest.splice(b, 1); rest.splice(a, 1);
+              found = true; break outer;
+            }
+            continue;
+          }
+          for (let c = b + 1; c < rest.length; c++) {
+            if (rest[a].amt + rest[b].amt + rest[c].amt === 0) {
+              groups.push([rest[a], rest[b], rest[c]]);
+              rest.splice(c, 1); rest.splice(b, 1); rest.splice(a, 1);
+              found = true; break outer;
+            }
+          }
+        }
+      }
+    }
+  }
+  if (rest.length) groups.push(rest);
+  return groups;
+}
+
+// MINIMALIZACJA LICZBY PRZELEWÓW.
+// Wejście: [{ from, to, amountG }] JEDNEJ waluty. Wynik: zestaw przelewów o minimalnej
+// (przy realnych rozmiarach grupy) liczbie pozycji, zawsze ≤ n−1.
+//
+// DLACZEGO NIE SAM ZACHŁANNY (poprawione 2026-08-16): „max dłużnik ↔ max wierzyciel" jest
+// heurystyką i na ok. 5% losowych układów dawał JEDEN przelew więcej, niż trzeba. Przykład:
+// salda −80, +100, −60, −40, +80 zachłanny rozlicza czterema przelewami, a wystarczą trzy,
+// bo −80 i +80 znoszą się parą, a reszta (+100, −60, −40) domyka się osobno.
+// Liczba przelewów to (liczba osób z niezerowym saldem) − (liczba rozłącznych podgrup
+// sumujących się do zera), więc szukamy najpierw takich podgrup, a dopiero w każdej z nich
+// rozliczamy zachłannie — wewnątrz niepodzielnej podgrupy zachłanny jest już optymalny.
+export function simplifyDebts(debts) {
+  const balance = new Map();
+  (debts || []).forEach((d) => {
+    balance.set(d.from, (balance.get(d.from) || 0) - d.amountG);
+    balance.set(d.to, (balance.get(d.to) || 0) + d.amountG);
+  });
+  const people = [];
+  for (const [id, amt] of balance) if (amt !== 0) people.push({ id, amt });
+  if (people.length < 2) return [];
+  // Stała kolejność wejścia → stały wynik niezależnie od kolejności wpisywania rachunków.
+  people.sort((x, y) => (y.amt - x.amt) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+
+  const groups = people.length <= EXACT_PARTITION_LIMIT
+    ? exactZeroSumGroups(people)
+    : heuristicZeroSumGroups(people);
+
+  return groups.flatMap((g) => settleGroupGreedy(g));
 }

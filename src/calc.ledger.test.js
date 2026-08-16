@@ -208,6 +208,90 @@ describe('simplifyDebts — minimalizacja przelewów', () => {
   });
 });
 
+// AUDYT 2026-08-16. Sam algorytm zachłanny („max dłużnik ↔ max wierzyciel") jest tylko
+// heurystyką: na ok. 5% losowych układów dawał JEDEN przelew ponad optimum. Poniższe
+// przypadki to konkretne układy, na których się mylił — zostają jako straż.
+describe('simplifyDebts — naprawdę minimalna liczba przelewów', () => {
+  // Dokładne optimum: liczba osób − maksymalna liczba rozłącznych podgrup o sumie zero.
+  const optimalCount = (balances) => {
+    const vals = balances.filter((v) => v !== 0);
+    const n = vals.length;
+    if (n === 0) return 0;
+    const sum = new Int32Array(1 << n);
+    for (let m = 1; m < (1 << n); m++) {
+      const low = m & -m;
+      sum[m] = sum[m ^ low] + vals[31 - Math.clz32(low)];
+    }
+    const best = new Int32Array(1 << n).fill(-1);
+    best[0] = 0;
+    for (let m = 1; m < (1 << n); m++) {
+      let b = -1;
+      for (let s = m; s > 0; s = (s - 1) & m) {
+        if (sum[s] !== 0 || best[m ^ s] < 0) continue;
+        b = Math.max(b, best[m ^ s] + 1);
+      }
+      best[m] = b;
+    }
+    return n - best[(1 << n) - 1];
+  };
+  const fromBalances = (bal) => Object.entries(bal)
+    .filter(([, v]) => v < 0)
+    .map(([id, v]) => ({ from: id, to: '__pool', amountG: -v }))
+    .concat(Object.entries(bal).filter(([, v]) => v > 0).map(([id, v]) => ({ from: '__pool', to: id, amountG: v })));
+
+  it('para znosząca się nawzajem nie wciąga reszty grupy', () => {
+    // Zachłanny: 4 przelewy. Optimum: 3 (−80/+80 to osobna para, reszta domyka się sama).
+    const bal = { p3: -8000, p2: 10000, p5: -6000, p0: -4000, p4: 8000 };
+    const tr = simplifyDebts(fromBalances(bal));
+    expect(tr.length).toBe(3);
+    expect(tr.length).toBe(optimalCount(Object.values(bal)));
+  });
+
+  it('dwie niezależne podgrupy rozliczają się osobno', () => {
+    // Zachłanny: 5 przelewów. Optimum: 4.
+    const bal = { p2: 3000, p1: 1000, p6: -4000, p3: 5000, p4: -2000, p0: -3000 };
+    const tr = simplifyDebts(fromBalances(bal));
+    expect(tr.length).toBe(4);
+    expect(tr.length).toBe(optimalCount(Object.values(bal)));
+  });
+
+  it('losowo: nigdy więcej przelewów niż optimum (małe grupy)', () => {
+    let seed = 987654321;
+    const rand = () => ((seed = (1103515245 * seed + 12345) & 0x7fffffff) / 0x7fffffff);
+    const ri = (a, b) => a + Math.floor(rand() * (b - a + 1));
+    for (let iter = 0; iter < 400; iter++) {
+      const n = ri(3, 7);
+      const unit = [1000, 2000, 5000][ri(0, 2)];
+      const debts = [];
+      for (let k = 0; k < ri(2, 8); k++) {
+        const a = ri(0, n - 1), b = ri(0, n - 1);
+        if (a !== b) debts.push({ from: `p${a}`, to: `p${b}`, amountG: unit * ri(1, 4) });
+      }
+      if (!debts.length) continue;
+      const bal = {};
+      debts.forEach((d) => {
+        bal[d.from] = (bal[d.from] || 0) - d.amountG;
+        bal[d.to] = (bal[d.to] || 0) + d.amountG;
+      });
+      const values = Object.values(bal).filter((v) => v !== 0);
+      if (values.length > 10) continue;
+      expect(simplifyDebts(debts).length).toBe(optimalCount(values));
+    }
+  });
+
+  it('grupa 25 osób liczy się bez zamrożenia telefonu', () => {
+    const debts = [];
+    for (let k = 0; k < 60; k++) {
+      const a = k % 25, b = (k * 7 + 3) % 25;
+      if (a !== b) debts.push({ from: `p${a}`, to: `p${b}`, amountG: 1000 * ((k % 5) + 1) });
+    }
+    const t0 = Date.now();
+    const tr = simplifyDebts(debts);
+    expect(Date.now() - t0).toBeLessThan(500);
+    expect(tr.every((t) => t.from !== t.to && t.amountG > 0)).toBe(true);
+  });
+});
+
 // --- helper: salda per osoba z listy długów kierunkowych ---
 const balancesOf = (debts) => {
   const bal = {};

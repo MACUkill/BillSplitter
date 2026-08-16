@@ -291,28 +291,101 @@ describe('ledger: przypadki brzegowe modelu wpłat', () => {
   });
 });
 
-describe('pozycja, której nikt nie wybrał — udokumentowany skutek finansowy', () => {
-  it('koszt takiej pozycji spada na płatnika (dlatego kafelek świeci na czerwono)', () => {
+// AUDYT 2026-08-16. Do tej pory pozycja bez ani jednego chętnego znikała z rachunku:
+// jej kwota liczyła się jako rozpisana, ale nie trafiała do żadnego udziału, więc cicho
+// zostawała na płatniku, a kontrola mówiła „rozpisane co do grosza". Na ścieżce odczytu
+// paragonu przez AI dotyczyło to WSZYSTKICH pozycji naraz (`receiptItemsToSharedCosts`
+// tworzy je z pustą listą chętnych), czyli rachunek na 100 zł pokazywał udziały 0 zł
+// i zieloną kontrolę. Teraz taka kwota wraca do puli nierozpisanej i dzieli się po równo.
+describe('pozycja, której nikt nie wybrał, wraca do kwoty nierozpisanej', () => {
+  const orphanBill = () => ({
+    id: 'b1', billName: 'Restauracja', type: 'advanced', currency: 'PLN', totalAmount: 100,
+    payerId: 'ala', payerConfirmed: true, globalCosts: [],
+    participants: {
+      ala: { id: 'ala', name: 'Ala', status: 'completed', individualAmount: 0 },
+      bob: { id: 'bob', name: 'Bob', status: 'completed', individualAmount: 0 },
+    },
+    sharedCosts: [
+      { id: 'i1', description: 'Pizza', amount: 60, sharedBy: ['ala', 'bob'] },
+      { id: 'i2', description: 'Wino', amount: 40, sharedBy: [] }, // nikt nie wziął
+    ],
+  });
+
+  it('kwota osieroconej pozycji dzieli się po równo, a nie spada na płatnika', () => {
+    const { participantTotals, unallocated, perPersonUnallocated } = calculateAll(orphanBill());
+    const bob = participantTotals.find((pt) => pt.participant.id === 'bob');
+    // 30 zł za połowę pizzy + 20 zł za połowę nierozpisanego wina.
+    expect(toGrosze(bob.total)).toBe(5000);
+    expect(unallocated).toBe(40);
+    expect(perPersonUnallocated).toBe(20);
+  });
+
+  it('płatnik nie dopłaca ani grosza ponad swój udział', () => {
+    const bill = orphanBill();
+    const { participantTotals } = calculateAll(bill);
+    const collectedG = participantTotals.reduce((s, pt) => s + toGrosze(pt.total), 0);
+    expect(collectedG).toBeGreaterThanOrEqual(toGrosze(bill.totalAmount));
+  });
+
+  it('kontrola sumy nadal liczy WSZYSTKIE wpisane pozycje, także osierocone', () => {
+    // Kontrola odpowiada na pytanie „czy wpis się spina", a nie „czy ktoś już wybrał".
+    const { control } = calculateAll(orphanBill());
+    expect(control.status).toBe('ok');
+    expect(control.enteredSubtotal).toBe(100);
+  });
+
+  it('paragon z AI: pozycje bez chętnych nie zerują udziałów', () => {
+    // Dokładny stan zaraz po odczycie paragonu — receiptItemsToSharedCosts daje sharedBy: [].
     const bill = {
-      id: 'b1', billName: 'Restauracja', type: 'advanced', currency: 'PLN', totalAmount: 100,
-      payerId: 'ala', payerConfirmed: true, globalCosts: [],
+      id: 'b2', currency: 'PLN', totalAmount: 100, payerId: 'ala', payerConfirmed: true,
+      globalCosts: [],
       participants: {
-        ala: { id: 'ala', name: 'Ala', status: 'completed', individualAmount: 0 },
-        bob: { id: 'bob', name: 'Bob', status: 'completed', individualAmount: 0 },
+        ala: { id: 'ala', status: 'pending' },
+        bob: { id: 'bob', status: 'pending' },
+        cyd: { id: 'cyd', status: 'pending' },
       },
       sharedCosts: [
-        { id: 'i1', description: 'Pizza', amount: 60, sharedBy: ['ala', 'bob'] },
-        { id: 'i2', description: 'Wino', amount: 40, sharedBy: [] }, // nikt nie wziął
+        { id: 'i1', description: 'Pizza', amount: 50, sharedBy: [] },
+        { id: 'i2', description: 'Cola', amount: 30, sharedBy: [] },
+        { id: 'i3', description: 'Frytki', amount: 20, sharedBy: [] },
       ],
     };
-    const { participantTotals } = calculateAll(bill);
-    const bob = participantTotals.find((pt) => pt.participant.id === 'bob');
-    expect(toGrosze(bob.total)).toBe(3000); // tylko połowa pizzy
+    const { participantTotals, unallocated } = calculateAll(bill);
+    expect(unallocated).toBe(100);
+    participantTotals.forEach((pt) => expect(toGrosze(pt.total)).toBe(3334));
+  });
 
-    // Ala wyłożyła 100, zbiera 30 → z własnej kieszeni 70, choć jej udział to 30.
-    // To JEDYNY przypadek, w którym płatnik dopłaca ponad swój udział — i wynika
-    // wprost z tego, że za wino nikt się nie zapisał.
-    const collectedG = toGrosze(bob.total);
-    expect(toGrosze(bill.totalAmount) - collectedG).toBe(7000);
+  it('pozycja przypisana wyłącznie osobie „nie dotyczy" też jest osierocona', () => {
+    const bill = {
+      id: 'b3', currency: 'PLN', totalAmount: 100, payerId: 'ala', payerConfirmed: true,
+      globalCosts: [],
+      participants: {
+        ala: { id: 'ala', status: 'pending' },
+        bob: { id: 'bob', status: 'not_applicable' },
+      },
+      sharedCosts: [{ id: 'i1', description: 'Pizza', amount: 60, sharedBy: ['bob'] }],
+    };
+    const { participantTotals } = calculateAll(bill);
+    const ala = participantTotals.find((pt) => pt.participant.id === 'ala');
+    const bob = participantTotals.find((pt) => pt.participant.id === 'bob');
+    expect(toGrosze(bob.total)).toBe(0);      // wykluczony nie płaci nic
+    expect(toGrosze(ala.total)).toBe(10000);  // i nic nie ginie
+  });
+
+  it('koszt ogólny w procentach liczy się od wszystkich pozycji, także osieroconych', () => {
+    const bill = {
+      id: 'b4', currency: 'PLN', totalAmount: 0, payerId: 'ala', payerConfirmed: true,
+      participants: {
+        ala: { id: 'ala', status: 'pending' },
+        bob: { id: 'bob', status: 'pending' },
+      },
+      sharedCosts: [{ id: 'i1', description: 'Pizza', amount: 100, sharedBy: [] }],
+      globalCosts: [{ id: 'g1', description: 'Napiwek', type: 'percent', value: 10 }],
+    };
+    const { participantTotals, control } = calculateAll(bill);
+    // 100 zł pozycji + 10 zł napiwku = 110 zł do podziału na dwoje.
+    expect(control.enteredSubtotal).toBe(110);
+    const sumG = participantTotals.reduce((s, pt) => s + toGrosze(pt.total), 0);
+    expect(sumG).toBe(11000);
   });
 });

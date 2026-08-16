@@ -3736,10 +3736,15 @@
             // NIEDOBÓR NIE JEST BŁĘDEM. Po wprowadzeniu reguły „jeden rachunek, który rośnie"
             // kwota nierozpisana dzieli się po równo, więc komunikat ma powiedzieć, ile to
             // wyjdzie na osobę — a nie straszyć, że ktoś czegoś nie wpisał.
+            // O kwocie nierozpisanej mówimy ZAWSZE, gdy jest większa od zera — także wtedy,
+            // gdy kontrola sumy wychodzi na „ok". Taki stan powstaje, kiedy pozycje spinają
+            // się z kwotą rachunku, ale nikt jeszcze nie wybrał, co jadł (typowo zaraz po
+            // odczycie paragonu). Sam zielony napis „rozpisane co do grosza" przemilczałby
+            // wtedy, że cała kwota idzie po równo.
             if (control.status === 'over') {
                 controlSumEl.classList.add('control-sum-bad');
                 if (controlStatusEl) { controlStatusEl.classList.add('control-sum-bad'); controlStatusEl.textContent = `Nadwyżka ${diffText(control.diff)}. Ktoś przeliczył albo pozycja jest podwójna`; }
-            } else if (control.status === 'under') {
+            } else if (calculations.unallocated > 0) {
                 if (controlStatusEl) {
                     controlStatusEl.textContent = calculations.perPersonUnallocated > 0
                         ? `Nierozpisane ${diffText(calculations.unallocated)}, czyli po ${diffText(calculations.perPersonUnallocated)} na osobę.`
