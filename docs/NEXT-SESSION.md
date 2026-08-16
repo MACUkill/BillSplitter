@@ -59,15 +59,24 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   audytowe padają na starcie. Audyt wymaga też **emulatorów Firebase** (`npm run emulators`)
   i serwera deweloperskiego — bez emulatorów anonimowe logowanie nie przechodzi
   i aplikacja nie wychodzi poza ekran wczytywania.
-- **`overscroll-behavior-y: none` na `html` i `body`** wyłącza rozciąganie strony na końcu
-  przewijania. Bez tego iOS przy ciągnięciu w dół na krótkiej stronie odbija całym
-  dokumentem i ciągnie za sobą elementy `position: fixed`, czyli pasek nawigacji.
-  Aplikacja nie ma odświeżania pociągnięciem, więc nic na tym nie tracimy.
-- **Paska przewijania dokumentu na iPhonie NIE da się ukryć stylami.** `::-webkit-scrollbar`
-  i `scrollbar-width` załatwiają komputer i Androida; wskaźnik przewijania całego dokumentu
-  na iOS rysuje system. Zniknąłby dopiero, gdyby przewijał kontener wewnątrz strony
-  zamiast samego dokumentu — a to przebudowa układu ze skutkami dla nawigacji
-  i narzędzia sprawdzającego układ, nie zmiana stylu.
+- **PRZEWIJA SIĘ `#app-scroll`, A NIE DOKUMENT — i to musi tak zostać.** `html` i `body`
+  mają `height: 100%` oraz `overflow: hidden`; cała treść siedzi w jednym przewijanym
+  kontenerze, a pasek nawigacji, okna i pasek offline stoją poza nim. Powód: w aplikacji
+  uruchamianej z ikony na ekranie początkowym iPhone'a rozciąganie dokumentu na końcu
+  przewijania obsługuje warstwa systemowa, która **`overscroll-behavior` na dokumencie
+  ignoruje** — a to rozciąganie ciągnęło za sobą pasek nawigacji. W Safari i Firefoksie
+  objawu nie było widać, bo tam gest obsługuje sama przeglądarka; zgłoszenie dotyczyło
+  wyłącznie trybu z ikony. `overscroll-behavior-y` zostaje jako druga warstwa dla
+  przeglądarek, które ją honorują.
+- **Pozycję przewijania czytaj i ustawiaj przez `#app-scroll`.** `window.scrollY` zwraca
+  teraz zawsze zero, a `window.scrollTo` nic nie robi. W kodzie są do tego trzy pomocnicze
+  funkcje: `appScroll`, `appScrollTop`, `appScrollTo`. To samo dotyczy **narzędzia
+  audytowego** — mierzy zapas przewijania na tym kontenerze, nie na dokumencie.
+- **Wskaźnik przewijania znika przy okazji.** Systemowego wskaźnika DOKUMENTU na iOS nie
+  da się ukryć stylami; wskaźnik zwykłego kontenera już tak (`::-webkit-scrollbar`,
+  `scrollbar-width`). To był drugi powód tej przebudowy.
+- **Komentarze wewnątrz `AUDIT` w `tools/audit-layout.mjs` nie mogą zawierać znaku
+  wstecznego** — cały blok jest literałem szablonowym i jeden taki znak rozwala skrypt.
 - **NIE ustawiaj `touch-action` na `html` ani `body`.** Deklaracja na korzeniu dokumentu
   zabiera iOS **gest cofania przesunięciem od krawędzi**, czyli podstawową drogę wstecz
   na iPhonie. Przybliżanie szczypaniem blokuje atrybut `viewport` plus odrzucenie zdarzeń

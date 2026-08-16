@@ -153,8 +153,19 @@ the verdict, and DESIGN.md
         <i class="fas fa-triangle-exclamation mr-2"></i>Jesteś offline. Zmiany zapiszą się lokalnie i zsynchronizują po odzyskaniu połączenia.
     </div>
 
-    <!-- Zapas na dole liczy arkusz stylów (`#app-container`), bo tylko tam da się dodać
+    <!-- PRZEWIJA SIĘ TEN KONTENER, A NIE DOKUMENT.
+         Powód jest jeden i konkretny: w aplikacji uruchomionej z ikony na ekranie
+         początkowym iPhone'a dokument, który da się rozciągnąć na końcu przewijania,
+         ciągnie za sobą elementy `position: fixed` — czyli pasek nawigacji. W Safari
+         i Firefoksie tego nie widać, bo tam gest obsługuje przeglądarka; z ikony
+         obsługuje go warstwa systemowa, która `overscroll-behavior` na dokumencie
+         IGNORUJE (rzecz znana i opisana, nie nasza pomyłka).
+         Gdy dokument nie ma czego przewijać, nie ma się co rozciągać, a pasek stoi.
+         Skutek uboczny w prezencie: znika systemowy wskaźnik przewijania dokumentu,
+         bo wskaźnik wewnętrznego kontenera da się już ukryć stylami.
+         Zapas na dole liczy arkusz stylów (`#app-container`), bo tylko tam da się dodać
          wysokość paska gestów przez `env(safe-area-inset-bottom)`. -->
+    <div id="app-scroll">
     <div id="app-container" class="max-w-4xl mx-auto p-4 md:p-8">
 
         <!-- Ekran wczytywania jest jedynym miejscem, w którym znak firmowy dostaje całą
@@ -695,6 +706,7 @@ the verdict, and DESIGN.md
 
 
     </div>
+    </div><!-- /#app-scroll -->
 
     <!-- DOLNA NAWIGACJA — kciuk pracuje w dolnej trzeciej ekranu, a cała aplikacja żyje
          na telefonie trzymanym jedną ręką. W V1 każda akcja wymagała sięgnięcia na górę.

@@ -753,6 +753,15 @@
         // z profilu wracał tam, skąd się wyszło, a nie zawsze na bilans.
         let currentDeckView = 'view-balance';
 
+        // PRZEWIJANIE MIESZKA W `#app-scroll`, NIE W DOKUMENCIE.
+        // Dokument ma stałą wysokość i zero przewijania, żeby na iPhonie z ikony nie dało
+        // się go rozciągnąć na końcu listy — bo to rozciąganie ciągnęło za sobą pasek
+        // nawigacji. Wszystkie odczyty i zapisy pozycji idą więc przez ten kontener;
+        // `window.scrollY` zwraca tu teraz zawsze zero i jest bezużyteczne.
+        const appScroll = () => document.getElementById('app-scroll');
+        const appScrollTop = () => { const el = appScroll(); return el ? el.scrollTop : 0; };
+        const appScrollTo = (top) => { const el = appScroll(); if (el) el.scrollTop = top; };
+
         const setDeckNavCurrent = (btnId) => {
             document.querySelectorAll('#deck-nav .deck-btn').forEach(btn => {
                 if (btn.id === btnId) btn.setAttribute('aria-current', 'page');
@@ -769,13 +778,11 @@
             const btnId = Object.keys(DECK_NAV_VIEWS).find(k => DECK_NAV_VIEWS[k] === viewId);
             if (btnId) setDeckNavCurrent(btnId);
             // Przewijamy na górę TYLKO wtedy, gdy strona faktycznie jest przewinięta.
-            // Bezwarunkowe `scrollTo(0)` w Safari na iPhonie rozwija pasek adresu, a to
+            // Bezwarunkowe przewinięcie na górę w Safari na iPhonie rozwija pasek adresu, a to
             // zmienia wysokość widocznego obszaru i przesuwa wszystko, co jest przypięte
             // do dolnej krawędzi. Jedno zbędne przewinięcie kosztowało skok paska
             // nawigacji przy każdej zmianie zakładki.
-            if ((window.scrollY || document.documentElement.scrollTop || 0) > 0) {
-                try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (_) { window.scrollTo(0, 0); }
-            }
+            if (appScrollTop() > 0) appScrollTo(0);
             refreshDeckPin();
         };
 
@@ -975,8 +982,9 @@
             if (backFromBill && dashboardScrollY > 0) {
                 const target = dashboardScrollY;
                 const tryRestore = () => {
-                    if (document.documentElement.scrollHeight - window.innerHeight < target) return false;
-                    window.scrollTo(0, target);
+                    const el = appScroll();
+                    if (!el || el.scrollHeight - el.clientHeight < target) return false;
+                    el.scrollTop = target;
                     return true;
                 };
                 requestAnimationFrame(() => {
@@ -3074,7 +3082,7 @@
         let dashboardScrollY = 0;
 
         const joinBill = async (groupId, billId) => {
-            dashboardScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+            dashboardScrollY = appScrollTop();
             currentGroupId = groupId;
             currentBillId = billId;
             history.pushState(null, '', `?group=${groupId}&bill=${billId}`);

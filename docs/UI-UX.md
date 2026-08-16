@@ -1598,6 +1598,32 @@ pierwszej nieudanej próbie. Zapis jest teraz ponawiany po każdym wczytaniu pok
 `pokój:osoba:token` pilnuje, żeby nie pisać w kółko tego samego. (Poprzedni strażnik był
 zwykłym „true/false" i po zapisie w jednym pokoju blokował zapis w drugim.)
 
+### 19.19 Pasek nawigacji: trzecie i ostatnie podejście (2026-08-16)
+
+Rozstrzygnęła obserwacja właściciela: **w Safari i Firefoksie pasek stoi, a w aplikacji
+uruchomionej z ikony na ekranie początkowym przeskakuje w zakładce Profil.** To wyklucza
+wszystko, co robiliśmy do tej pory, bo arkusz stylów jest w obu przypadkach ten sam.
+
+Research potwierdził rzecz znaną i opisaną: **`overscroll-behavior` na dokumencie iOS
+ignoruje**. Rozciąganie strony na końcu przewijania obsługuje tam warstwa systemowa,
+a nie silnik strony — w Safari gest przechwytuje sama przeglądarka i objawu nie widać,
+w trybie z ikony nie ma tej warstwy pośredniej i dokument odbija razem ze wszystkim,
+co jest do niego przypięte.
+
+Wyjście jest jedno i stosują je aplikacje, które na iOS działają poprawnie: **dokument
+przestaje się przewijać**. `html` i `body` dostają stałą wysokość i ukryte przepełnienie,
+a treść przewija się w jednym kontenerze wewnątrz strony (`#app-scroll`). Czego nie da się
+rozciągnąć, to nie pociągnie za sobą niczego przypiętego.
+
+Trzy skutki, wszystkie dobre:
+1. Pasek nawigacji stoi nieruchomo we wszystkich zakładkach, także na krótkim Profilu.
+2. **Znika systemowy wskaźnik przewijania** — tego dokumentu nie dało się ukryć stylami,
+   wskaźnik zwykłego kontenera już tak. Zgłoszenie z tej samej tury zamyka się samo.
+3. Zawartość pod otwartym oknem nie ma jak drgnąć, bo poza kontenerem nie ma czego przewijać.
+
+Koszt: pozycję przewijania czyta się i ustawia przez ten kontener, nie przez okno
+(`window.scrollY` zwraca zero). Dotyczy to także narzędzia audytowego.
+
 ### 19.11 Stan audytu po partii
 
 Cztery szerokości z kontraktu (360 / 390 / 834 / 1280), 32 stany ekranu, **zero zgłoszeń**:

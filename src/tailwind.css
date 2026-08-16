@@ -137,14 +137,24 @@ body:has(#offline-banner:not(.hidden)) #app-container {
        (to drugie jest na iOS jedyną skuteczną). Dwustuknięcie zdejmuje
        `touch-action: manipulation` nałożone WYŁĄCZNIE na przyciski, nie na dokument. */
 
-    /* KONIEC ROZCIĄGANIA STRONY NA KOŃCU PRZEWIJANIA.
-       Na iOS ciągnięcie w dół na krótkiej stronie odbija całym dokumentem, a razem
-       z nim potrafią jechać elementy przypięte przez `position: fixed` — czyli pasek
-       nawigacji. Widać to najmocniej tam, gdzie nie ma czego przewijać, bo wtedy
-       gumka jest jedyną reakcją na gest (zgłoszenie: „w zakładce Profil nawigacja
-       zaczyna się przemieszczać przy próbie przeciągania w dół").
-       Nie tracimy przy tym nic: aplikacja nie ma odświeżania pociągnięciem, a listy
-       wewnątrz arkuszy mają własne `overscroll-behavior: contain`. */
+    /* DOKUMENT NIE PRZEWIJA SIĘ W OGÓLE — przewija się `#app-scroll`.
+       Historia tej decyzji, żeby nikt jej nie cofnął przez pomyłkę:
+       1. Pasek nawigacji jeździł przy ciągnięciu strony w dół. Pierwsza próba to była
+          kompensacja liczona w JavaScripcie — okazała się sama sobie usterką (patrz
+          komentarz przy `.deck`).
+       2. Druga próba to `overscroll-behavior-y: none` na `html` i `body`. Załatwia
+          komputer i Androida, a na iPhonie NIE DZIAŁA: rozciąganie dokumentu na końcu
+          przewijania obsługuje tam warstwa systemowa, która tej własności nie honoruje.
+          W Safari i Firefoksie problemu nie było widać, bo tam gest obsługuje sama
+          przeglądarka — objaw zostawał wyłącznie w aplikacji uruchamianej z ikony.
+       3. To jest trzecie i właściwe wyjście, zgodne z tym, co robią aplikacje, które
+          na iOS działają poprawnie: dokument dostaje stałą wysokość i zero przewijania,
+          a treść przewija się w kontenerze wewnątrz strony. Czego nie ma jak rozciągnąć,
+          to nie pociągnie za sobą niczego przypiętego.
+       `overscroll-behavior-y` zostaje jako druga warstwa dla przeglądarek, które ją
+       honorują — nic nie kosztuje, a zapobiega przenoszeniu gestu na dokument. */
+    height: 100%;
+    overflow: hidden;
     overscroll-behavior-y: none;
   }
 
@@ -155,21 +165,34 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     color: rgb(var(--ink));
     /* Bez `touch-action` — patrz komentarz przy `html`. Deklaracja na korzeniu dokumentu
        zabierała iOS gest cofania przesunięciem od krawędzi. */
-    /* Powtórzone za `html`, bo o tym, czy strona się rozciąga, decyduje ten z dwóch
-       elementów, który realnie przewija — a to zależy od przeglądarki. */
+    height: 100%;
+    overflow: hidden;
     overscroll-behavior-y: none;
+  }
+
+  /* JEDYNY PRZEWIJANY ELEMENT APLIKACJI.
+     Poza nim zostają wyłącznie rzeczy, które mają stać w miejscu: pasek nawigacji,
+     okna i arkusze, pasek offline. Wszystkie są `position: fixed` względem okna,
+     a skoro okno się nie rusza, one też nie. */
+  #app-scroll {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    /* Gest, który dojedzie do końca tej listy, nie przechodzi wyżej. */
+    overscroll-behavior-y: contain;
   }
 
   /* PASEK PRZEWIJANIA UKRYTY.
      Aplikacja to jedna kolumna kart, nie dokument — o długości treści mówi sama lista,
-     nie kreska przy krawędzi. Na komputerze i Androidzie to załatwia sprawę.
-     Na iPhonie wskaźnik przewijania CAŁEGO DOKUMENTU rysuje system i stąd się go nie
-     zdejmie; znikłby dopiero wtedy, gdyby przewijał kontener wewnątrz strony zamiast
-     samego dokumentu — a to przebudowa układu, nie reguła stylu. */
+     nie kreska przy krawędzi. Wskaźnik przewijania DOKUMENTU na iPhonie rysuje system
+     i stylami się go nie zdejmuje; wskaźnik zwykłego kontenera już tak — i to jest
+     drugi powód, dla którego przewijanie mieszka teraz w `#app-scroll`. */
+  #app-scroll::-webkit-scrollbar,
   html::-webkit-scrollbar,
   body::-webkit-scrollbar { display: none; }
 
-  html, body {
+  html, body, #app-scroll {
     scrollbar-width: none;
     -ms-overflow-style: none;
   }

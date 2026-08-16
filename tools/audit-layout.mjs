@@ -28,7 +28,13 @@ const VIEWPORT = {
 
 const AUDIT = `(() => {
   const vw = document.documentElement.clientWidth;
-  const out = { overflow: [], smallTaps: [], overlaps: [], covered: [], scrollX: document.documentElement.scrollWidth > vw + 1 };
+  // Przewijanie w poziomie sprawdzamy na kontenerze, który realnie przewija.
+  // Na dokumencie ta miara od 2026-08-16 zawsze pokazuje „nie ma", bo dokument ma
+  // ukryte przepełnienie — sprawdzanie go dawałoby fałszywe „czysto".
+  // (Ten blok mieszka w literale ze znacznikami wstecznymi, więc w komentarzach
+  //  wewnątrz niego nie wolno użyć ani jednego takiego znaku.)
+  const scRoot = document.getElementById('app-scroll') || document.documentElement;
+  const out = { overflow: [], smallTaps: [], overlaps: [], covered: [], scrollX: scRoot.scrollWidth > vw + 1 };
 
   // PROSTOKĄT PO PRZYCIĘCIU, nie surowy.
   //
@@ -171,8 +177,13 @@ const AUDIT = `(() => {
   const deckEl = document.querySelector('.deck');
   if (deckEl && visible(deckEl) && !document.querySelector('.modal.active')) {
     const deckR = deckEl.getBoundingClientRect();
-    const y = window.scrollY || document.documentElement.scrollTop || 0;
-    const maxScroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    // Przewija się kontener o identyfikatorze app-scroll, a nie dokument (patrz komentarz
+    // przy nim w znacznikach), więc pozycję i zapas czytamy z niego: window.scrollY jest zerem.
+    const sc = document.getElementById('app-scroll');
+    const y = sc ? sc.scrollTop : (window.scrollY || 0);
+    const maxScroll = sc
+      ? Math.max(0, sc.scrollHeight - sc.clientHeight)
+      : Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     const bandTop = maxScroll + deckR.top;
     const bandBottom = maxScroll + deckR.bottom;
     for (const { el, r, layer } of boxes) {
