@@ -68,17 +68,15 @@ Pełny opis w `docs/UI-UX.md` §19. Tu tylko to, co zmienia sposób pracy z kode
   objawu nie było widać, bo tam gest obsługuje sama przeglądarka; zgłoszenie dotyczyło
   wyłącznie trybu z ikony. `overscroll-behavior-y` zostaje jako druga warstwa dla
   przeglądarek, które ją honorują.
-- **NA iOS Z IKONY UKŁAD JEST KRÓTSZY O WYSOKOŚĆ GÓRNEGO WCIĘCIA — i to jest wyjaśnienie
-  całej serii zgłoszeń o pasku nawigacji i o czarnym pasie na dole.** Przy
-  `apple-mobile-web-app-status-bar-style: black-translucent` aplikacja dostaje cały ekran,
-  ale blok, od którego liczą się wysokości i do którego przypina się `position: fixed`,
-  zostaje krótszy o `env(safe-area-inset-top)` (na iPhonie 12 jakieś 47 px). Dlatego
-  `inset: 0` kończył się nad dolną krawędzią, a pasek nawigacji stał za wysoko.
-  Kompensacja stoi **na końcu `src/tailwind.css`, poza `@layer`** (w warstwie podstawowej
-  przegrałaby z `.deck` z warstwy komponentów) i jest obwarowana dwoma warunkami:
-  `@supports (-webkit-touch-callout: none)` plus `@media (display-mode: standalone)`.
-  W przeglądarce i na Androidzie deficytu nie ma — tam ta poprawka wypchnęłaby układ
-  poza ekran, więc nie wolno rozszerzać jej zasięgu.
+- **CZARNY PAS NA DOLE W APLIKACJI Z IKONY: SPRAWA OTWARTA. NIE PRZESUWAJ NICZEGO W DÓŁ.**
+  Hipoteza „blok pozycjonowania jest krótszy o `env(safe-area-inset-top)`, więc trzeba
+  dodać tyle na dole" została **sprawdzona na telefonie i obalona**: pasek nawigacji
+  i dół treści wyjechały poza ekran. To dowodzi, że `inset: 0` sięga dolnej krawędzi
+  WIDOKU — a pas leży poniżej widoku, czyli widok nie zajmuje całego ekranu.
+  Aktualna próba to `html { min-height: calc(100% + env(safe-area-inset-top)) }`
+  pod `@supports (-webkit-touch-callout: none)` i `@media (display-mode: standalone)`;
+  nic nie przesuwa, więc nic nie może uciąć. Jeśli nie pomogła, następny krok to pomiar
+  (`screen` obok `inner` w podglądzie wymiarów), a nie kolejna korekta na wyczucie.
 - **Podgląd wymiarów okna: PIĘĆ STUKNIĘĆ w znak firmowy albo w numer pokoju** (albo
   `?diag=1` na komputerze). Pokazuje naraz `screen`, `inner`, `docEl`, widoczny obszar,
   wysokość kontenera, odległość paska od dołu i wcięcia bezpieczne. Różnica między
