@@ -197,7 +197,13 @@ body:has(#offline-banner:not(.hidden)) #app-container {
      okna i arkusze, pasek offline. Wszystkie są `position: fixed` względem okna,
      a skoro okno się nie rusza, one też nie. */
   #app-scroll {
-    height: 100%;
+    /* PRZYPIĘTY DO CZTERECH KRAWĘDZI OKNA, nie liczony jako `height: 100%`.
+       Pierwsza wersja brała wysokość z rodzica i na iPhonie z ikony wychodziła
+       o kilkadziesiąt pikseli za krótka — pod paskiem nawigacji zostawał martwy,
+       czarny pas, a ostatni kafelek listy urywał się w połowie. `inset: 0` nie ma
+       o co pytać: kontener JEST oknem. */
+    position: fixed;
+    inset: 0;
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
@@ -1196,14 +1202,27 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    padding: 0.25rem 0 0.75rem 3.5rem;
+    /* BEZ WCIĘCIA POD ZNAK. Pierwsza wersja miała 3,5 rem wcięcia „pod awatarem"
+       i wiersz z numerem konta plus dwoma przyciskami przestawał się mieścić —
+       rozjeżdżał się poza kartę (zgłoszenie właściciela ze zrzutem). Wcięcie było
+       ozdobą, a numer konta jest tu jedyną treścią, po którą ktoś zagląda. */
+    padding: 0.25rem 0 0.75rem;
   }
 
-  /* Przy najwęższym telefonie wcięcie pod znak zjada za dużo miejsca na numer konta,
-     a numer jest tu jedyną treścią, po którą ktoś tu zagląda. */
-  @media (max-width: 22.5rem) {
-    .member-pay-body { padding-left: 0.75rem; }
-  }
+  /* Wiersz sposobu płatności W TYM MIEJSCU układa się w dwóch poziomach: opis
+     i numer zajmują całą szerokość, przyciski schodzą pod spód. W oknie „Ureguluj"
+     zostaje jednym rzędem, bo tam ma całą szerokość arkusza dla siebie. */
+  .member-pay-body .pay-method { flex-wrap: wrap; }
+  /* 75 % zamiast 100 %: ikona rodzaju zostaje OBOK opisu (razem mieszczą się w rzędzie),
+     a przyciski — którym brakuje wtedy miejsca — schodzą do drugiego poziomu. Przy 100 %
+     ikona lądowała we własnej linii nad tekstem i wiersz robił się trzypoziomowy. */
+  .member-pay-body .pay-method > .flex-grow { flex: 1 1 75%; }
+  .member-pay-body .pay-method > .pay-method-open,
+  .member-pay-body .pay-method > .copy-account-btn { flex: 0 0 auto; }
+  /* Ikona rodzaju schodzi z osi pionowej, bo wiersz jest teraz wysoki na dwa poziomy
+     i wyśrodkowana zawisałaby obok pustego miejsca. */
+  .member-pay-body .pay-method { align-items: flex-start; }
+  .member-pay-body .pay-method > i { margin-top: 0.25rem; }
 
   /* Nagłówek dnia nad grupą rachunków. Data przestaje być mikrodrukiem na każdym
      kafelku, bo przy dwudziestu rachunkach czyta się ją raz na grupę, nie raz

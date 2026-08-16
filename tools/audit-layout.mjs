@@ -322,7 +322,13 @@ const run = async () => {
   await shot('07a-rachunek-tryb-wlasne-koszty');
 
   // Pozycje przez okno „Dodaj pozycję".
-  for (const [desc, amount] of [['Pierogi ruskie', '48'], ['Żurek w chlebie', '38'], ['Kotlet schabowy z frytkami', '56'], ['Woda gazowana duża', '18']]) {
+  // Osiem pozycji, nie cztery: od ósmej pokazuje się lupa szukania po paragonie
+  // (`ITEM_SEARCH_MIN`), więc krótsza lista nigdy jej nie pokazywała na zrzucie.
+  for (const [desc, amount] of [
+    ['Pierogi ruskie', '48'], ['Żurek w chlebie', '38'], ['Kotlet schabowy z frytkami', '56'],
+    ['Woda gazowana duża', '18'], ['Placki ziemniaczane', '32'], ['Kompot owocowy', '12'],
+    ['Sernik na zimno', '24'], ['Herbata z imbirem', '14'],
+  ]) {
     await click('#add-shared-cost-btn');
     await new Promise((r) => setTimeout(r, 400));
     await type('#shared-cost-desc', desc);
@@ -347,6 +353,19 @@ const run = async () => {
   await page.evaluate(() => document.getElementById('items-section')?.scrollIntoView({ block: 'start' }));
   await new Promise((r) => setTimeout(r, 500));
   await shot('09a-paragon-w-kadrze');
+
+  // Szukanie po pozycjach: lupa rozwija pole dokładnie tak, jak przy wyborze osoby.
+  await page.evaluate(() => document.querySelector('#item-search-wrap .person-search-toggle')?.click());
+  await new Promise((r) => setTimeout(r, 500));
+  await type('#item-search-wrap .person-search-input', 'zure');
+  await new Promise((r) => setTimeout(r, 400));
+  await shot('09b-paragon-szukanie');
+  await page.evaluate(() => {
+    const i = document.querySelector('#item-search-wrap .person-search-input');
+    if (i) { i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); }
+    document.querySelector('#item-search-wrap .person-search-toggle')?.click();
+  });
+  await new Promise((r) => setTimeout(r, 400));
 
   // Koszt wspólny.
   await click('#add-global-cost-btn');
@@ -417,6 +436,31 @@ const run = async () => {
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 400));
 
+  // Sposoby płatności: dwa, żeby wiersz z numerem konta i dwoma przyciskami trafił
+  // na zrzut. Bez tego kroku audyt nigdy nie widział rozwiniętej listy w ustawieniach
+  // pokoju — a to właśnie tam wiersz rozjeżdżał się poza kartę.
+  await click('#nav-me');
+  await new Promise((r) => setTimeout(r, 500));
+  await click('#dashboard-payment-btn');
+  await new Promise((r) => setTimeout(r, 600));
+  await type('#pm-add-value', 'PL61109010140000071219812874');
+  await click('#pm-add-btn');
+  await new Promise((r) => setTimeout(r, 700));
+  await click('#pm-add-type');
+  await new Promise((r) => setTimeout(r, 500));
+  await page.evaluate(() => {
+    const opt = [...document.querySelectorAll('#choice-options .choice-option')]
+      .find((b) => /revolut/i.test(b.textContent || ''));
+    if (opt) opt.click();
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  await type('#pm-add-value', 'macu');
+  await click('#pm-add-btn');
+  await new Promise((r) => setTimeout(r, 700));
+  await shot('15c-sposoby-platnosci');
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 400));
+
   // Ustawienia pokoju — arkusz spod nazwy pokoju.
   await click('#nav-room');
   await new Promise((r) => setTimeout(r, 500));
@@ -429,6 +473,14 @@ const run = async () => {
   await page.evaluate(() => { const b = document.querySelector('#room-settings-modal .sheet-body'); if (b) b.scrollTop = b.scrollHeight; });
   await new Promise((r) => setTimeout(r, 500));
   await shot('14b-ustawienia-pokoju-dol');
+
+  // Rozwinięty wiersz uczestnika ze sposobami płatności — miejsce zgłoszonego rozjazdu.
+  await page.evaluate(() => {
+    const d = document.querySelector('#room-members-list details.member-pay');
+    if (d) { d.open = true; d.scrollIntoView({ block: 'center' }); }
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  await shot('14c-sposoby-platnosci-rozwiniete');
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 500));
 

@@ -1647,6 +1647,36 @@ niesie dziś skojarzenie z modelami tak samo, jak koperta niesie pocztę — kor
 zamiast tłumaczyć to słowami. Do tego ikona różdżki i delikatna poświata, bo przy pierwszym
 rachunku nikt nie wie, że zdjęcie paragonu da się w ogóle odczytać.
 
+### 19.21 Poprawki po testach partii 8 (2026-08-16)
+
+**Martwy pas na dole ekranu** — mój błąd z przebudowy przewijania. Kontener brał wysokość
+z rodzica (`height: 100%`) i na iPhonie z ikony wychodził o kilkadziesiąt pikseli za krótki:
+pod paskiem nawigacji zostawała czarna przestrzeń, a ostatni kafelek listy urywał się
+w połowie. `position: fixed; inset: 0` nie ma o co pytać — kontener JEST oknem.
+
+**Sposoby płatności w ustawieniach pokoju rozjeżdżały się poza kartę.** Wiersz z numerem
+konta i dwoma przyciskami dostawał 3,5 rem wcięcia „pod awatarem" i przestawał się mieścić.
+Wcięcie było ozdobą, więc wyleciało, a wiersz układa się teraz w dwóch poziomach: ikona
+i numer w rzędzie, przyciski pod spodem. W oknie „Ureguluj" zostaje jednym rzędem, bo tam
+ma dla siebie całą szerokość arkusza.
+
+**Szukanie po pozycjach to teraz TEN SAM mechanizm, co szukanie osoby.** Pierwsza wersja
+była osobnym kodem z własnym polem i własnym zachowaniem — i wyszło dokładnie to, czego
+należało się spodziewać: pole bez klasy `field` nie miało tła ani koloru tekstu („nie widać
+napisów"), a filtr działał inaczej niż przy osobach. Wspólny mechanizm sterują teraz
+atrybuty w znacznikach (`data-search-rows`, `data-search-empty`), więc lupa rozwija pole
+identycznie w obu miejscach. Pole przeniesione **nad** wydruk: tam patrzy oko, kiedy szuka.
+
+**Opis pod „Koszty wspólne" usunięty** (decyzja właściciela). To samo mówi podpis przy
+każdym wierszu — „Dla wszystkich · 3,50/os." — i mówi to w złotówkach, w miejscu, gdzie
+ktoś patrzy.
+
+**Audyt zobaczył trzy nowe stany**: sposoby płatności w profilu, rozwinięty wiersz
+uczestnika w ustawieniach pokoju i szukanie po paragonie (lista wydłużona do ośmiu pozycji,
+bo lupa pokazuje się dopiero od ósmej). Pierwszy z nich od razu znalazł realny błąd,
+którego nie widziało żadne oko: przycisk usuwania sposobu płatności miał 36 px zamiast
+44 px wymaganych dla celu dotykowego — przy operacji nieodwracalnej.
+
 ### 19.11 Stan audytu po partii
 
 Cztery szerokości z kontraktu (360 / 390 / 834 / 1280), 32 stany ekranu, **zero zgłoszeń**:

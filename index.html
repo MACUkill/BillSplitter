@@ -629,21 +629,22 @@ the verdict, and DESIGN.md
                  do rachunku, a nie luźna lista kafelków. -->
             <section id="items-section" class="mb-3 mt-6">
                 <div id="items-section-header"></div>
+                <!-- SZUKANIE POZYCJI — dokładnie ten sam mechanizm, co szukanie osoby:
+                     zwinięta lupa, która rozwija pole po stuknięciu. Stoi NAD wydrukiem,
+                     bo tam patrzy oko, kiedy szuka swojej pozycji, i pojawia się dopiero
+                     przy paragonie, na którym szukanie ma sens (`ITEM_SEARCH_MIN`). -->
+                <div id="item-search-wrap" class="person-search mb-2 hidden"
+                     data-search-for="shared-costs-list"
+                     data-search-rows=".receipt-line"
+                     data-search-empty="Żadna pozycja nie pasuje do tego słowa.">
+                    <button type="button" class="person-search-toggle tap w-11 h-11 rounded-full flex items-center justify-center bg-surface-2 text-ink-2 flex-shrink-0" aria-expanded="false" aria-label="Szukaj pozycji" title="Szukaj pozycji">
+                        <i class="fas fa-magnifying-glass"></i>
+                    </button>
+                    <input type="text" class="person-search-input field min-h-tap" placeholder="Szukaj pozycji" autocomplete="off" spellcheck="false" aria-label="Szukaj pozycji">
+                </div>
                 <div id="receipt-tear-top" class="receipt-tear receipt-tear-top hidden" aria-hidden="true"></div>
                 <div id="shared-costs-list"></div>
                 <div id="receipt-tear" class="receipt-tear hidden" aria-hidden="true"></div>
-                <!-- Wyszukiwarka pozycji stoi POD wydrukiem, nie nad nim: przy trzech
-                     pozycjach jest zbędna, więc nie ma prawa zajmować miejsca nad
-                     treścią, po którą się tu przyszło. Pokazuje się dopiero wtedy,
-                     gdy pozycji jest tyle, że szukanie ma sens (`ITEM_SEARCH_MIN`). -->
-                <div id="item-search-wrap" class="hidden mt-3">
-                    <div class="person-search">
-                        <i class="fas fa-magnifying-glass person-search-icon" aria-hidden="true"></i>
-                        <input type="text" id="item-search" class="person-search-input" placeholder="Szukaj pozycji" autocomplete="off" aria-label="Szukaj wśród pozycji">
-                        <button id="item-search-clear" class="person-search-clear tap hidden" type="button" aria-label="Wyczyść szukanie"><i class="fas fa-xmark"></i></button>
-                    </div>
-                    <p id="item-search-count" class="text-xs text-ink-3 mt-2 hidden"></p>
-                </div>
                 <button id="add-shared-cost-btn" class="btn btn-dark w-full mt-3">
                     <i class="fas fa-receipt" aria-hidden="true"></i>
                     Dodaj pozycję

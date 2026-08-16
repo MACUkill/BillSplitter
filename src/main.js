@@ -1483,7 +1483,7 @@
                         <p class="text-sm font-bold text-ink-3">${escapeHtml(paymentLabel(m))}</p>
                         <input class="pm-value-edit credential w-full text-sm p-1 bg-transparent outline-none" value="${escapeHtml(m.value)}" data-index="${i}" placeholder="wartość">
                     </div>
-                    <button class="pm-remove-btn tap w-9 h-9 rounded-lg flex items-center justify-center text-ink-3 flex-shrink-0" data-index="${i}" title="Usuń"><i class="fas fa-trash text-sm"></i></button>
+                    <button class="pm-remove-btn tap w-11 h-11 rounded-full flex items-center justify-center text-ink-3 flex-shrink-0" data-index="${i}" title="Usuń" aria-label="Usuń sposób płatności"><i class="fas fa-trash text-sm"></i></button>
                 </div>
             `).join('');
         };
@@ -2330,13 +2330,21 @@
             counter.textContent = total ? `${picked}/${total}` : '';
         };
 
+        // Ten sam mechanizm obsługuje teraz DWIE rzeczy: listę osób i listę pozycji
+        // paragonu. Wiersz, po którym filtrujemy, wskazuje `data-search-rows`, a zdanie
+        // dla pustego wyniku `data-search-empty`. Osobne szukanie po pozycjach istniało
+        // przez pół dnia i było błędem: dwa mechanizmy do tej samej czynności znaczą
+        // dwa różne zachowania pod palcem (zgłoszenie właściciela: „powinno działać
+        // tak samo jak wyszukiwanie osób").
         const applyPersonFilter = (wrap) => {
             const box = wrap && wrap.querySelector('.person-search');
             const list = personSearchList(wrap);
             if (!box || !list) return;
+            const rowSel = box.dataset.searchRows || '.person-row';
+            const emptyText = box.dataset.searchEmpty || 'Nikt taki nie jest w tym pokoju.';
             const needle = personSearchNormalize((box.querySelector('.person-search-input') || {}).value);
             let visible = 0;
-            list.querySelectorAll('.person-row').forEach((row) => {
+            list.querySelectorAll(rowSel).forEach((row) => {
                 const hit = !needle || personSearchNormalize(row.textContent).includes(needle);
                 row.classList.toggle('hidden', !hit);
                 if (hit) visible++;
@@ -2349,7 +2357,7 @@
                     empty.className = 'person-search-empty';
                     list.appendChild(empty);
                 }
-                empty.textContent = 'Nikt taki nie jest w tym pokoju.';
+                empty.textContent = emptyText;
                 empty.classList.remove('hidden');
             } else if (empty) {
                 empty.classList.add('hidden');
@@ -3326,53 +3334,20 @@
 
         // --- SZUKANIE WŚRÓD POZYCJI ------------------------------------------------
         // Paragon z czterdziestoma pozycjami czyta się dobrze dopóki się po nim nie
-        // SZUKA. „Co ja jadłem" przy takiej długości to przewijanie w obie strony,
-        // więc pole szukania jest tu narzędziem, a nie ozdobą — i dlatego pokazuje się
-        // wyłącznie tam, gdzie jest potrzebne.
+        // SZUKA. „Co ja jadłem" przy takiej długości to przewijanie w obie strony.
+        // Obsługę niesie wspólny mechanizm szukania (`applyPersonFilter`) — ten sam,
+        // co przy wyborze osób, sterowany atrybutami w znacznikach. Pole ma więc
+        // identyczne zachowanie: zwinięta lupa, rozwijane pole, filtr przy wpisywaniu.
         const ITEM_SEARCH_MIN = 8;
-        let itemQuery = '';
 
-        const applyItemFilter = () => {
-            const list = document.getElementById('shared-costs-list');
-            const countEl = document.getElementById('item-search-count');
-            if (!list) return;
-            const rows = [...list.querySelectorAll('[data-item-id]')];
-            const q = itemQuery.trim().toLowerCase();
-            let shown = 0;
-            rows.forEach((row) => {
-                const hit = !q || (row.textContent || '').toLowerCase().includes(q);
-                row.classList.toggle('hidden', !hit);
-                if (hit) shown += 1;
-            });
-            if (countEl) {
-                countEl.classList.toggle('hidden', !q);
-                // Liczba, nie pasek postępu: przy zerze człowiek ma wiedzieć, że pomylił
-                // słowo, a nie że paragon zniknął.
-                countEl.textContent = shown === 0
-                    ? 'Żadna pozycja nie pasuje do tego słowa.'
-                    : `Pokazane: ${shown} z ${rows.length}`;
-            }
+        const itemSearchWrap = () => {
+            const box = document.getElementById('item-search-wrap');
+            return box ? box.parentElement : null;
         };
 
-        const setupItemSearch = () => {
-            const input = document.getElementById('item-search');
-            const clear = document.getElementById('item-search-clear');
-            if (!input || input.dataset.wired === '1') return;
-            input.dataset.wired = '1';
-            input.oninput = () => {
-                itemQuery = input.value;
-                if (clear) clear.classList.toggle('hidden', !itemQuery);
-                applyItemFilter();
-            };
-            if (clear) {
-                clear.onclick = () => {
-                    input.value = '';
-                    itemQuery = '';
-                    clear.classList.add('hidden');
-                    applyItemFilter();
-                    input.focus();
-                };
-            }
+        const applyItemFilter = () => {
+            const wrap = itemSearchWrap();
+            if (wrap) applyPersonFilter(wrap);
         };
 
         // --- KOSZTY WSPÓLNE --------------------------------------------------------
@@ -3394,10 +3369,13 @@
                 .filter((p) => p.status !== PARTICIPANT_OUT).length;
 
             if (header) {
+                // Zdanie „dzielą się po równo między wszystkich" stało tu pół dnia
+                // i wyleciało na życzenie właściciela: to samo mówi już podpis przy
+                // każdym wierszu („Dla wszystkich · 3,50/os."), a tam mówi to w miejscu,
+                // gdzie ktoś patrzy, i od razu w złotówkach.
                 header.innerHTML = `
                     <div class="mb-3">
                         <h3 class="font-display text-xl font-extrabold tracking-tight">Koszty wspólne${costs.length ? ` (${costs.length})` : ''}</h3>
-                        <p class="text-sm text-ink-2 mt-1">Dzielą się <strong class="text-ink">po równo między wszystkich</strong>, niezależnie od tego, kto co jadł: napiwek, serwis, opłata za rezerwację.</p>
                     </div>`;
             }
 
@@ -3442,11 +3420,15 @@
         };
 
         const resetItemSearch = () => {
-            const input = document.getElementById('item-search');
-            const clear = document.getElementById('item-search-clear');
-            itemQuery = '';
+            const box = document.getElementById('item-search-wrap');
+            if (!box) return;
+            const input = box.querySelector('.person-search-input');
             if (input) input.value = '';
-            if (clear) clear.classList.add('hidden');
+            // Pole wraca do postaci zwiniętej: nowy rachunek zaczyna się od paragonu,
+            // nie od otwartego pola szukania.
+            box.classList.remove('is-open');
+            const toggle = box.querySelector('.person-search-toggle');
+            if (toggle) toggle.setAttribute('aria-expanded', 'false');
             applyItemFilter();
         };
 
@@ -4165,10 +4147,6 @@
             // (Usunięta lokalna kopia `parseLocalFloat` — istnieje wersja modułowa. Dublet już raz
             // wywołał cichy ReferenceError, gdy jedna z kopii zniknęła przy refaktorze.)
 
-            // Pole szukania podpinamy raz na cały pobyt na rachunku (`dataset.wired`):
-            // ta funkcja biegnie przy KAŻDYM zapisie z bazy, a przepinanie nasłuchu pod
-            // palcem gubi znak wpisany w tej samej chwili.
-            setupItemSearch();
 
             document.getElementById('back-to-dashboard-btn').onclick = () => {
                 if (unsubscribeBill) unsubscribeBill();
