@@ -5,7 +5,10 @@ import { mkdirSync } from 'node:fs';
 
 import puppeteer from 'puppeteer';
 
-const URL = 'http://localhost:5173/';
+// Adres serwera deweloperskiego. Vite podnosi port, gdy 5173 jest zajęty (a bywa —
+// łatwo mieć dwa uruchomione naraz), więc bez tej furtki audyt po cichu badał CUDZĄ,
+// starą instancję aplikacji. BILLIADA_URL=http://localhost:5199/ node tools/audit-layout.mjs
+const URL = process.env.BILLIADA_URL || 'http://localhost:5173/';
 
 // Kontrakt responsywności z DESIGN.md wymaga czterech szerokości: 360 (mały telefon),
 // 390 (odniesienie), 834 (tablet) i 1280 (desktop). Szerokość jest drugim argumentem:

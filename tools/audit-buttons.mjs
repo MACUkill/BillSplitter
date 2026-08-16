@@ -6,7 +6,9 @@
 // o cudzych pieniądzach cicha awaria jest najgorszym rodzajem błędu.
 import puppeteer from 'puppeteer';
 
-const URL = 'http://localhost:5173/';
+// Patrz uwaga w tools/audit-layout.mjs: bez tego audyt potrafi badać starą instancję
+// aplikacji, którą Vite postawił na innym porcie.
+const URL = process.env.BILLIADA_URL || 'http://localhost:5173/';
 
 // Szerokość jako pierwszy argument: node tools/audit-buttons.mjs 834
 // Martwy przycisk bywa martwy tylko na jednej szerokości — element przykryty innym
@@ -90,6 +92,15 @@ const run = async () => {
   const report = [];
 
   const auditScreen = async (label, url, prepare) => {
+    // Stany, w których BRAK REAKCJI JEST POPRAWNY, bo przycisk już jest włączony.
+    // Klucz to `ekran|id`. Trzymaj tę listę krótką: każdy wpis to wyłączony strażnik,
+    // więc dopisuj tylko wtedy, gdy ręcznie sprawdziłeś, że stan naprawdę jest już aktywny.
+    const expectedNoop = new Set([
+      'pulpit|nav-room',      // stoimy na Bilansie i stukamy Bilans
+      'profil|nav-me',        // stoimy na Profilu i stukamy Profil
+      'rachunek|bill-mode-own', // przygotowanie ekranu samo włącza ten tryb (linia z click('#bill-mode-own'))
+    ]);
+
     // Zbieramy listę selektorów PRZED klikaniem — po kliknięciu DOM potrafi się przerysować.
     await page.goto(url, { waitUntil: 'networkidle2' });
     await wait(2000);
@@ -136,7 +147,14 @@ const run = async () => {
         || before.hidden !== after.hidden || before.focus !== after.focus;
       const newErrors = consoleErrors.slice(errsBefore);
 
-      if (!changed || newErrors.length) {
+      // PRZYCISK, KTÓRY JUŻ JEST WŁĄCZONY, NIE JEST MARTWY (audyt 2026-08-16).
+      // Trzy zgłoszenia w każdym przebiegu były fałszywe: stuknięcie zakładki, na której
+      // się właśnie stoi, oraz stuknięcie trybu podziału, który skrypt sam włączył linijkę
+      // wcześniej. Aplikacja słusznie nie robi wtedy nic. Raport, który za każdym razem
+      // pokazuje te same trzy nie-usterki, uczy ignorować cały raport — a wtedy przestaje
+      // chronić przed usterką prawdziwą.
+      const isAlreadyActive = expectedNoop.has(`${label}|${t.id}`);
+      if ((!changed && !isAlreadyActive) || newErrors.length) {
         report.push({ screen: label, button: t.text, id: t.id, cls: t.cls, martwy: !changed, bledy: newErrors });
       }
 

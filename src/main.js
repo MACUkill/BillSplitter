@@ -833,6 +833,18 @@
                 const screenEl = document.getElementById(`${s}-screen`);
                 if (screenEl) screenEl.classList.add('hidden');
             });
+            // WEJŚCIE NA INNY EKRAN ZACZYNA SIĘ OD GÓRY (audyt 2026-08-16).
+            // Zmiana zakładki robiła to od dawna (`showDeckView`), ale przejście MIĘDZY
+            // EKRANAMI nie ruszało przewinięcia w ogóle — więc stuknięcie rachunku po
+            // przewinięciu listy otwierało go w połowie, poniżej pola z kwotą, a wejście
+            // w Profil z długiego rachunku lądowało pod jego treścią.
+            // Warunek i sposób są takie same jak w `showDeckView`: bezwarunkowe
+            // `scrollTo(0)` rozwija w Safari pasek adresu, a to przesuwa wszystko,
+            // co przypięte do dolnej krawędzi.
+            if (screenName !== currentScreenName
+                && (window.scrollY || document.documentElement.scrollTop || 0) > 0) {
+                try { window.scrollTo({ top: 0, behavior: 'auto' }); } catch (_) { window.scrollTo(0, 0); }
+            }
             const targetScreen = document.getElementById(`${screenName}-screen`);
             if (targetScreen) {
                 targetScreen.classList.remove('hidden');
@@ -4533,7 +4545,14 @@
             const syncDraft = () => {
                 hiddenNames.value = draftMembers.join(',');
                 chipsEl.innerHTML = draftMembers.map((name, i) => {
-                    const color = identityColor(`draft-${i}`, name);
+                    // TEN SAM WZÓR CO PRZY ZAKŁADANIU GRUPY (audyt 2026-08-16).
+                    // Wcześniej kolor liczył się tu skrótem z roboczego napisu zawierającego
+                    // numer pozycji, podczas gdy grupa przydziela je przez `(index * 7) % 16`.
+                    // Dwa różne wzory na tę samą rzecz znaczyły, że KAŻDY znak zmieniał kolor
+                    // w chwili założenia pokoju: dodawałeś zielonego Boba, a po wejściu
+                    // zastawałeś różowego. W aplikacji, w której znak i jego kolor są
+                    // tożsamością człowieka, to podważa całą tę tożsamość.
+                    const color = IDENTITY_COLORS[(i * 7) % IDENTITY_COLORS.length];
                     // Kasownik żetonu miał 24×18 px — poniżej progu trafienia kciukiem.
                     // Teraz jest kołem 32 px w żetonie o wysokości 44 px.
                     return `<span class="chip pl-1 pr-1 py-1 gap-2 h-11">
