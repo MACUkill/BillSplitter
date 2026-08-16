@@ -1792,9 +1792,25 @@
             </div>`;
             if (currencies.length === 0) { container.innerHTML = nothing; return; }
 
+            // WYJAŚNIENIE RÓŻNICY MIĘDZY TRYBAMI, NIE NAZWA Z KODU (zgłoszenie właściciela
+            // 2026-08-17). Wisiało tu zdanie „Do bieżących spłat pewniejsze jest netto" —
+            // słowo „netto" nie pada nigdzie w interfejsie, zakładka nazywa się „Kto komu",
+            // więc była to nazwa techniczna wyjęta wprost z kodu (`ledger.net`). Zdanie nie
+            // tłumaczyło też RZECZY NAJWAŻNIEJSZEJ: że w planie minimalnym można nie mieć
+            // nic do zapłaty, mimo że w Bilansie stoi „jesteś winien dwóm osobom". Właściciel
+            // zobaczył dokładnie tę sprzeczność i nie miał z czego jej wyjaśnić.
             let html = '';
+            const myOweCount = new Set(
+                Object.keys(ledger).flatMap((c) => ledger[c].net.filter((t) => t.from === myId).map((t) => t.to)),
+            ).size;
             if (settlementMode === 'min') {
-                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3">Plan „najmniej przelewów" zmieni się, gdy dojdą nowe rachunki. Do bieżących spłat pewniejsze jest netto.</p>`;
+                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3">Najkrótsza droga do rozliczenia całej ekipy: zamiast płacić w kółko, część długów przechodzi bokiem.${
+                    myOweCount
+                        ? ` Dlatego możesz tu nie mieć nic do zapłaty, choć w „Kto komu" jesteś winien ${myOweCount === 1 ? 'jednej osobie' : `${myOweCount} osobom`} — Twój dług spłaca ktoś, kto jest winien Tobie.`
+                        : ''
+                } Plan przelicza się od nowa po każdym nowym rachunku.</p>`;
+            } else {
+                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3">Kto komu jest winien, para po parze — prosto z rachunków. Przelewów wychodzi więcej niż w planie obok, ale przy każdej kwocie widać, skąd się wzięła.</p>`;
             }
             currencies.forEach(cur => {
                 const transfers = settlementMode === 'min' ? simplifyDebts(ledger[cur].directed) : ledger[cur].net;
