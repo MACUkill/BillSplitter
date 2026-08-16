@@ -4,7 +4,7 @@
   "description": "Rachunek dzieli cała ekipa naraz. Bez kont i bez logowania.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#181A20",
+  "background_color": "#0C0D11",
   "theme_color": "#0C0D11",
   "orientation": "portrait-primary",
   "icons": [

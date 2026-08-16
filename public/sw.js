@@ -9,7 +9,7 @@
 // same, ale `/icons/icon-192x192.png` nazywa się tak samo przed i po podmianie rysunku.
 //
 // PODBIJ TĘ WERSJĘ przy każdej zmianie nazwy aplikacji, ikon albo manifestu.
-const CACHE = 'billiada-v3';
+const CACHE = 'billiada-v4';
 
 self.addEventListener('install', () => {
   // Nowy SW przejmuje od razu — bez czekania na zamknięcie kart.

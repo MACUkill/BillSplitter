@@ -511,6 +511,7 @@
             watchKeyboardForDeck();
             setupPersonSearch();
             registerServiceWorker();
+            showViewportDiagnostics();
 
             // Faza 5: wskaźnik offline (Firestore persistentLocalCache i tak kolejkuje zmiany).
             const updateOnlineStatus = () => {
@@ -752,6 +753,69 @@
         // Który widok pulpitu jest otwarty — pamiętany, żeby powrót z rachunku albo
         // z profilu wracał tam, skąd się wyszło, a nie zawsze na bilans.
         let currentDeckView = 'view-balance';
+
+        // --- PODGLĄD WYMIARÓW OKNA (ukryty) -----------------------------------------
+        // Narzędzie diagnostyczne, nie funkcja aplikacji. Powstało po trzech podejściach
+        // do jednego zgłoszenia („pasek nawigacji stoi za wysoko", „na dole został pas"),
+        // z których każde było zgadywaniem: przeglądarka na komputerze pokazuje inne
+        // liczby niż iPhone z ikony, a zdalnie nie da się ich zmierzyć inaczej niż
+        // pytając człowieka o zrzut. Panel pokazuje wszystkie miary naraz, więc jeden
+        // zrzut rozstrzyga, która warstwa jest za krótka.
+        //
+        // WŁĄCZA GO GEST, NIE ADRES. Aplikacja uruchomiona z ikony na ekranie początkowym
+        // nie ma paska adresu, więc `?diag=1` byłby tam nieosiągalny — a to właśnie tam
+        // objawy występują. Pięć stuknięć w znak firmowy albo w numer pokoju, w ciągu
+        // półtorej sekundy; parametr w adresie zostaje jako droga na komputerze.
+        const DIAG_TAPS = 5;
+        let diagTaps = 0;
+        let diagTimer = null;
+
+        const showViewportDiagnostics = () => {
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('.brand-lockup, #room-serial')) return;
+                clearTimeout(diagTimer);
+                diagTaps += 1;
+                diagTimer = setTimeout(() => { diagTaps = 0; }, 1500);
+                if (diagTaps < DIAG_TAPS) return;
+                diagTaps = 0;
+                const open = document.getElementById('viewport-diag');
+                if (open) open.remove();
+                else buildViewportDiagnostics();
+            });
+            if (new URLSearchParams(window.location.search).get('diag') === '1') {
+                buildViewportDiagnostics();
+            }
+        };
+
+        const buildViewportDiagnostics = () => {
+            if (document.getElementById('viewport-diag')) return;
+            const box = document.createElement('div');
+            box.id = 'viewport-diag';
+            document.body.appendChild(box);
+            const read = () => {
+                const vv = window.visualViewport;
+                const cs = getComputedStyle(document.documentElement);
+                const inset = (side) => cs.getPropertyValue(`--probe-${side}`).trim() || '?';
+                const sc = document.getElementById('app-scroll');
+                const deck = document.getElementById('deck-nav');
+                const deckRect = deck ? deck.getBoundingClientRect() : null;
+                box.innerHTML = [
+                    `screen ${window.screen.width}×${window.screen.height}`,
+                    `inner ${window.innerWidth}×${window.innerHeight}`,
+                    `docEl ${document.documentElement.clientWidth}×${document.documentElement.clientHeight}`,
+                    vv ? `visual ${Math.round(vv.width)}×${Math.round(vv.height)} @${Math.round(vv.offsetTop)}` : 'visual —',
+                    sc ? `scroll ${Math.round(sc.getBoundingClientRect().height)} (tresc ${sc.scrollHeight})` : 'scroll —',
+                    deckRect ? `deck dol ${Math.round(window.innerHeight - deckRect.bottom)} px od dolu` : 'deck —',
+                    `safe gora ${inset('top')} / dol ${inset('bottom')}`,
+                    `standalone ${window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true}`,
+                    'stuknij 5× w znak, żeby zamknąć',
+                ].map((t) => `<span>${t}</span>`).join('');
+            };
+            read();
+            if (window.visualViewport) window.visualViewport.addEventListener('resize', read);
+            window.addEventListener('resize', read);
+            box.addEventListener('click', read);
+        };
 
         // PRZEWIJANIE MIESZKA W `#app-scroll`, NIE W DOKUMENCIE.
         // Dokument ma stałą wysokość i zero przewijania, żeby na iPhonie z ikony nie dało

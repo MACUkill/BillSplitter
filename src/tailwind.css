@@ -178,6 +178,13 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     height: 100%;
     overflow: hidden;
     overscroll-behavior-y: none;
+    /* TŁO MALOWANE JAWNIE NA KORZENIU DOKUMENTU, nie tylko na `body`.
+       Zwykle wystarcza `body`, bo przeglądarka przenosi jego tło na całe płótno —
+       ale ta propagacja działa tylko wtedy, gdy korzeń tła NIE MA. Odkąd `body` ma
+       ustaloną wysokość i ukryte przepełnienie, na iPhonie z ikony zostawał na dole
+       pas w cudzym kolorze (zgłoszenie właściciela). Malujemy więc obie warstwy
+       i nie zostawiamy ani jednego piksela do zgadywania. */
+    background-color: rgb(var(--bg));
   }
 
   body {
@@ -190,6 +197,35 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     height: 100%;
     overflow: hidden;
     overscroll-behavior-y: none;
+  }
+
+  /* SONDY WCIĘĆ BEZPIECZNYCH. Wartości `env()` da się odczytać z JavaScriptu wyłącznie
+     wtedy, gdy najpierw wpiszemy je do własnych stałych — samo `env()` nie jest widoczne
+     przez `getComputedStyle`. Kosztuje to dwie stałe i nic nie maluje. */
+  :root {
+    --probe-top: env(safe-area-inset-top, 0px);
+    --probe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Panel diagnostyczny — pokazuje się WYŁĄCZNIE po dopisaniu `?diag=1` do adresu
+     (patrz `showViewportDiagnostics`). Leży nad wszystkim, bo ma być czytelny na zrzucie
+     zrobionym telefonem, i nie łapie dotyku poza sobą. */
+  #viewport-diag {
+    position: fixed;
+    left: 0.5rem;
+    top: 0.5rem;
+    z-index: 90;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    max-width: calc(100vw - 1rem);
+    padding: 0.5rem 0.625rem;
+    border-radius: 0.75rem;
+    background-color: rgb(var(--ink) / 0.88);
+    color: rgb(var(--surface));
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.6875rem;
+    line-height: 1.35;
   }
 
   /* JEDYNY PRZEWIJANY ELEMENT APLIKACJI.
@@ -209,6 +245,8 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     -webkit-overflow-scrolling: touch;
     /* Gest, który dojedzie do końca tej listy, nie przechodzi wyżej. */
     overscroll-behavior-y: contain;
+    /* Trzecia warstwa tego samego tła — patrz komentarz przy `html`. */
+    background-color: rgb(var(--bg));
   }
 
   /* PASEK PRZEWIJANIA UKRYTY.
