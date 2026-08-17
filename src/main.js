@@ -1711,23 +1711,52 @@
             const uniquePeople = (list) => new Set(list.map((r) => r.other)).size;
             const oweCount = uniquePeople(oweRows);
             const dueCount = uniquePeople(dueRows);
-            const parts = [];
-            if (oweCount) parts.push(`winien jesteś ${people(oweCount)}`);
-            if (dueCount) parts.push(`dostajesz od ${peopleFrom(dueCount)}`);
-            if (currencies.length > 1) parts.push(`${currencies.length} waluty, każda rozliczana osobno`);
-            captionEl.textContent = parts.join(' · ');
+            // WIELKA LICZBA TO ODEJMOWANIE — POKAŻ JEGO SKŁADNIKI (zgłoszenie właściciela
+            // 2026-08-17: „nowa osoba kompletnie może nie skumać tego Bilansu").
+            //
+            // Do tej pory blok pokazywał saldo NA CZYSTO (należności minus długi), a pod nim
+            // liczby OSÓB — bez ani jednej kwoty składowej. Kto był jednocześnie wierzycielem
+            // i dłużnikiem, widział wielkie „+1 200", a zaraz pod tym ciemny przycisk
+            // „Ureguluj 50,00" z kwotą, która nie występowała nigdzie wyżej. Pytanie, które
+            // się wtedy rodzi — „po co mam komuś przelewać, skoro tylu ludzi jest winnych
+            // mnie?" — nie miało na tym ekranie odpowiedzi.
+            //
+            // Teraz przy obu kierunkach naraz rozpisujemy działanie: ile dostajesz, ile
+            // oddajesz. Wtedy „Ureguluj 50,00" jest po prostu drugą linijką, a nie kwotą
+            // znikąd. Przy jednym kierunku (przypadek zwykły) zostaje jedno zdanie jak dotąd —
+            // rozpisywanie działania, które ma jeden składnik, byłoby hałasem.
+            const oweTotalG = oweRows.reduce((s, r) => s + r.amountG, 0);
+            const dueTotalG = dueRows.reduce((s, r) => s + r.amountG, 0);
+            const wieleWalut = currencies.length > 1;
+            if (oweCount && dueCount && !wieleWalut) {
+                const cur = currencies[0];
+                // Kolor NIE niesie tu kierunku: na limonce czerwień i zieleń są nieczytelne
+                // (patrz uwaga przy `netOf`). Kierunek niosą słowa i strzałki.
+                captionEl.innerHTML = `<span class="block">na czysto</span>
+                    <span class="block mt-2 font-normal">↓ dostajesz <b class="font-bold">${fmtMoney(dueTotalG, cur)}</b> od ${peopleFrom(dueCount)}</span>
+                    <span class="block font-normal">↑ oddajesz <b class="font-bold">${fmtMoney(oweTotalG, cur)}</b> ${people(oweCount)}</span>`;
+            } else {
+                const parts = [];
+                if (oweCount) parts.push(`winien jesteś ${people(oweCount)}`);
+                if (dueCount) parts.push(`dostajesz od ${peopleFrom(dueCount)}`);
+                if (wieleWalut) parts.push(`${currencies.length} waluty, każda rozliczana osobno`);
+                captionEl.textContent = parts.join(' · ');
+            }
 
-            // Akcja pierwszorzędna celuje w największą pozycję — to ona blokuje rozliczenie.
+            // AKCJA PIERWSZORZĘDNA IDZIE ZA KIERUNKIEM SALDA, nie za samym istnieniem długu.
+            // Wcześniej „Ureguluj" było zawsze przyciskiem mocnym, więc ekran namawiał do
+            // zapłaty także kogoś, kto na czysto jest grubo na plusie — a to właśnie ten
+            // człowiek najczęściej nie musi płacić nikomu (patrz plan „najmniej przelewów”).
+            const naPlus = currencies.reduce((s, c) => s + netOf(c), 0) >= 0;
             const biggestOwe = oweRows.sort((a, b) => b.amountG - a.amountG)[0];
             const biggestDue = dueRows.sort((a, b) => b.amountG - a.amountG)[0];
-            const buttons = [];
-            if (biggestOwe) {
-                buttons.push(`<button class="balance-settle-btn btn btn-dark" data-to="${escapeHtml(biggestOwe.other)}" data-amount-g="${biggestOwe.amountG}" data-currency="${escapeHtml(biggestOwe.currency)}">Ureguluj ${fmtMoney(biggestOwe.amountG, biggestOwe.currency)}</button>`);
-            }
-            if (biggestDue) {
-                buttons.push(`<button class="balance-nudge-btn btn btn-quiet" data-nudge-to="${escapeHtml(biggestDue.other)}" data-amount-g="${biggestDue.amountG}" data-currency="${escapeHtml(biggestDue.currency)}">Przypomnij: ${escapeHtml(memberName(biggestDue.other))}</button>`);
-            }
-            actionsEl.innerHTML = buttons.join('');
+            const btnOwe = biggestOwe
+                ? `<button class="balance-settle-btn btn ${naPlus && biggestDue ? 'btn-quiet' : 'btn-dark'}" data-to="${escapeHtml(biggestOwe.other)}" data-amount-g="${biggestOwe.amountG}" data-currency="${escapeHtml(biggestOwe.currency)}">Ureguluj ${fmtMoney(biggestOwe.amountG, biggestOwe.currency)}</button>`
+                : '';
+            const btnDue = biggestDue
+                ? `<button class="balance-nudge-btn btn ${naPlus && biggestOwe ? 'btn-dark' : 'btn-quiet'}" data-nudge-to="${escapeHtml(biggestDue.other)}" data-amount-g="${biggestDue.amountG}" data-currency="${escapeHtml(biggestDue.currency)}">Przypomnij: ${escapeHtml(memberName(biggestDue.other))}</button>`
+                : '';
+            actionsEl.innerHTML = naPlus ? btnDue + btnOwe : btnOwe + btnDue;
 
             actionsEl.querySelectorAll('.balance-settle-btn').forEach((btn) => {
                 btn.onclick = () => openSettleModal(btn.dataset.to, Number(btn.dataset.amountG), btn.dataset.currency, 'send');
