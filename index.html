@@ -326,9 +326,13 @@ the verdict, and DESIGN.md
             <section id="balance-panel" class="block-brand relative overflow-hidden p-6 mb-3">
                 <!-- Bez podpisu „Twój bilans" w środku: tytuł zakładki nad blokiem mówi
                      to samo, a kwota nie potrzebuje dwóch etykiet nad sobą. -->
+                <!-- Limonkowy blok odpowiada WYŁĄCZNIE na pytanie „gdzie stoję". Przyciski
+                     wyprowadzone stąd 2026-08-17 do sekcji „Co masz zrobić" niżej: kiedy
+                     akcje siedziały tutaj, blok pokazywał saldo liczone parami, a jedyny
+                     przycisk celował w największego dłużnika i nigdy się nie zmieniał —
+                     przy piętnastu osobach dawało się przypomnieć tylko jednej z nich. -->
                 <div id="balance-amounts" class="space-y-2"></div>
                 <p id="balance-caption" class="mt-3 text-sm font-semibold opacity-70"></p>
-                <div id="balance-actions" class="mt-5 flex flex-wrap gap-2"></div>
                 <span id="dashboard-user-name-display" class="sr-only"></span>
             </section>
 
@@ -345,6 +349,21 @@ the verdict, and DESIGN.md
                 <h4 class="text-sm font-bold text-ink-3 mb-2">Czeka na Ciebie</h4>
                 <div id="balance-waiting-list" class="space-y-2"></div>
             </div>
+
+            <!-- CO MASZ ZROBIĆ — jedyne miejsce z akcjami rozliczeniowymi na tym ekranie,
+                 liczone z NAJKRÓTSZEGO PLANU (`simplifyDebts`), a nie z długów para po parze.
+                 Dzięki temu Bilans i „Kto komu ile" mówią jednym głosem, a ekran główny
+                 popycha do sposobu, który wymaga najmniej przelewów.
+
+                 Strona „płacisz" idzie jawnymi wierszami (w planie minimalnym to zwykle
+                 zero albo jeden przelew), a strona „dostajesz" JEDNĄ LINIĄ ZBIORCZĄ —
+                 bo kto wyłożył pieniądze za piętnaście osób, ma czternaście wpłat do
+                 odebrania i lista rozjechałaby cały ekran. -->
+            <section id="balance-plan" class="hidden mt-5">
+                <h4 class="text-sm font-bold text-ink-3 mb-2">Co masz zrobić</h4>
+                <div id="balance-plan-list" class="space-y-2"></div>
+                <p id="balance-plan-note" class="text-xs text-ink-3 mt-2"></p>
+            </section>
 
             <!-- Pusty pokój na Bilansie: zero to tu stan sukcesu, ale w świeżym pokoju
                  znaczy „jeszcze nic nie ma". Bez tego zakładka była samym limonkowym

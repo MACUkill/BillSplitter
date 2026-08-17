@@ -3,6 +3,7 @@
         // Importy Firebase (npm) + moduł obliczeń
         import { calculateAll, calculateAllForBill, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
         import { unreadNudgeCount, hasRecentNudge, inboxItems, badgeCount, hasDot } from './nudges.js';
+        import { myPlanRows, planVsPairwise } from './plan.js';
         import { itemQuantity, itemPickers, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
         import {
             identityColor, initials, IDENTITY_COLORS,
@@ -1639,14 +1640,18 @@
                     else if (t.to === my.id) rows.push({ currency: cur, other: t.from, amountG: t.amountG, dir: 'due' });
                 });
             });
-            return { rows, myId: my.id };
+            // `ledger` wychodzi na zewnątrz, bo Bilans potrzebuje z niego jeszcze planu
+            // (`myPlanRows`), a budowanie go drugi raz przy każdym odrysowaniu byłoby
+            // liczeniem tego samego dwa razy przy piętnastu osobach i kilkunastu rachunkach.
+            return { rows, myId: my.id, ledger };
         };
 
         const renderBalancePanel = () => {
             const amountsEl = document.getElementById('balance-amounts');
             const captionEl = document.getElementById('balance-caption');
-            const actionsEl = document.getElementById('balance-actions');
-            if (!amountsEl || !captionEl || !actionsEl) return;
+            if (!amountsEl || !captionEl) return;
+            // Akcje mieszkają od 2026-08-17 w osobnej sekcji pod blokiem, patrz renderBalancePlan.
+            renderBalancePlan();
 
             // Zachęta do pierwszego rachunku żyje tylko w pustym pokoju — potem
             // znika bez śladu, żeby nie zabierać miejsca kwocie.
@@ -1658,7 +1663,7 @@
             }
             renderBalanceWaiting();
 
-            const { rows } = myLedgerRows();
+            const { rows, myId, ledger } = myLedgerRows();
             const byCurrency = {};
             rows.forEach((r) => {
                 const bucket = byCurrency[r.currency] || (byCurrency[r.currency] = { owe: 0, due: 0 });
@@ -1685,7 +1690,6 @@
                 captionEl.textContent = latestBills.length === 0
                     ? 'Jeszcze nic nie policzone.'
                     : 'Wszystko rozliczone. Nikt nikomu nic nie jest winien.';
-                actionsEl.innerHTML = '';
                 return;
             }
 
@@ -1725,44 +1729,112 @@
             // oddajesz. Wtedy „Ureguluj 50,00" jest po prostu drugą linijką, a nie kwotą
             // znikąd. Przy jednym kierunku (przypadek zwykły) zostaje jedno zdanie jak dotąd —
             // rozpisywanie działania, które ma jeden składnik, byłoby hałasem.
-            const oweTotalG = oweRows.reduce((s, r) => s + r.amountG, 0);
-            const dueTotalG = dueRows.reduce((s, r) => s + r.amountG, 0);
+            //
+            // KWOTY BIERZEMY Z PLANU, NIE Z PAR (2026-08-17). Saldo na czysto jest w obu
+            // ujęciach identyczne — plan zmienia wyłącznie trasę pieniędzy — ale rozpisanie
+            // już nie: para po parze można dostawać od jedenastu osób i oddawać jednej,
+            // a planem dostawać od trzech i nie oddawać nikomu. Skoro przyciski pod spodem
+            // wykonują plan, to rozpisanie nad nimi musi mówić o tym samym.
+            const planRows = myPlanRows(ledger, myId);
+            const planCur = (c) => planRows.find((p) => p.currency === c) || { payTotalG: 0, receiveTotalG: 0, pay: [], receive: [] };
+            const oweTotalG = planCur(currencies[0]).payTotalG;
+            const dueTotalG = planCur(currencies[0]).receiveTotalG;
+            const oweIle = planCur(currencies[0]).pay.length;
+            const dueIle = planCur(currencies[0]).receive.length;
             const wieleWalut = currencies.length > 1;
-            if (oweCount && dueCount && !wieleWalut) {
+            if (oweIle && dueIle && !wieleWalut) {
                 const cur = currencies[0];
                 // Kolor NIE niesie tu kierunku: na limonce czerwień i zieleń są nieczytelne
                 // (patrz uwaga przy `netOf`). Kierunek niosą słowa i strzałki.
                 captionEl.innerHTML = `<span class="block">na czysto</span>
-                    <span class="block mt-2 font-normal">↓ dostajesz <b class="font-bold">${fmtMoney(dueTotalG, cur)}</b> od ${peopleFrom(dueCount)}</span>
-                    <span class="block font-normal">↑ oddajesz <b class="font-bold">${fmtMoney(oweTotalG, cur)}</b> ${people(oweCount)}</span>`;
+                    <span class="block mt-2 font-normal">↓ dostajesz <b class="font-bold">${fmtMoney(dueTotalG, cur)}</b> od ${peopleFrom(dueIle)}</span>
+                    <span class="block font-normal">↑ oddajesz <b class="font-bold">${fmtMoney(oweTotalG, cur)}</b> ${people(oweIle)}</span>`;
             } else {
                 const parts = [];
-                if (oweCount) parts.push(`winien jesteś ${people(oweCount)}`);
-                if (dueCount) parts.push(`dostajesz od ${peopleFrom(dueCount)}`);
+                if (oweIle) parts.push(`oddajesz ${people(oweIle)}`);
+                if (dueIle) parts.push(`dostajesz od ${peopleFrom(dueIle)}`);
                 if (wieleWalut) parts.push(`${currencies.length} waluty, każda rozliczana osobno`);
                 captionEl.textContent = parts.join(' · ');
             }
+        };
 
-            // AKCJA PIERWSZORZĘDNA IDZIE ZA KIERUNKIEM SALDA, nie za samym istnieniem długu.
-            // Wcześniej „Ureguluj" było zawsze przyciskiem mocnym, więc ekran namawiał do
-            // zapłaty także kogoś, kto na czysto jest grubo na plusie — a to właśnie ten
-            // człowiek najczęściej nie musi płacić nikomu (patrz plan „najmniej przelewów”).
-            const naPlus = currencies.reduce((s, c) => s + netOf(c), 0) >= 0;
-            const biggestOwe = oweRows.sort((a, b) => b.amountG - a.amountG)[0];
-            const biggestDue = dueRows.sort((a, b) => b.amountG - a.amountG)[0];
-            const btnOwe = biggestOwe
-                ? `<button class="balance-settle-btn btn ${naPlus && biggestDue ? 'btn-quiet' : 'btn-dark'}" data-to="${escapeHtml(biggestOwe.other)}" data-amount-g="${biggestOwe.amountG}" data-currency="${escapeHtml(biggestOwe.currency)}">Ureguluj ${fmtMoney(biggestOwe.amountG, biggestOwe.currency)}</button>`
-                : '';
-            const btnDue = biggestDue
-                ? `<button class="balance-nudge-btn btn ${naPlus && biggestOwe ? 'btn-dark' : 'btn-quiet'}" data-nudge-to="${escapeHtml(biggestDue.other)}" data-amount-g="${biggestDue.amountG}" data-currency="${escapeHtml(biggestDue.currency)}">Przypomnij: ${escapeHtml(memberName(biggestDue.other))}</button>`
-                : '';
-            actionsEl.innerHTML = naPlus ? btnDue + btnOwe : btnOwe + btnDue;
+        // CO MASZ ZROBIĆ — jedyne akcje rozliczeniowe na Bilansie, wyprowadzone z planu.
+        //
+        // Dwie strony traktujemy inaczej i to jest sedno skalowania do piętnastu osób:
+        //   • PŁACISZ — jawne wiersze. W planie minimalnym to zwykle zero albo jeden przelew,
+        //     więc lista jest z natury krótka i każdy jej wiersz zasługuje na własny przycisk.
+        //   • DOSTAJESZ — jedna linia zbiorcza. Kto wyłożył za całą ekipę, ma czternaście
+        //     wpłat do odebrania; czternaście wierszy zjadłoby cały ekran, a i tak nie da się
+        //     z nimi zrobić nic innego niż przypomnieć. Więc: licznik plus jedna akcja masowa.
+        const renderBalancePlan = () => {
+            const wrap = document.getElementById('balance-plan');
+            const list = document.getElementById('balance-plan-list');
+            const note = document.getElementById('balance-plan-note');
+            if (!wrap || !list || !note) return;
 
-            actionsEl.querySelectorAll('.balance-settle-btn').forEach((btn) => {
+            const { rows, myId, ledger } = myLedgerRows();
+            const planRows = myId ? myPlanRows(ledger, myId) : [];
+            wrap.classList.toggle('hidden', planRows.length === 0);
+            if (planRows.length === 0) { list.innerHTML = ''; note.textContent = ''; return; }
+
+            const wieleWalut = planRows.length > 1;
+            list.innerHTML = planRows.map((p) => {
+                const naglowekWaluty = wieleWalut ? `<p class="chip mb-2">${escapeHtml(p.currency)}</p>` : '';
+                const wierszeDoZaplaty = p.pay.map((t) => `
+                    <div class="card p-4">
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="flex items-center min-w-0 gap-3">${avatarHtml(memberName(t.other), t.other, 'w-11 h-11 text-base')}<span class="truncate font-bold text-lg">${escapeHtml(memberName(t.other))}</span></span>
+                            <span class="amount text-2xl text-owe flex-shrink-0">${fmtMoney(t.amountG, p.currency)}</span>
+                        </div>
+                        <div class="mt-3 flex items-center gap-2">
+                            <button class="plan-pay-btn btn btn-dark flex-grow" data-to="${escapeHtml(t.other)}" data-amount-g="${t.amountG}" data-currency="${escapeHtml(p.currency)}">Zapłać ${fmtMoney(t.amountG, p.currency)}</button>
+                        </div>
+                        <p class="text-xs text-ink-3 mt-2">Tak wychodzi najkrócej. <button class="plan-why-btn underline" type="button">Skąd ta kwota?</button></p>
+                    </div>`).join('');
+                // Zdanie „nie masz nic do zapłaty" mówimy WPROST, zamiast milczeć — to jest
+                // odpowiedź na pytanie właściciela „mam uregulować czy nie?".
+                //
+                // ALE TYLKO WTEDY, GDY NAPRAWDĘ MA SIĘ DŁUGI. Kto wyłożył za całą ekipę
+                // i nie jest winien nikomu ani grosza, dostawałby inaczej zapewnienie, że
+                // „jego długi rozliczają się same" — o długach, których nigdy nie miał.
+                const dlugiParami = rows.some((r) => r.dir === 'owe' && r.currency === p.currency);
+                const brakDoZaplaty = p.pay.length === 0 && dlugiParami
+                    ? `<div class="card p-4"><p class="font-bold">Nie masz nic do zapłaty</p><p class="text-sm text-ink-2 mt-1">Twoje długi rozliczają się same — spłacają je ci, którzy są winni Tobie.</p></div>`
+                    : '';
+                const wierszOdbioru = p.receive.length
+                    ? `<div class="card p-4">
+                        <div class="flex items-center justify-between gap-3">
+                            <span class="font-bold text-lg">Czekasz na ${p.receive.length} ${plural(p.receive.length, 'wpłatę', 'wpłaty', 'wpłat')}</span>
+                            <span class="amount text-2xl text-due flex-shrink-0">${fmtMoney(p.receiveTotalG, p.currency)}</span>
+                        </div>
+                        <div class="mt-3 flex items-center gap-2">
+                            <button class="plan-nudge-all-btn btn btn-primary flex-grow" data-currency="${escapeHtml(p.currency)}">Przypomnij (${p.receive.length})</button>
+                            <button class="plan-open-settle-btn btn btn-quiet flex-shrink-0">Zobacz kto</button>
+                        </div>
+                    </div>`
+                    : '';
+                return naglowekWaluty + wierszeDoZaplaty + brakDoZaplaty + wierszOdbioru;
+            }).join('');
+
+            // Zdanie o planie mówi PRAWDĘ, także wtedy, gdy skrócić się nie da: przy jednym
+            // płatniku za całą ekipę plan ma dokładnie tyle przelewów co podział para po parze,
+            // bo każdy i tak oddaje osobno. Obiecywanie wtedy oszczędności byłoby kłamstwem.
+            const { plan, pairwise } = planVsPairwise(ledger);
+            note.innerHTML = `${plan < pairwise
+                ? `Rozliczamy najkrótszą drogą: <b>${plan} ${plural(plan, 'przelew', 'przelewy', 'przelewów')}</b> zamiast ${pairwise}.`
+                : 'Rozliczamy najkrótszą drogą — krócej się tu nie da.'} <button class="plan-open-settle-btn underline" type="button">Kto komu jest winien →</button>`;
+
+            list.querySelectorAll('.plan-pay-btn').forEach((btn) => {
                 btn.onclick = () => openSettleModal(btn.dataset.to, Number(btn.dataset.amountG), btn.dataset.currency, 'send');
             });
-            actionsEl.querySelectorAll('.balance-nudge-btn').forEach((btn) => {
-                btn.onclick = () => openNudgeCompose(btn.dataset.nudgeTo, Number(btn.dataset.amountG), btn.dataset.currency);
+            list.querySelectorAll('.plan-nudge-all-btn').forEach((btn) => {
+                btn.onclick = () => {
+                    const p = planRows.find((r) => r.currency === btn.dataset.currency);
+                    if (p) openNudgeCompose(p.receive.map((r) => ({ toId: r.other, amountG: r.amountG })), p.currency);
+                };
+            });
+            wrap.querySelectorAll('.plan-open-settle-btn, .plan-why-btn').forEach((btn) => {
+                btn.onclick = () => { showDeckView(DECK_NAV_VIEWS['nav-settle']); };
             });
         };
 
@@ -1833,13 +1905,13 @@
                 Object.keys(ledger).flatMap((c) => ledger[c].net.filter((t) => t.from === myId).map((t) => t.to)),
             ).size;
             if (settlementMode === 'min') {
-                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3">Najkrótsza droga do rozliczenia całej ekipy: zamiast płacić w kółko, część długów przechodzi bokiem.${
+                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Tym planem gra aplikacja.</b> To samo, co pokazuje Bilans: najkrótsza droga do rozliczenia całej ekipy, w której część długów przechodzi bokiem.${
                     myOweCount
-                        ? ` Dlatego możesz tu nie mieć nic do zapłaty, choć w „Kto komu" jesteś winien ${myOweCount === 1 ? 'jednej osobie' : `${myOweCount} osobom`} — Twój dług spłaca ktoś, kto jest winien Tobie.`
+                        ? ` Dlatego możesz tu nie mieć nic do zapłaty, choć para po parze jesteś winien ${myOweCount === 1 ? 'jednej osobie' : `${myOweCount} osobom`} — Twój dług spłaca ktoś, kto jest winien Tobie.`
                         : ''
                 } Plan przelicza się od nowa po każdym nowym rachunku.</p>`;
             } else {
-                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3">Kto komu jest winien, para po parze — prosto z rachunków. Przelewów wychodzi więcej niż w planie obok, ale przy każdej kwocie widać, skąd się wzięła.</p>`;
+                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Podgląd szczegółowy.</b> Kto komu jest winien, para po parze, prosto z rachunków — przy każdej kwocie rozwiniesz „Za co". Przelewów wychodzi tu więcej niż w planie obok, więc rozliczajcie się nim tylko wtedy, gdy tak się umówiliście.</p>`;
             }
             currencies.forEach(cur => {
                 const transfers = settlementMode === 'min' ? simplifyDebts(ledger[cur].directed) : ledger[cur].net;
@@ -2147,25 +2219,61 @@
             });
         };
 
-        const openNudgeCompose = (toId, amountG, currency) => {
+        // Kompozytor przyjmuje JEDNĄ OSOBĘ ALBO LISTĘ (od 2026-08-17).
+        //
+        // Powód listy: Bilans pokazywał wcześniej jeden przycisk „Przypomnij: <największy
+        // dłużnik>", który nigdy się nie zmieniał. Przy jedenastu dłużnikach dawało się
+        // dosięgnąć dokładnie jednego z nich, a po wysłaniu nic na ekranie nie drgało, więc
+        // nie było nawet wiadomo, czy poszło. Kto dobija się o zwrot przy piętnastu osobach,
+        // potrzebuje jednego ruchu na wszystkich, a nie piętnastu okien po kolei.
+        //
+        // Treść jest WSPÓLNA dla całej listy — świadomie. Osobna wiadomość do każdego brzmi
+        // ładniej, ale w praktyce to piętnaście formularzy do wypełnienia, więc nikt by tego
+        // nie użył. Szablony działają bez zmian.
+        const openNudgeCompose = (adresaci, amountGlubCurrency, currency) => {
             const my = myMemberNow();
             if (!my) { showToast('Najpierw dołącz do grupy.', true); return; }
-            if (!toId || toId === my.id) return;
-            nudgeDraft = { toId, amountG: Number(amountG) || 0, currency: currency || 'PLN' };
-            document.getElementById('nudge-compose-name').textContent = memberName(toId);
-            document.getElementById('nudge-compose-avatar').innerHTML = avatarHtml(memberName(toId), toId, 'w-12 h-12 text-lg');
-            document.getElementById('nudge-compose-amount').textContent = nudgeDraft.amountG > 0
-                ? `zaległość ${fmtMoney(nudgeDraft.amountG, nudgeDraft.currency)}`
-                : '';
+            const lista = (Array.isArray(adresaci)
+                ? adresaci.map((a) => ({ toId: a.toId, amountG: Number(a.amountG) || 0 }))
+                : [{ toId: adresaci, amountG: Number(amountGlubCurrency) || 0 }]
+            ).filter((a) => a.toId && a.toId !== my.id);
+            if (lista.length === 0) return;
+            const waluta = (Array.isArray(adresaci) ? amountGlubCurrency : currency) || 'PLN';
+            nudgeDraft = { lista, currency: waluta };
+
+            const nameEl = document.getElementById('nudge-compose-name');
+            const avatarEl = document.getElementById('nudge-compose-avatar');
+            const amountEl = document.getElementById('nudge-compose-amount');
+            const razemG = lista.reduce((s, a) => s + a.amountG, 0);
+            if (lista.length === 1) {
+                nameEl.textContent = memberName(lista[0].toId);
+                avatarEl.innerHTML = avatarHtml(memberName(lista[0].toId), lista[0].toId, 'w-12 h-12 text-lg');
+                amountEl.textContent = razemG > 0 ? `zaległość ${fmtMoney(razemG, waluta)}` : '';
+            } else {
+                nameEl.textContent = `${lista.length} ${plural(lista.length, 'osoby', 'osób', 'osób')}`;
+                // Stos twarzy zamiast jednej: od razu widać, do kogo to leci. Pięć mieści się
+                // bez ścisku na najwęższym telefonie, reszta idzie licznikiem — tak samo jak
+                // przy pozycjach paragonu.
+                const widoczne = lista.slice(0, 5);
+                avatarEl.innerHTML = `<span class="flex -space-x-2">${
+                    widoczne.map((a) => avatarHtml(memberName(a.toId), a.toId, 'w-9 h-9 text-sm')).join('')
+                }${lista.length > widoczne.length ? `<span class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold bg-surface-2 text-ink-2">+${lista.length - widoczne.length}</span>` : ''}</span>`;
+                amountEl.textContent = razemG > 0 ? `razem ${fmtMoney(razemG, waluta)}` : '';
+            }
             document.getElementById('nudge-message').value = DEFAULT_NUDGE_MESSAGE;
             renderNudgeTemplates();
             document.getElementById('nudge-compose-modal').classList.add('active');
         };
 
-        const sendNudge = async (toId, amountG, currency, message = DEFAULT_NUDGE_MESSAGE) => {
+        // Zwraca `true`, gdy przypomnienie faktycznie poszło. Przy wysyłce do całej listy
+        // bramka czasowa wycina część adresatów, a raport („poszło do 9 z 11") ma mówić
+        // prawdę — bez tej wartości licznik byłby zgadywaniem.
+        // `cicho` wyłącza pojedyncze powiadomienia w rogu: przy jedenastu osobach byłoby
+        // ich jedenaście, jedno na drugim.
+        const sendNudge = async (toId, amountG, currency, message = DEFAULT_NUDGE_MESSAGE, { cicho = false } = {}) => {
             const my = myMemberNow();
-            if (!my) { showToast('Najpierw dołącz do grupy.', true); return; }
-            if (!toId || toId === my.id) return;
+            if (!my) { if (!cicho) showToast('Najpierw dołącz do grupy.', true); return false; }
+            if (!toId || toId === my.id) return false;
             const withMs = latestNudges.map(x => ({
                 from: x.from, to: x.to,
                 createdAtMs: (x.createdAt && x.createdAt.toMillis) ? x.createdAt.toMillis() : undefined,
@@ -2175,8 +2283,8 @@
             // sprawą dwóch osób. Blokujemy wyłącznie wciśnięcie przycisku w kółko,
             // czyli przypadkowe albo złośliwe walenie co sekundę.
             if (hasRecentNudge(withMs, my.id, toId, Date.now(), NUDGE_GATE_MS)) {
-                showToast('Chwila, przypomnienie właśnie poszło.');
-                return;
+                if (!cicho) showToast('Chwila, przypomnienie właśnie poszło.');
+                return false;
             }
             await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`), {
                 from: my.id,
@@ -2192,7 +2300,8 @@
                 createdBy: currentUser.uid,
                 readBy: [],
             });
-            showToast('Wysłano przypomnienie.');
+            if (!cicho) showToast('Wysłano przypomnienie.');
+            return true;
         };
 
         const nudgeRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`, id);
@@ -3977,10 +4086,19 @@
             payerSelect.disabled = isPayerConfirmed;
 
             const confirmationBanner = document.getElementById('payer-confirmation-banner-advanced');
+            // BANER MÓWI, CO BLOKUJE ROZLICZENIE — także wtedy, gdy piłka jest po cudzej
+            // stronie (poprawka 2026-08-17 po uwadze właściciela o nowym użytkowniku).
+            //
+            // Rachunek bez POTWIERDZONEGO płatnika nie tworzy ani jednego długu
+            // (`computeBillDebts` zwraca wtedy pustą listę), więc nie wchodzi do Bilansu
+            // ani do „Kto komu ile". Do tej pory ekran mówił o tym tylko płatnikowi.
+            // Wszyscy pozostali widzieli PUSTY baner: rachunek stał, kwota się zgadzała,
+            // a rozliczenia go nie widziały i nic nie tłumaczyło dlaczego. Dla kogoś, kto
+            // widzi aplikację pierwszy raz, wygląda to jak usterka.
             if (canConfirm) {
                 confirmationBanner.innerHTML = `
                     <div class="card p-4 flex flex-wrap justify-between items-center gap-3">
-                        <span class="text-sm text-ink-2">To Ty wyłożyłeś/aś pieniądze za ten rachunek. Potwierdź, żeby zablokować wybór płatnika.</span>
+                        <span class="text-sm text-ink-2"><b class="text-ink">Ten rachunek nie wchodzi jeszcze do rozliczeń.</b> Potwierdź, że to Ty wyłożyłeś/aś pieniądze — dopiero wtedy ekipa zobaczy, ile Ci oddać.</span>
                         <button id="confirm-payer-btn" class="btn btn-dark flex-shrink-0">Potwierdzam</button>
                     </div>`;
                 document.getElementById('confirm-payer-btn').onclick = async () => {
@@ -3997,8 +4115,22 @@
                         <span class="chip text-due text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Płatnik</span>
                         <span class="text-sm text-ink-2">${bannerText}</span>
                     </div>`;
+            } else if (billData.payerId) {
+                // Płatnik wskazany, ale to nie ja i jeszcze nie potwierdził.
+                const payerName = (billData.participants[billData.payerId] || {}).name || 'Płatnik';
+                confirmationBanner.innerHTML = `
+                    <div class="card p-4 flex items-center gap-3">
+                        <span class="chip text-info text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Czeka</span>
+                        <span class="text-sm text-ink-2"><b class="text-ink">Ten rachunek nie wchodzi jeszcze do rozliczeń.</b> Czekamy, aż <strong>${escapeHtml(payerName)}</strong> potwierdzi, że wyłożył/a pieniądze. Do tego czasu nikomu nie nalicza się tu dług.</span>
+                    </div>`;
             } else {
-                confirmationBanner.innerHTML = '';
+                // Płatnika w ogóle nie ma. To też blokuje rozliczenie, a pole wyżej mówi
+                // tylko „Wskaż osobę…" — bez słowa o tym, co się bez tego nie stanie.
+                confirmationBanner.innerHTML = `
+                    <div class="card p-4 flex items-center gap-3">
+                        <span class="chip text-info text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Czeka</span>
+                        <span class="text-sm text-ink-2"><b class="text-ink">Ten rachunek nie wchodzi jeszcze do rozliczeń.</b> Wskaż wyżej, kto wyłożył pieniądze — bez tego nie ma komu oddawać.</span>
+                    </div>`;
             }
 
             // TRYB PODZIAŁU. Jedna decyzja o kształcie rachunku, podejmowana wtedy, gdy
@@ -5319,9 +5451,40 @@
             if (nudgeSend) nudgeSend.onclick = async () => {
                 if (!nudgeDraft) return;
                 const message = document.getElementById('nudge-message').value;
-                nudgeComposeModal.classList.remove('active');
-                await sendNudge(nudgeDraft.toId, nudgeDraft.amountG, nudgeDraft.currency, message);
-                nudgeDraft = null;
+                const { lista, currency } = nudgeDraft;
+
+                const wyslij = async () => {
+                    nudgeComposeModal.classList.remove('active');
+                    if (lista.length === 1) {
+                        await sendNudge(lista[0].toId, lista[0].amountG, currency, message);
+                    } else {
+                        // Bramka anty-spamowa działa PER OSOBA, więc ktoś, kto dostał
+                        // przypomnienie przed chwilą, po prostu wypada z tej wysyłki.
+                        // Raport mówi wprost, do ilu poszło — inaczej „wysłano" przy
+                        // pominięciu połowy listy byłoby nieprawdą.
+                        let poszlo = 0;
+                        for (const a of lista) {
+                            if (await sendNudge(a.toId, a.amountG, currency, message, { cicho: true })) poszlo += 1;
+                        }
+                        const pominieto = lista.length - poszlo;
+                        showToast(pominieto === 0
+                            ? `Przypomnienie poszło do ${poszlo} ${plural(poszlo, 'osoby', 'osób', 'osób')}.`
+                            : `Poszło do ${poszlo} z ${lista.length}. Reszta dostała przypomnienie przed chwilą.`);
+                    }
+                    nudgeDraft = null;
+                };
+
+                if (lista.length === 1) { await wyslij(); return; }
+                // Kilkanaście powiadomień na cudze telefony to nie jest ruch do zrobienia
+                // przypadkiem. Okno wypisuje imiona, żeby było widać, kogo to obudzi.
+                const imiona = lista.map((a) => memberName(a.toId)).join(', ');
+                openConfirm({
+                    title: `Przypomnieć ${lista.length} ${plural(lista.length, 'osobie', 'osobom', 'osobom')}?`,
+                    body: `Każda dostanie tę samą wiadomość i kwotę swojej zaległości: ${imiona}.`,
+                    confirmLabel: 'Wyślij',
+                    tone: 'brand',
+                    onConfirm: wyslij,
+                });
             };
             const nudgeSaveTpl = document.getElementById('nudge-save-template');
             if (nudgeSaveTpl) nudgeSaveTpl.onclick = () => {
