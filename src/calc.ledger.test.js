@@ -362,3 +362,78 @@ describe('simplifyDebts — niezmienniki (losowe)', () => {
     }
   });
 });
+
+// AUDYT 2026-08-18. Właściciel zapytał wprost, czy matematyka „najmniej przelewów" na pewno
+// działa przy jego skali (piętnaście osób). Odpowiedź wymagała doprecyzowania: dokładny
+// podział sięga czternastu osób, wyżej pracuje heurystyka, a jej wcześniejsza wersja
+// (pary i trójki) przegrywała O DWA PRZELEWY na układach wymagających podgrupy czwórkowej.
+// Na losowych danych to nie wychodziło — 0 na 720 prób — więc trzeba to było skonstruować.
+describe('simplifyDebts — skala powyżej progu dokładnego podziału', () => {
+  const doDlugow = (salda) => salda.flatMap((v, i) => (v < 0
+    ? [{ from: `p${i}`, to: 'pula', amountG: -v }]
+    : v > 0 ? [{ from: 'pula', to: `p${i}`, amountG: v }] : []));
+
+  // Zbiór {1, 2, 3, −6} nie ma ŻADNEJ pary ani trójki sumującej się do zera, więc wersja
+  // szukająca tylko do trójek nie potrafiła go rozpoznać i sklejała wszystko w jedną grupę.
+  const czworka = (skala) => [1, 2, 3, -6].map((x) => x * skala);
+
+  it('piętnaście osób: trzy czwórki + trójka rozliczają się optymalnie', () => {
+    const salda = [...czworka(1000), ...czworka(1100), ...czworka(1300), 5000, 7000, -12000];
+    expect(salda).toHaveLength(15);
+    // 15 osób − 4 rozłączne zerowe podgrupy = 11 przelewów.
+    expect(simplifyDebts(doDlugow(salda))).toHaveLength(11);
+  });
+
+  it('szesnaście osób: cztery czwórki rozliczają się optymalnie', () => {
+    const salda = [...czworka(1000), ...czworka(1100), ...czworka(1300), ...czworka(1700)];
+    expect(salda).toHaveLength(16);
+    expect(simplifyDebts(doDlugow(salda))).toHaveLength(12);
+  });
+
+  // Zbiór {1,2,3,4,5,−15} nie ma ani jednej właściwej podgrupy sumującej się do zera:
+  // każda musiałaby zawierać −15, a jedyne dodatnie dające 15 to wszystkie pięć naraz.
+  it('szesnaście osób: blok sześcioosobowy obok par też zostaje rozpoznany', () => {
+    const salda = [1000, 2000, 3000, 4000, 5000, -15000,
+      7000, -7000, 8000, -8000, 9000, -9000, 11000, -11000, 13000, -13000];
+    expect(salda).toHaveLength(16);
+    // pięć par (5 przelewów) + blok sześcioosobowy (5 przelewów) = 10.
+    expect(simplifyDebts(doDlugow(salda))).toHaveLength(10);
+  });
+
+  it('niezmienniki trzymają się do trzydziestu osób', () => {
+    let seed = 4242;
+    const rand = () => ((seed = (1103515245 * seed + 12345) & 0x7fffffff) / 0x7fffffff);
+    for (let iter = 0; iter < 200; iter++) {
+      const n = 15 + Math.floor(rand() * 16);
+      const salda = [];
+      let suma = 0;
+      for (let i = 0; i < n - 1; i++) {
+        const x = 1000 * (Math.floor(rand() * 9) - 4 || 1);
+        salda.push(x); suma += x;
+      }
+      salda.push(-suma);
+      const niezerowe = salda.filter((x) => x !== 0);
+      const transfery = simplifyDebts(doDlugow(salda));
+      // Salda odtworzone co do grosza.
+      const bal = {};
+      transfery.forEach((t) => {
+        bal[t.from] = (bal[t.from] || 0) - t.amountG;
+        bal[t.to] = (bal[t.to] || 0) + t.amountG;
+      });
+      salda.forEach((v, i) => { if (v !== 0) expect(bal[`p${i}`] || 0).toBe(v); });
+      expect(transfery.length).toBeLessThanOrEqual(niezerowe.length - 1);
+      expect(transfery.every((t) => t.amountG > 0 && t.from !== t.to && t.from !== 'pula' && t.to !== 'pula')).toBe(true);
+    }
+  });
+
+  it('trzydzieści osób bez ani jednej zerowej podgrupy liczy się w kilka milisekund', () => {
+    // Kwoty pierwsze — nic się nie zeruje, więc przeszukanie idzie do samego końca.
+    const primes = [101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173,
+      179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251];
+    const salda = primes.map((p) => p * 100);
+    salda.push(-salda.reduce((s, v) => s + v, 0));
+    const t0 = Date.now();
+    expect(simplifyDebts(doDlugow(salda))).toHaveLength(salda.length - 1);
+    expect(Date.now() - t0).toBeLessThan(300);
+  });
+});

@@ -384,37 +384,48 @@ function exactZeroSumGroups(people) {
   return groups.length ? groups : [people];
 }
 
-// Wyszukiwanie zerowych podgrup rozmiaru 2 i 3 przy dużej liczbie osób. Pary są bezpieczne
-// zawsze (wycięcie pary o przeciwnych saldach z większej zerowej grupy zostawia grupę nadal
-// zerową, więc nigdy nie zmniejsza liczby podgrup). Trójki są już heurystyką, ale nie
-// pogarszają wyniku względem samego zachłannego rozliczenia.
+// Wyszukiwanie zerowych podgrup przy liczbie osób powyżej progu dokładnego podziału.
+// Pary są bezpieczne zawsze (wycięcie pary o przeciwnych saldach z większej zerowej grupy
+// zostawia grupę nadal zerową, więc nigdy nie zmniejsza liczby podgrup). Trójki, czwórki
+// i piątki są już heurystyką, ale nie pogarszają wyniku względem samego zachłannego
+// rozliczenia.
+//
+// DO PIĄTEK, NIE DO TRÓJEK (audyt 2026-08-18, po pytaniu właściciela „czy ta matematyka
+// na pewno działa przy piętnastu osobach"). Wersja szukająca tylko par i trójek przegrywała
+// o DWA PRZELEWY na układach, w których optimum wymaga podgrupy czteroosobowej — np. salda
+// 1, 2, 3, −6, gdzie żadna para ani trójka się nie zeruje. Trzy takie czwórki wśród
+// piętnastu osób dawały 13 przelewów zamiast 11. Na losowych układach to nie wychodziło
+// (0 na 720 prób), więc trzeba to było skonstruować celowo.
+//
+// Koszt: przeszukanie piątek to n^5/120, przy 25 osobach ~88 tys. kroków — niezauważalne.
+// Szóstek już nie szukamy: n^6/720 rośnie za szybko, a zysk maleje.
+const MAX_HEURISTIC_GROUP = 6;
+
 function heuristicZeroSumGroups(people) {
   const rest = [...people];
   const groups = [];
-  for (let sizeWanted = 2; sizeWanted <= 3; sizeWanted++) {
-    let found = true;
-    while (found) {
-      found = false;
-      outer:
-      for (let a = 0; a < rest.length; a++) {
-        for (let b = a + 1; b < rest.length; b++) {
-          if (sizeWanted === 2) {
-            if (rest[a].amt + rest[b].amt === 0) {
-              groups.push([rest[a], rest[b]]);
-              rest.splice(b, 1); rest.splice(a, 1);
-              found = true; break outer;
-            }
-            continue;
-          }
-          for (let c = b + 1; c < rest.length; c++) {
-            if (rest[a].amt + rest[b].amt + rest[c].amt === 0) {
-              groups.push([rest[a], rest[b], rest[c]]);
-              rest.splice(c, 1); rest.splice(b, 1); rest.splice(a, 1);
-              found = true; break outer;
-            }
-          }
-        }
-      }
+
+  // Znajduje pierwszą podgrupę o zadanym rozmiarze sumującą się do zera. Rekurencja zamiast
+  // czterech zagnieżdżonych pętli — przy pięciu poziomach ręczne pisanie byłoby nieczytelne.
+  const znajdz = (sizeWanted, start, wybrane, suma) => {
+    if (wybrane.length === sizeWanted) return suma === 0 ? [...wybrane] : null;
+    for (let i = start; i < rest.length; i++) {
+      wybrane.push(i);
+      const trafienie = znajdz(sizeWanted, i + 1, wybrane, suma + rest[i].amt);
+      wybrane.pop();
+      if (trafienie) return trafienie;
+    }
+    return null;
+  };
+
+  for (let sizeWanted = 2; sizeWanted <= MAX_HEURISTIC_GROUP; sizeWanted++) {
+    for (;;) {
+      if (rest.length < sizeWanted) break;
+      const indeksy = znajdz(sizeWanted, 0, [], 0);
+      if (!indeksy) break;
+      groups.push(indeksy.map((i) => rest[i]));
+      // Od końca, żeby wcześniejsze indeksy nie przesunęły się przy usuwaniu.
+      indeksy.slice().reverse().forEach((i) => rest.splice(i, 1));
     }
   }
   if (rest.length) groups.push(rest);
