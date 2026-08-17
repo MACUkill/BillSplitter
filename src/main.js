@@ -1820,9 +1820,20 @@
             // płatniku za całą ekipę plan ma dokładnie tyle przelewów co podział para po parze,
             // bo każdy i tak oddaje osobno. Obiecywanie wtedy oszczędności byłoby kłamstwem.
             const { plan, pairwise } = planVsPairwise(ledger);
+            // KWOTY BYWAJĄ TYMCZASOWE i trzeba to powiedzieć, skoro plan stoi teraz NAD
+            // sekcją „Czeka na Ciebie". Dopóki rachunek czeka na mój ruch („Stuknij, co
+            // Twoje", „Uzupełnij kwotę"), plan liczy się z niepełnych danych i kwoty jeszcze
+            // się przesuną. Wcześniej ta sekcja była niżej, więc człowiek najpierw widział,
+            // czego brakuje; po zamianie kolejności widzi najpierw wynik i mógłby mu zaufać
+            // bardziej, niż zasługuje. Zdanie pojawia się WYŁĄCZNIE wtedy, gdy coś faktycznie
+            // czeka — przy pustej skrzynce nie dokłada ani słowa.
+            const czekaNaMnie = actionBillsForMe().length;
+            const zastrzezenie = czekaNaMnie
+                ? ` <b class="text-ink-2">Kwoty mogą się jeszcze zmienić — ${czekaNaMnie} ${plural(czekaNaMnie, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')} na Twój ruch.</b>`
+                : '';
             note.innerHTML = `${plan < pairwise
                 ? `Rozliczamy najkrótszą drogą: <b>${plan} ${plural(plan, 'przelew', 'przelewy', 'przelewów')}</b> zamiast ${pairwise}.`
-                : 'Rozliczamy najkrótszą drogą — krócej się tu nie da.'} <button class="plan-open-settle-btn underline" type="button">Kto komu jest winien →</button>`;
+                : 'Rozliczamy najkrótszą drogą — krócej się tu nie da.'}${zastrzezenie} <button class="plan-open-settle-btn underline" type="button">Kto komu jest winien →</button>`;
 
             list.querySelectorAll('.plan-pay-btn').forEach((btn) => {
                 btn.onclick = () => openSettleModal(btn.dataset.to, Number(btn.dataset.amountG), btn.dataset.currency, 'send');

@@ -342,14 +342,6 @@ the verdict, and DESIGN.md
                  ma swoje miejsce w ustawieniach pokoju i tam jest pełniejszy —
                  z informacją, kto ma sposób płatności, a kto jeszcze nie zajął imienia. -->
 
-            <!-- CO CZEKA NA CIEBIE — te same sprawy, co w skrzynce (poziom 1 i 2 progu),
-                 ale na wejściu do pokoju. Skrzynka jest dla tych, którzy jej szukają;
-                 to jest dla tych, którzy po prostu weszli. -->
-            <div id="balance-waiting" class="hidden mt-5">
-                <h4 class="text-sm font-bold text-ink-3 mb-2">Czeka na Ciebie</h4>
-                <div id="balance-waiting-list" class="space-y-2"></div>
-            </div>
-
             <!-- CO MASZ ZROBIĆ — jedyne miejsce z akcjami rozliczeniowymi na tym ekranie,
                  liczone z NAJKRÓTSZEGO PLANU (`simplifyDebts`), a nie z długów para po parze.
                  Dzięki temu Bilans i „Kto komu ile" mówią jednym głosem, a ekran główny
@@ -358,12 +350,28 @@ the verdict, and DESIGN.md
                  Strona „płacisz" idzie jawnymi wierszami (w planie minimalnym to zwykle
                  zero albo jeden przelew), a strona „dostajesz" JEDNĄ LINIĄ ZBIORCZĄ —
                  bo kto wyłożył pieniądze za piętnaście osób, ma czternaście wpłat do
-                 odebrania i lista rozjechałaby cały ekran. -->
+                 odebrania i lista rozjechałaby cały ekran.
+
+                 STOI NAD „Czeka na Ciebie" (2026-08-17, uwaga właściciela). Ta sekcja jest
+                 STAŁA — dopóki ktoś komuś coś jest winien, tu wisi. „Czeka na Ciebie"
+                 pojawia się i znika, więc gdyby stało wyżej, plan skakałby po ekranie:
+                 raz tuż pod kwotą, raz zepchnięty o pół ekranu, zależnie od tego, czy ktoś
+                 akurat coś zgłosił. Rzecz stała ma mieć stałe miejsce, żeby dało się wyrobić
+                 odruch. Powiadomienia mają drugi kanał — dzwonek z odznaką w nagłówku —
+                 więc niżej nie giną; plan takiego kanału nie ma. -->
             <section id="balance-plan" class="hidden mt-5">
                 <h4 class="text-sm font-bold text-ink-3 mb-2">Co masz zrobić</h4>
                 <div id="balance-plan-list" class="space-y-2"></div>
                 <p id="balance-plan-note" class="text-xs text-ink-3 mt-2"></p>
             </section>
+
+            <!-- CO CZEKA NA CIEBIE — te same sprawy, co w skrzynce (poziom 1 i 2 progu),
+                 ale na wejściu do pokoju. Skrzynka jest dla tych, którzy jej szukają;
+                 to jest dla tych, którzy po prostu weszli. -->
+            <div id="balance-waiting" class="hidden mt-5">
+                <h4 class="text-sm font-bold text-ink-3 mb-2">Czeka na Ciebie</h4>
+                <div id="balance-waiting-list" class="space-y-2"></div>
+            </div>
 
             <!-- Pusty pokój na Bilansie: zero to tu stan sukcesu, ale w świeżym pokoju
                  znaczy „jeszcze nic nie ma". Bez tego zakładka była samym limonkowym
