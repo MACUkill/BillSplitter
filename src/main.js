@@ -1326,8 +1326,15 @@
                 const text = myMember.id === bill.payerId ? "Potwierdź, że zapłaciłeś/aś" : `Czeka na potwierdzenie: ${escapeHtml(payerName)}`;
                 return `<p class="text-info font-semibold">${text}</p>`;
             }
+            // KWOTĘ UZUPEŁNIA WYŁĄCZNIE PŁATNIK (zgłoszenie właściciela 2026-08-18).
+            // Po potwierdzeniu płatnika pole kwoty jest zablokowane dla wszystkich poza nim
+            // (`canEditMainFields`), więc wołanie reszty ekipy do działania było wołaniem
+            // do czynności, której nie mają jak wykonać.
             if (!bill.totalAmount || bill.totalAmount <= 0) {
-                return `<p class="text-info font-semibold">Uzupełnij kwotę</p>`;
+                const czekamNaPlatnika = bill.payerConfirmed && myMember.id !== bill.payerId;
+                return czekamNaPlatnika
+                    ? `<p class="text-ink-3">Czeka na kwotę od: ${escapeHtml(bill.participants[bill.payerId]?.name || 'płatnika')}</p>`
+                    : `<p class="text-info font-semibold">Uzupełnij kwotę</p>`;
             }
 
             if (!participantReady(bill, myMember.id)) {
@@ -1384,7 +1391,14 @@
                     ? make('action', 'Potwierdź, że zapłaciłeś/aś')
                     : make('wait', `Czeka na ${escapeHtml(memberName(bill.payerId))}`);
             }
-            if (!bill.totalAmount || bill.totalAmount <= 0) return make('action', 'Uzupełnij kwotę');
+            // Patrz uwaga wyżej: dla niepłatnika to nie jest zadanie, tylko oczekiwanie.
+            // Ton 'action' zapala kropkę i wciąga rachunek do „Czeka na Ciebie", więc dawał
+            // sygnał o czynności, której ta osoba nie może wykonać.
+            if (!bill.totalAmount || bill.totalAmount <= 0) {
+                return (bill.payerConfirmed && myMember.id !== bill.payerId)
+                    ? make('wait', `Czeka na kwotę: ${escapeHtml(memberName(bill.payerId))}`)
+                    : make('action', 'Uzupełnij kwotę');
+            }
             // W trybie „po równo" nikt niczego nie uzupełnia, więc ten stan tam nie
             // istnieje — i to jest cała różnica między dwoma trybami rachunku.
             if (!participantReady(bill, myMember.id)) return make('action', 'Stuknij, co Twoje');
@@ -2582,6 +2596,37 @@
             const picked = list.querySelectorAll('.person-row[aria-pressed="true"]').length;
             const total = list.querySelectorAll('.person-row').length;
             counter.textContent = total ? `${picked}/${total}` : '';
+            syncMassPick(box, list, picked, total);
+        };
+
+        // MASOWY WYBÓR OSÓB (zgłoszenie właściciela 2026-08-18).
+        // Przy ekipie dwudziestoosobowej wybranie pięciu osób znaczyło piętnaście
+        // odklikiwań. Pasek dokłada dwa ruchy: „Wszyscy" i „Nikt".
+        //
+        // Pasek POWSTAJE Z KODU, nie ze znaczników, bo listy osób są trzy (nowy rachunek,
+        // skład rachunku, kto wziął pozycję) i trzy kopie tego samego rozjechałyby się
+        // przy pierwszej zmianie.
+        //
+        // Pojawia się dopiero od PIĘCIU osób: przy trzech dwa dodatkowe przyciski są
+        // hałasem, a nie pomocą.
+        const MASS_PICK_MIN = 5;
+        const syncMassPick = (box, list, picked, total) => {
+            let pasek = box.parentElement.querySelector('.person-mass');
+            if (total < MASS_PICK_MIN) { if (pasek) pasek.remove(); return; }
+            if (!pasek) {
+                pasek = document.createElement('div');
+                pasek.className = 'person-mass filter-pills mb-2';
+                pasek.innerHTML = `
+                    <button type="button" class="person-mass-btn filter-pill" data-mass="all">Wszyscy</button>
+                    <button type="button" class="person-mass-btn filter-pill" data-mass="none">Nikt</button>`;
+                box.insertAdjacentElement('afterend', pasek);
+            }
+            // Widoczne, czyli po odsianiu szukaniem — „Wszyscy" po wpisaniu „Ka" bierze
+            // Kasię i Kamila, a nie całą listę. Inaczej szukanie i masowy wybór kłóciłyby się.
+            const widoczne = [...list.querySelectorAll('.person-row')].filter((r) => !r.classList.contains('hidden'));
+            const wybrane = widoczne.filter((r) => r.getAttribute('aria-pressed') === 'true').length;
+            pasek.querySelector('[data-mass="all"]').disabled = widoczne.length === 0 || wybrane === widoczne.length;
+            pasek.querySelector('[data-mass="none"]').disabled = wybrane === 0;
         };
 
         // Ten sam mechanizm obsługuje teraz DWIE rzeczy: listę osób i listę pozycji
@@ -2647,6 +2692,22 @@
                 const input = e.target.closest('.person-search-input');
                 if (!input) return;
                 applyPersonFilter(input.closest('.person-search').parentElement);
+            });
+            document.addEventListener('click', (e) => {
+                const btn = e.target.closest('.person-mass-btn');
+                if (!btn || btn.disabled) return;
+                const wrap = btn.closest('.person-mass').parentElement;
+                const list = personSearchList(wrap);
+                if (!list) return;
+                const chce = btn.dataset.mass === 'all';
+                // Stukamy WIERSZ, zamiast przestawiać atrybut: każda z trzech list zapisuje
+                // stan inaczej (jedna do bazy, inne do pamięci okna), a przejście tą samą
+                // drogą co palec gwarantuje, że nic się nie rozjedzie.
+                [...list.querySelectorAll('.person-row')]
+                    .filter((r) => !r.classList.contains('hidden'))
+                    .filter((r) => (r.getAttribute('aria-pressed') === 'true') !== chce)
+                    .forEach((r) => r.click());
+                syncPersonSearchCount(wrap);
             });
         };
 
