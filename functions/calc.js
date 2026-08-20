@@ -43,11 +43,12 @@ function advancedExactSharesGrosze(bill) {
   // obciążyć. Liczymy ją osobno, bo wchodzi do kwoty rachunku, ale NIE do niczyjego udziału.
   let sharedAssignedG = 0;
   let sharedOrphanG = 0;
+  let orphanCount = 0;
   (bill.sharedCosts || []).forEach((sc) => {
     const g = toGrosze(sc.amount || 0);
     const hasTaker = (sc.sharedBy || []).some((id) => active.some((a) => a.id === id));
     if (hasTaker) sharedAssignedG += g;
-    else sharedOrphanG += g;
+    else { sharedOrphanG += g; orphanCount += 1; }
   });
   const sharedTotalG = sharedAssignedG + sharedOrphanG;
 
@@ -80,7 +81,10 @@ function advancedExactSharesGrosze(bill) {
     return { participant: p, individualG, sharedG, globalG, exactG: individualG + sharedG + globalG };
   });
 
-  return { shares, individualSubtotalG, sharedTotalG, sharedAssignedG, sharedOrphanG, globalTotalG };
+  return {
+    shares, individualSubtotalG, sharedTotalG, sharedAssignedG, sharedOrphanG,
+    orphanCount, itemCount: (bill.sharedCosts || []).length, globalTotalG,
+  };
 }
 
 // Kontrola poprawności: suma DOKŁADNYCH pozycji vs kwota rachunku.
@@ -125,7 +129,8 @@ function computeControl(enteredSubtotalG, billTotalG) {
 // dzielą rachunek: kilka rzeczy imiennie, reszta po równo.
 export const calculateAll = (bill) => {
   const {
-    shares, individualSubtotalG, sharedTotalG, sharedAssignedG, sharedOrphanG, globalTotalG,
+    shares, individualSubtotalG, sharedTotalG, sharedAssignedG, sharedOrphanG,
+    orphanCount, itemCount, globalTotalG,
   } = advancedExactSharesGrosze(bill);
 
   const activeCount = shares.filter((s) => isActive(s.participant)).length;
@@ -181,6 +186,14 @@ export const calculateAll = (bill) => {
     // Interfejs pokazuje ją wprost, żeby nikt nie musiał się domyślać, skąd wynik.
     unallocated: fromGrosze(unallocatedG),
     perPersonUnallocated: fromGrosze(perPersonUnallocatedG),
+    // SKĄD bierze się kwota nierozpisana. Ekran musi to rozróżnić, bo dla czytającego
+    // to dwie różne historie. Pozycja bez chętnego („nikt tego nie wziął") naprawia się
+    // jednym stuknięciem. Różnica między kwotą rachunku a sumą pozycji („reszta
+    // rachunku") to po prostu to, czego nikt nie rozpisał — a na rachunku bez ani jednej
+    // pozycji jest całą jego treścią, nie usterką, więc nie wolno o niej mówić alarmem.
+    orphanAmount: fromGrosze(sharedOrphanG),
+    orphanCount,
+    itemCount,
   };
 };
 

@@ -4067,42 +4067,96 @@
         // nad nimi już nie — czytałoby się „Pozycje 96,00", zanim pozycje w ogóle będą
         // na ekranie. Dlatego na wierzchu zostaje wyłącznie odpowiedź („Twój udział"),
         // a skąd się wzięła, mówi zwijany wiersz dla tych, którzy pytają.
-        const myShareHtml = (pt, paymentInfo = '') => {
+        // KWOTA NIEROZPISANA W ROZPISCE UDZIAŁU (zgłoszenie właściciela 2026-08-20).
+        // „Twój udział 40,00" nad rozpiską „Pozycje 0,00 / Koszty wspólne 0,00" był liczbą,
+        // której NIE DA SIĘ wyprowadzić z tego, co widać. Rozpiska obiecuje w podpisie, że
+        // powie, z czego składa się kwota, i tej obietnicy nie dotrzymywała — a to jedyny
+        // powód, dla którego ktoś przestaje ufać rozliczeniu. Brakującym składnikiem jest
+        // udział w kwocie, której nikt nie wziął na siebie, czyli `pt.restAmount`.
+        //
+        // Podpis zależy od ŹRÓDŁA reszty, bo to dwie różne wiadomości:
+        //   pozycje bez chętnego      -> „Nikt nie wziął", da się naprawić stuknięciem,
+        //   różnica do kwoty rachunku -> „Reszta rachunku", nic nie jest zepsute.
+        const restInfo = (calc) => {
+            const kwota = calc.unallocated || 0;
+            if (kwota <= 0.004) return null;
+            const sierot = calc.orphanCount || 0;
+            // Pół grosza tolerancji: obie liczby idą przez złotówki, więc porównanie na
+            // sztywną równość potrafiłoby pęknąć na groszu z kosztu procentowego.
+            const tylkoSieroty = sierot > 0 && Math.abs((calc.orphanAmount || 0) - kwota) < 0.005;
+            let note = '';
+            if (sierot > 0) {
+                note = `Na razie po równo: ${sierot} ${plural(sierot, 'pozycja', 'pozycje', 'pozycji')} bez właściciela. Zaznacz na paragonie, co jadłeś, a kwota się przeliczy.`;
+            } else if ((calc.itemCount || 0) > 0) {
+                note = 'Na razie po równo: pozycje nie spinają się z kwotą rachunku, więc różnica idzie na wszystkich.';
+            }
+            // Bez zdania, gdy nie ma ani jednej pozycji. Wtedy podział po równo jest CAŁĄ
+            // treścią rachunku, a nie stanem przejściowym, i „na razie" siałoby niepokój
+            // na każdym zwykłym rachunku dzielonym po równo.
+            return { caption: tylkoSieroty ? 'Nikt nie wziął (po równo)' : 'Reszta rachunku (po równo)', note };
+        };
+
+        // Wiersze zerowe nie wchodzą do rozpiski. „Pozycje z paragonu 0,00" nie niesie nic
+        // poza szumem, a na rachunku bez pozycji zostawiało trzy zera nad jedyną liczbą,
+        // która coś znaczy. Reszta idzie na koniec, bo czyta się jak dopowiedzenie do tego,
+        // co ktoś wybrał sam.
+        // `zwinPojedynczy` tylko dla WŁASNEJ karty. Gdy zostaje jeden składnik, jest on co
+        // do grosza tą samą liczbą, która stoi wyżej jako „Twój udział", a czym ta liczba
+        // jest, mówi już zdanie nad rozwinięciem — powtarzanie jej w rozpisce niczego nie
+        // tłumaczy. Na CUDZEJ karcie tego zdania nie ma (jest poleceniem, a nie opisem),
+        // więc pojedynczy wiersz zostaje: bez niego kwota znów byłaby bez podpisu, czyli
+        // dokładnie tym, co naprawiamy.
+        const breakdownRows = (row, wiersze, rest, restAmount, zwinPojedynczy = false) => {
+            const wszystkie = rest ? [...wiersze, [rest.caption, restAmount]] : wiersze;
+            const niezerowe = wszystkie.filter(([, v]) => Math.abs(v || 0) >= 0.005);
+            if (zwinPojedynczy && niezerowe.length < 2) return '';
+            return niezerowe.map(([c, v]) => row(c, v)).join('');
+        };
+
+        const myShareHtml = (pt, paymentInfo = '', rest = null) => {
             const cur = billData.currency;
             const row = (caption, amount) =>
                 `<div class="flex justify-between gap-2 py-0.5"><span class="text-ink-2">${caption}</span><span class="font-semibold">${amount.toFixed(2).replace('.', ',')}</span></div>`;
             const conversion = getPlnConversionHtml(pt.total, cur, billData.exchangeRatePLN);
+            const rows = breakdownRows(row, [
+                ['Pozycje z paragonu', pt.sharedAmount],
+                ['Koszty wspólne', pt.globalCostsAmount],
+                ['Koszt tylko Twój', pt.individualAmount],
+            ], rest, pt.restAmount, true);
             return `<div class="mt-4 pt-3 border-t border-ink/10">
                 <div class="flex items-baseline justify-between gap-3">
                     <span class="font-bold">Twój udział</span>
                     <span class="text-2xl">${amountHtml(toGrosze(pt.total), cur, 'text-ink')}</span>
                 </div>
                 ${conversion ? `<p class="text-right text-xs text-ink-2 mt-0.5">${conversion}</p>` : ''}
-                <details class="mt-2">
+                ${rest && rest.note ? `<p class="text-sm text-ink-2 mt-1">${rest.note}</p>` : ''}
+                ${rows ? `<details class="mt-2">
                     <summary class="settle-others-summary">
                         <span>Z czego się składa</span>
                         <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
                     </summary>
-                    <div class="mt-2 text-sm">
-                        ${row('Pozycje z paragonu', pt.sharedAmount)}
-                        ${row('Koszty wspólne', pt.globalCostsAmount)}
-                        ${row('Koszt tylko Twój', pt.individualAmount)}
-                    </div>
-                </details>
+                    <div class="mt-2 text-sm">${rows}</div>
+                </details>` : ''}
                 ${paymentInfo}
             </div>`;
         };
 
-        const participantBreakdownHtml = (pt, isMe, paymentInfo = '') => {
+        // Zdanie „na razie" zostaje wyłącznie na własnej karcie: jest poleceniem („zaznacz
+        // na paragonie"), a na cudzej karcie nie ma go kto wykonać. Sam wiersz reszty wchodzi
+        // tu tak samo, bo cudza kwota musi się dać wytłumaczyć tak samo jak własna.
+        const participantBreakdownHtml = (pt, isMe, paymentInfo = '', rest = null) => {
             const cur = billData.currency;
             // `caption`, nie `label`: strażnik escapowania traktuje `label` jako daną z bazy
             // (bo w profilu metod płatności nią jest), a tu wchodzą wyłącznie napisy z kodu.
             const row = (caption, amount) =>
                 `<div class="flex justify-between gap-2"><span class="text-ink-3">${caption}</span><span class="text-ink-2">${amount.toFixed(2).replace('.', ',')}</span></div>`;
+            const rows = breakdownRows(row, [
+                ...(isMe ? [] : [['Koszty własne', pt.individualAmount]]),
+                ['Pozycje', pt.sharedAmount],
+                ['Koszty wspólne', pt.globalCostsAmount],
+            ], rest, pt.restAmount);
             return `<div class="mt-3 pt-3 border-t border-ink/10 text-sm space-y-0.5">
-                ${isMe ? '' : row('Koszty własne', pt.individualAmount)}
-                ${row('Pozycje', pt.sharedAmount)}
-                ${row('Koszty wspólne', pt.globalCostsAmount)}
+                ${rows}
                 <div class="flex items-baseline justify-between gap-2 pt-2">
                     <span class="text-sm font-bold text-ink-3">Łącznie</span>
                     <span class="text-2xl">${amountHtml(toGrosze(pt.total), cur, 'text-ink')}</span>
@@ -4351,6 +4405,10 @@
                 return memberName(a.participant.id).localeCompare(memberName(b.participant.id));
             });
 
+            // Raz na przerysowanie, nie raz na osobę: przy ekipie piętnastoosobowej to
+            // piętnaście przebiegów po tych samych polach dla identycznego wyniku.
+            const reszta = restInfo(calculations);
+
             sortedParticipants.forEach(pt => {
                 const p = pt.participant;
                 const isMe = p.id === myGroupMember.id;
@@ -4437,7 +4495,7 @@
                             </div>
                         </div>
 
-                        ${myShareHtml(pt, paymentInfo)}
+                        ${myShareHtml(pt, paymentInfo, reszta)}
                     </div>`;
                 } else { // Other participants view
                     participantHTML = `
@@ -4449,7 +4507,7 @@
                                 ${statusDisplayHtml}
                             </div>
                         </div>
-                        ${participantBreakdownHtml(pt, false, paymentInfo)}
+                        ${participantBreakdownHtml(pt, false, paymentInfo, reszta)}
                     </div>`;
                 }
                 
