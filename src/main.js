@@ -1787,7 +1787,15 @@
                             <span class="amount text-2xl text-owe flex-shrink-0">${fmtMoney(t.amountG, p.currency)}</span>
                         </div>
                         <div class="mt-3 flex items-center gap-2">
-                            <button class="plan-pay-btn btn btn-dark flex-grow" data-to="${escapeHtml(t.other)}" data-amount-g="${t.amountG}" data-currency="${escapeHtml(p.currency)}">Zapłać ${fmtMoney(t.amountG, p.currency)}</button>
+                            <!-- „Ureguluj" i CZERWONY, jak wszędzie indziej (2026-08-18).
+                                 Stało tu „Zapłać" na białym przycisku — nie z decyzji, tylko
+                                 z bezwładu: klasa przywędrowała z poprzedniego układu Bilansu,
+                                 gdzie ten przycisk leżał na limonkowym bloku. W nowym miejscu
+                                 kłóciła się z trzema innymi wejściami do tej samej czynności
+                                 („Kto komu ile", skrzynka, tytuł arkusza) ORAZ z czerwoną kwotą
+                                 na tej samej karcie. Czerwień znaczy w tej aplikacji „pieniądze
+                                 wychodzą od Ciebie" i tak ma zostać. -->
+                            <button class="plan-pay-btn btn btn-danger flex-grow" data-to="${escapeHtml(t.other)}" data-amount-g="${t.amountG}" data-currency="${escapeHtml(p.currency)}">Ureguluj</button>
                         </div>
                         <p class="text-xs text-ink-3 mt-2">Tak wychodzi najkrócej. <button class="plan-why-btn underline" type="button">Skąd ta kwota?</button></p>
                     </div>`).join('');
