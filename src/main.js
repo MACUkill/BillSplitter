@@ -896,10 +896,12 @@
 
         let refreshDeckPin = () => {};
 
+        // Nazwa została historyczna, ale ten nasłuch obsługuje teraz DWIE rzeczy: pasek
+        // nawigacji i okna modalne. Obie reagują na to samo zdarzenie i na ten sam próg,
+        // więc drugi nasłuch byłby drugą prawdą o tym, czy klawiatura jest otwarta.
         const watchKeyboardForDeck = () => {
             const vv = window.visualViewport;
-            const deck = document.getElementById('deck-nav');
-            if (!vv || !deck) return;
+            if (!vv) return;
 
             let queued = false;
             const apply = () => {
@@ -907,7 +909,31 @@
                 // Klawiatura zabiera 250 px i więcej; pasek przeglądarki najwyżej 90 px.
                 // Próg 140 px rozdziela je z zapasem w obie strony.
                 const covered = document.documentElement.clientHeight - vv.height;
-                deck.classList.toggle('deck-keyboard', covered >= KEYBOARD_MIN_PX);
+                const klawiatura = covered >= KEYBOARD_MIN_PX;
+                const deck = document.getElementById('deck-nav');
+                if (deck) deck.classList.toggle('deck-keyboard', klawiatura);
+
+                // KLAWIATURA MA PODNOSIĆ ARKUSZ, A NIE CHOWAĆ GO POD SOBĄ
+                // (zgłoszenie właściciela, iPhone 12, 2026-08-20).
+                //
+                // Arkusze stoją w oknie `position: fixed; inset: 0`, a iOS przy otwarciu
+                // klawiatury NIE zmniejsza układowego okna widoku — zmniejsza wyłącznie
+                // widoczne. Okno modalne zostawało więc pełnej wysokości, a arkusz dosunięty
+                // do jego dołu lądował pod klawiaturą.
+                //
+                // Objaw był mylący: za drugim razem Safari sam doprzewijał zawartość i wtedy
+                // wyglądało to poprawnie. Stąd wrażenie, że „czasem działa" — a naprawdę
+                // działał przypadek, nie układ.
+                //
+                // `--kb-inset` niesie wysokość zasłoniętego pasa. Skracamy o nią okno modalne
+                // WYSOKOŚCIĄ, nie `bottom`: `bottom: 0` ustawia klasa `inset-0` z Tailwinda
+                // i wygrałaby kolejnością, natomiast wysokości nikt tam nie ustawia, więc
+                // konfliktu nie ma (przy `position: fixed` podana wysokość unieważnia `bottom`).
+                //
+                // Odejmujemy też `offsetTop`, bo Safari potrafi przesunąć widoczne okno w górę
+                // zamiast je skrócić — wtedy sama różnica wysokości kłamie o kilkadziesiąt pikseli.
+                const zaslona = Math.max(0, document.documentElement.clientHeight - vv.offsetTop - vv.height);
+                document.documentElement.style.setProperty('--kb-inset', `${klawiatura ? zaslona : 0}px`);
             };
             const schedule = () => {
                 if (queued) return;

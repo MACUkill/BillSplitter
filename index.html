@@ -41,7 +41,10 @@
            w oknie z niższą warstwą — akcji nie dało się kliknąć. Warstwę ustala teraz
            arkusz w jednym miejscu, a nawigacja i tak schodzi z drogi (patrz `.deck`). */
         .modal { display: none; z-index: 50; }
-        .modal.active { display: flex; }
+        /* Wysokość, a nie `bottom`: `bottom: 0` ustawia już klasa `inset-0` z Tailwinda.
+           Przy `position: fixed` podana wysokość unieważnia `bottom`, więc konfliktu nie ma.
+           `--kb-inset` ustawia `watchKeyboardForDeck` — tam pełne wyjaśnienie. */
+        .modal.active { display: flex; height: calc(100% - var(--kb-inset, 0px)); }
 
         /* TRZY PIĘTRA OKIEN i ani jednego więcej. Wszystkie okna miały wcześniej tę samą
            warstwę, więc o tym, które jest na wierzchu, decydowała KOLEJNOŚĆ W DOKUMENCIE.

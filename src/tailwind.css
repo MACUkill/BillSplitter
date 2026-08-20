@@ -983,7 +983,9 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     /* `dvh` bierze pod uwagę pasek adresu, który na telefonie chowa się przy przewijaniu;
        `vh` zostaje jako zapas dla przeglądarek bez tej jednostki. */
     max-height: 88vh;
-    max-height: min(88vh, 100dvh - 2rem);
+    /* Odjęcie `--kb-inset` jest konieczne mimo skrócenia okna: bez niego arkusz wyższy
+       niż to, co zostało nad klawiaturą, wystawałby poza skrócone okno górą. */
+    max-height: calc(min(88vh, 100dvh - 2rem) - var(--kb-inset, 0px));
     background-color: rgb(var(--surface));
     border-radius: 1.75rem 1.75rem 0 0;
     box-shadow: 0 -8px 40px rgb(var(--shadow) / 0.18);
@@ -999,7 +1001,7 @@ body:has(#offline-banner:not(.hidden)) #app-container {
 
   /* Pełnoekranowa odmiana — dla treści, która jest osobnym miejscem, a nie decyzją
      do domknięcia (rejestr wpłat). Ten sam nagłówek i ten sam gest, inna wysokość. */
-  .sheet-full { max-height: min(96vh, 100dvh - 0.5rem); height: 100%; }
+  .sheet-full { max-height: calc(min(96vh, 100dvh - 0.5rem) - var(--kb-inset, 0px)); height: 100%; }
 
   .sheet-head {
     flex-shrink: 0;
