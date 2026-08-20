@@ -5147,6 +5147,14 @@
                 // aplikację bez adresu grupy, więc bez kodu użytkownik ląduje w pustce.
                 const serial = document.getElementById('install-room-serial');
                 if (serial) serial.textContent = currentGroupId ? formatSerial(currentGroupId) : 'brak';
+                // Poza pokojem nie ma czego kopiować: przycisk przestaje udawać, że ma.
+                const serialBtn = document.getElementById('install-room-serial-btn');
+                if (serialBtn) {
+                    serialBtn.disabled = !currentGroupId;
+                    serialBtn.classList.toggle('opacity-60', !currentGroupId);
+                    const icon = serialBtn.querySelector('i');
+                    if (icon) icon.classList.toggle('hidden', !currentGroupId);
+                }
                 modal.classList.add('active');
             };
 
@@ -5156,6 +5164,10 @@
             });
 
             if (installButton) installButton.addEventListener('click', showInstallSheet);
+
+            // Ten sam komunikat co przy numerze w nagłówku pokoju — kopiuje się kod, nie link.
+            const installSerialBtn = document.getElementById('install-room-serial-btn');
+            if (installSerialBtn) installSerialBtn.onclick = () => copyText(currentGroupId, 'Kod pokoju skopiowany.');
 
             const confirmBtn = document.getElementById('install-pwa-confirm');
             if (confirmBtn) confirmBtn.onclick = async () => {

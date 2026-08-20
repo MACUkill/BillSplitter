@@ -817,7 +817,13 @@ the verdict, and DESIGN.md
                     <div class="card p-4">
                         <p class="text-sm font-bold">Kod pokoju miej pod ręką</p>
                         <p class="text-sm text-ink-2 mt-1">Skrót z ekranu początkowego ma własną pamięć, osobną od przeglądarki. Jeśli otworzy się na liście pokoi zamiast w Twoim pokoju, wejdź kodem:</p>
-                        <p id="install-room-serial" class="serial text-ink text-lg font-bold mt-2"></p>
+                        <!-- Kod przepisuje się z ekranu do ekranu, więc musi dać się wziąć
+                             stuknięciem — tak samo jak numer w nagłówku pokoju. Ikona stoi
+                             obok, bo na telefonie nie ma najechania, które pokazałoby `title`. -->
+                        <button id="install-room-serial-btn" class="tap mt-2 flex items-center gap-2 min-h-tap" title="Kod pokoju: stuknij, aby skopiować" aria-label="Kopiuj kod pokoju">
+                            <span id="install-room-serial" class="serial text-ink text-lg font-bold"></span>
+                            <i class="fas fa-copy text-ink-3 text-sm"></i>
+                        </button>
                     </div>
                 </div>
 
