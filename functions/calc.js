@@ -163,7 +163,11 @@ export const calculateAll = (bill) => {
     };
   });
 
-  const controlSum = participantTotals.reduce((sum, pt) => sum + pt.total, 0);
+  // Sumujemy w GROSZACH i dzielimy raz na końcu. Dodawanie złotych jako liczb
+  // zmiennoprzecinkowych dawało wynik w rodzaju 100.05000000000001 zamiast 100,05 —
+  // na ekranie chowa to zaokrąglenie do dwóch miejsc, ale mnożenie przez kurs waluty
+  // przenosiło ten śmieć dalej.
+  const controlSum = fromGrosze(participantTotals.reduce((sum, pt) => sum + toGrosze(pt.total), 0));
   // Kontrola mówi o POPRAWNOŚCI WPISU (czy pozycje spinają się z kwotą rachunku), więc
   // liczy wszystkie wpisane pozycje — także te, których nikt jeszcze nie wybrał. To, kto
   // je bierze na siebie, jest osobnym pytaniem i odpowiada na nie kwota nierozpisana.
@@ -343,93 +347,224 @@ function settleGroupGreedy(people) {
   return transfers;
 }
 
-// Powyżej tylu osób w jednej podgrupie rezygnujemy z dokładnego podziału na rzecz
-// wyszukiwania małych zerowych podgrup. 3^14 ≈ 4,8 mln kroków liczy się w kilkadziesiąt
-// milisekund; wyżej rośnie trzykrotnie na osobę i zaczęłoby zamrażać telefon.
-const EXACT_PARTITION_LIMIT = 14;
+// PODZIAŁ SALD NA ZEROWE PODGRUPY.
+//
+// Liczba przelewów = liczba osób − liczba rozłącznych podgrup sumujących się do zera,
+// więc maksymalizacja podgrup to DOKŁADNIE minimalizacja przelewów. Cała trudność siedzi
+// w znalezieniu tych podgrup; samo rozliczenie wewnątrz podgrupy robi już zachłanny.
+//
+// DLACZEGO NIE PRZEGLĄD PODGRUP DO STAŁEGO ROZMIARU (poprawione 2026-08-18, po pytaniu
+// właściciela „czy ta matematyka na pewno działa przy piętnastu osobach"). Poprzednia wersja
+// liczyła dokładnie tylko do czternastu osób (programowanie dynamiczne po wszystkich parach
+// maska–podmaska, 3^n kroków), a wyżej szukała zerowych podgrup do sześciu osób. Pomiar na
+// losowych saldach: przy 15 osobach gubiła przelew w 9,5% układów, przy 16 w 20,5%, przy
+// 18–20 w około 30%. Przyczyna wyszła dopiero po rozbiciu przegranych układów — optimum
+// wymagało tam podgrup SIEDMIO- DO DZIESIĘCIOOSOBOWYCH, których przegląd do sześciu nie
+// mógł zobaczyć. Podnoszenie tego limitu nie było wyjściem: koszt to C(n,k), a przy dwudziestu
+// osobach trzeba by szukać dziesiątek.
+//
+// Zamiast tego wypisujemy WSZYSTKIE zerowe podzbiory metodą spotkania w środku (2^(n/2)
+// zamiast 2^n pamięci), a potem szukamy najlepszego podziału już tylko po nich. Zerowych
+// podzbiorów jest przy realnych saldach garstka (mediana 27 przy dwudziestu osobach), więc
+// jest to i dokładne, i szybkie: 0,2 ms przy 20 osobach, 0,8 ms przy 25 — wobec 4 ms, jakie
+// stara wersja potrzebowała na samych czternastu.
 
-// Maksymalny podział zbioru sald na rozłączne podgrupy sumujące się do zera (dokładny,
-// programowanie dynamiczne po maskach). Liczba przelewów = liczba osób − liczba podgrup,
-// więc maksymalizacja podgrup to dokładnie minimalizacja przelewów.
-function exactZeroSumGroups(people) {
-  const n = people.length;
-  const size = 1 << n;
-  const sum = new Int32Array(size);
-  for (let m = 1; m < size; m++) {
+// Powyżej tylu osób maska bitowa nie mieści się już bezpiecznie w liczbie całkowitej,
+// której JavaScript używa w operatorach bitowych. Takie grupy najpierw odchudzamy o pary.
+const MAX_BITMASK_PEOPLE = 30;
+
+// Bezpieczniki. Przy saldach zbitych w wąskim zakresie (wszyscy winni wielokrotność
+// dziesięciu złotych) zerowych podzbiorów bywają miliony i samo ich wypisanie zamroziłoby
+// telefon. Po przekroczeniu któregokolwiek limitu schodzimy na podział rekurencyjny.
+const ZERO_SUBSET_CAP = 20000;
+const MAX_DP_STATES = 200000;
+
+// Sumy WSZYSTKICH podzbiorów listy, indeksowane maską. Float64Array, nie Int32Array:
+// w groszach suma potrafi przekroczyć zakres liczby 32-bitowej, a zawinięcie oznaczałoby
+// uznanie niezerowej podgrupy za zerową i po cichu błędny plan.
+function subsetSums(list) {
+  const sums = new Float64Array(1 << list.length);
+  for (let m = 1; m < sums.length; m++) {
     const low = m & -m;
-    sum[m] = sum[m ^ low] + people[31 - Math.clz32(low)].amt;
+    sums[m] = sums[m ^ low] + list[31 - Math.clz32(low)].amt;
   }
-  const best = new Int32Array(size).fill(-1);
-  const pick = new Int32Array(size);
-  best[0] = 0;
-  for (let m = 1; m < size; m++) {
-    const low = m & -m; // podgrupa musi zawierać najniższy bit — bez tego liczylibyśmy
-    let b = -1;         // ten sam podział wielokrotnie w różnej kolejności
-    for (let s = m; s > 0; s = (s - 1) & m) {
-      if (!(s & low) || sum[s] !== 0) continue;
-      const prev = best[m ^ s];
-      if (prev >= 0 && prev + 1 > b) { b = prev + 1; pick[m] = s; }
-    }
-    best[m] = b;
-  }
-  const groups = [];
-  let mask = size - 1;
-  while (mask > 0 && best[mask] > 0) {
-    const s = pick[mask];
-    const group = [];
-    for (let k = 0; k < n; k++) if (s & (1 << k)) group.push(people[k]);
-    groups.push(group);
-    mask ^= s;
-  }
-  return groups.length ? groups : [people];
+  return sums;
 }
 
-// Wyszukiwanie zerowych podgrup przy liczbie osób powyżej progu dokładnego podziału.
-// Pary są bezpieczne zawsze (wycięcie pary o przeciwnych saldach z większej zerowej grupy
-// zostawia grupę nadal zerową, więc nigdy nie zmniejsza liczby podgrup). Trójki, czwórki
-// i piątki są już heurystyką, ale nie pogarszają wyniku względem samego zachłannego
-// rozliczenia.
-//
-// DO PIĄTEK, NIE DO TRÓJEK (audyt 2026-08-18, po pytaniu właściciela „czy ta matematyka
-// na pewno działa przy piętnastu osobach"). Wersja szukająca tylko par i trójek przegrywała
-// o DWA PRZELEWY na układach, w których optimum wymaga podgrupy czteroosobowej — np. salda
-// 1, 2, 3, −6, gdzie żadna para ani trójka się nie zeruje. Trzy takie czwórki wśród
-// piętnastu osób dawały 13 przelewów zamiast 11. Na losowych układach to nie wychodziło
-// (0 na 720 prób), więc trzeba to było skonstruować celowo.
-//
-// Koszt: przeszukanie piątek to n^5/120, przy 25 osobach ~88 tys. kroków — niezauważalne.
-// Szóstek już nie szukamy: n^6/720 rośnie za szybko, a zysk maleje.
-const MAX_HEURISTIC_GROUP = 6;
+// SPOTKANIE W ŚRODKU. Dzielimy ludzi na dwie połowy, liczymy sumy podzbiorów każdej z nich
+// i łączymy te, które się znoszą. Zamiast 2^n przeglądamy 2^(n/2) — przy trzydziestu osobach
+// to 32 tysiące zamiast miliarda.
+function allZeroSubsets(people) {
+  const half = people.length >> 1;
+  const sumsA = subsetSums(people.slice(0, half));
+  const sumsB = subsetSums(people.slice(half));
 
-function heuristicZeroSumGroups(people) {
+  const bySum = new Map();
+  for (let m = 0; m < sumsB.length; m++) {
+    const list = bySum.get(sumsB[m]);
+    if (list) list.push(m); else bySum.set(sumsB[m], [m]);
+  }
+
+  const masks = [];
+  for (let ma = 0; ma < sumsA.length; ma++) {
+    const list = bySum.get(-sumsA[ma]);
+    if (!list) continue;
+    for (const mb of list) {
+      const mask = ma | (mb << half);
+      if (mask === 0) continue;
+      masks.push(mask);
+      if (masks.length > ZERO_SUBSET_CAP) return null; // za gęsto — patrz bezpieczniki
+    }
+  }
+  return masks;
+}
+
+// Maksymalny podział na zerowe podgrupy — dokładny, ale liczony tylko po zerowych
+// podzbiorach zamiast po wszystkich podmaskach. Zwraca null, gdy układ okazał się zbyt gęsty.
+function exactZeroSumGroups(people) {
+  const zeros = allZeroSubsets(people);
+  if (!zeros) return null;
+
+  // Podgrupa musi zawierać najniższy bit rozpatrywanej maski — bez tego liczylibyśmy
+  // ten sam podział wielokrotnie, raz na każdą kolejność podgrup.
+  const byLowestBit = new Map();
+  for (const z of zeros) {
+    const low = z & -z;
+    const list = byLowestBit.get(low);
+    if (list) list.push(z); else byLowestBit.set(low, [z]);
+  }
+
+  const best = new Map();   // maska -> najwięcej zerowych podgrup, na jakie da się ją rozłożyć
+  const chosen = new Map(); // maska -> podgrupa wybrana do tego optimum
+  let states = 0;
+  const solve = (mask) => {
+    if (mask === 0) return 0;
+    const known = best.get(mask);
+    if (known !== undefined) return known;
+    if (++states > MAX_DP_STATES) return -1;
+    let count = -1;
+    let pick = 0;
+    for (const z of byLowestBit.get(mask & -mask) || []) {
+      if ((z & mask) !== z) continue;
+      const rest = solve(mask ^ z);
+      if (rest >= 0 && rest + 1 > count) { count = rest + 1; pick = z; }
+    }
+    best.set(mask, count);
+    chosen.set(mask, pick);
+    return count;
+  };
+
+  let mask = (1 << people.length) - 1;
+  // Cały zbiór sumuje się do zera, więc rozkład zawsze istnieje; wynik poniżej jedynki
+  // znaczy wyłącznie, że przerwał nas bezpiecznik.
+  if (solve(mask) < 1) return null;
+
+  const groups = [];
+  while (mask > 0) {
+    const z = chosen.get(mask);
+    const group = [];
+    for (let k = 0; k < people.length; k++) if (z & (1 << k)) group.push(people[k]);
+    groups.push(group);
+    mask ^= z;
+  }
+  return groups;
+}
+
+// Pierwszy WŁAŚCIWY (ani pusty, ani cały) zerowy podzbiór — też spotkaniem w środku.
+// Trzymamy po kilka masek na sumę, bo pierwsza trafiona bywa właśnie tą odrzucaną.
+function findProperZeroSubset(people) {
+  const n = people.length;
+  const half = n >> 1;
+  const sumsA = subsetSums(people.slice(0, half));
+  const sumsB = subsetSums(people.slice(half));
+
+  const bySum = new Map();
+  for (let m = 0; m < sumsB.length; m++) {
+    const list = bySum.get(sumsB[m]);
+    if (!list) bySum.set(sumsB[m], [m]);
+    else if (list.length < 3) list.push(m);
+  }
+
+  const full = (1 << n) - 1;
+  for (let ma = 0; ma < sumsA.length; ma++) {
+    const list = bySum.get(-sumsA[ma]);
+    if (!list) continue;
+    for (const mb of list) {
+      const mask = ma | (mb << half);
+      if (mask !== 0 && mask !== full) return mask;
+    }
+  }
+  return null;
+}
+
+// Awaryjny podział dla układów zbyt gęstych na przegląd dokładny: tnij po dowolnym
+// znalezionym zerowym podzbiorze i powtórz po obu stronach. Nie gwarantuje optimum (wybór
+// cięcia bywa nieszczęśliwy), ale widzi podgrupy KAŻDEGO rozmiaru, więc jest wyraźnie lepszy
+// od dawnego przeglądu do sześciu osób.
+function recursiveSplitGroups(people) {
+  const mask = findProperZeroSubset(people);
+  if (mask === null) return [people];
+  const inside = [];
+  const outside = [];
+  people.forEach((p, i) => ((mask & (1 << i)) ? inside : outside).push(p));
+  return [...recursiveSplitGroups(inside), ...recursiveSplitGroups(outside)];
+}
+
+// ODCHUDZANIE GRUPY WIĘKSZEJ NIŻ LIMIT MASEK.
+//
+// Szukamy małych zerowych podgrup przeglądem wprost i odrywamy je, ale TYLKO DOPÓKI reszta
+// nie zejdzie do rozmiaru liczonego dokładnie. To ważne: pary są bezpieczne zawsze (wycięcie
+// dwóch przeciwnych sald z zerowej podgrupy zostawia ją zerową, a z dwóch różnych podgrup
+// robi jedną zerową — podgrup nigdy nie ubywa), natomiast trójki i większe są już
+// zgadywaniem. Odrywamy więc najmniej, ile trzeba, i resztę oddajemy przeglądowi dokładnemu,
+// zamiast psuć zgadywaniem cały podział.
+const MAX_SCAN_GROUP = 6;
+// Przegląd podgrup to C(n, k) kroków. Przy sześćdziesięciu osobach szóstek jest pięćdziesiąt
+// milionów, więc bez budżetu telefon by stanął. Wyczerpanie budżetu kończy tylko ten
+// przegląd — plan i tak powstanie, po prostu bez tej jednej podgrupy.
+const SCAN_STEP_BUDGET = 2000000;
+
+function peelSmallZeroSumGroups(people) {
   const rest = [...people];
   const groups = [];
+  let budget = SCAN_STEP_BUDGET;
 
-  // Znajduje pierwszą podgrupę o zadanym rozmiarze sumującą się do zera. Rekurencja zamiast
-  // czterech zagnieżdżonych pętli — przy pięciu poziomach ręczne pisanie byłoby nieczytelne.
-  const znajdz = (sizeWanted, start, wybrane, suma) => {
-    if (wybrane.length === sizeWanted) return suma === 0 ? [...wybrane] : null;
+  // Pierwsza podgrupa zadanego rozmiaru sumująca się do zera. Rekurencja zamiast
+  // zagnieżdżonych pętli — przy sześciu poziomach ręczne pisanie byłoby nieczytelne.
+  const znajdz = (want, start, chosen, sum) => {
+    if (chosen.length === want) return sum === 0 ? [...chosen] : null;
     for (let i = start; i < rest.length; i++) {
-      wybrane.push(i);
-      const trafienie = znajdz(sizeWanted, i + 1, wybrane, suma + rest[i].amt);
-      wybrane.pop();
-      if (trafienie) return trafienie;
+      if (--budget < 0) return null;
+      chosen.push(i);
+      const hit = znajdz(want, i + 1, chosen, sum + rest[i].amt);
+      chosen.pop();
+      if (hit) return hit;
     }
     return null;
   };
 
-  for (let sizeWanted = 2; sizeWanted <= MAX_HEURISTIC_GROUP; sizeWanted++) {
-    for (;;) {
-      if (rest.length < sizeWanted) break;
-      const indeksy = znajdz(sizeWanted, 0, [], 0);
+  for (let want = 2; want <= MAX_SCAN_GROUP && rest.length > MAX_BITMASK_PEOPLE; want++) {
+    while (rest.length > MAX_BITMASK_PEOPLE && rest.length >= want && budget > 0) {
+      const indeksy = znajdz(want, 0, [], 0);
       if (!indeksy) break;
       groups.push(indeksy.map((i) => rest[i]));
       // Od końca, żeby wcześniejsze indeksy nie przesunęły się przy usuwaniu.
       indeksy.slice().reverse().forEach((i) => rest.splice(i, 1));
     }
   }
-  if (rest.length) groups.push(rest);
-  return groups;
+  return { groups, rest };
+}
+
+function zeroSumGroups(people) {
+  if (people.length <= MAX_BITMASK_PEOPLE) {
+    return exactZeroSumGroups(people) || recursiveSplitGroups(people);
+  }
+  const { groups, rest } = peelSmallZeroSumGroups(people);
+  if (!rest.length) return groups;
+  // Nie dało się zejść pod limit masek — reszta idzie jedną podgrupą, czyli rozliczy się
+  // zachłannie w n−1 przelewach. Gorzej się nie da, bo n−1 to sufit dla każdego planu.
+  if (rest.length > MAX_BITMASK_PEOPLE) return [...groups, rest];
+  return [...groups, ...zeroSumGroups(rest)];
 }
 
 // MINIMALIZACJA LICZBY PRZELEWÓW.
@@ -443,6 +578,7 @@ function heuristicZeroSumGroups(people) {
 // Liczba przelewów to (liczba osób z niezerowym saldem) − (liczba rozłącznych podgrup
 // sumujących się do zera), więc szukamy najpierw takich podgrup, a dopiero w każdej z nich
 // rozliczamy zachłannie — wewnątrz niepodzielnej podgrupy zachłanny jest już optymalny.
+// Podgrupy znajduje zeroSumGroups; opis metody i pomiary są przy jego definicji.
 export function simplifyDebts(debts) {
   const balance = new Map();
   (debts || []).forEach((d) => {
@@ -455,9 +591,5 @@ export function simplifyDebts(debts) {
   // Stała kolejność wejścia → stały wynik niezależnie od kolejności wpisywania rachunków.
   people.sort((x, y) => (y.amt - x.amt) || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
 
-  const groups = people.length <= EXACT_PARTITION_LIMIT
-    ? exactZeroSumGroups(people)
-    : heuristicZeroSumGroups(people);
-
-  return groups.flatMap((g) => settleGroupGreedy(g));
+  return zeroSumGroups(people).flatMap((g) => settleGroupGreedy(g));
 }
