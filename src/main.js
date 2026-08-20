@@ -4939,11 +4939,30 @@
                 try {
                     swRegistration = await navigator.serviceWorker.register('/sw.js');
                     await navigator.serviceWorker.ready;
+                    warmOfflineCache();
                     setupPush();
                 } catch (err) {
                     console.warn('[Billiada] Rejestracja service workera nieudana:', err);
                 }
             });
+        };
+
+        // Service worker przy instalacji wyczytuje listę zasobów z `index.html` i z arkusza
+        // stylów, więc nie wie o kawałkach doładowywanych leniwie (`heic2any` przy zdjęciu
+        // z iPhone'a). Strona wie — pyta przeglądarkę, co naprawdę pobrała, i podaje listę.
+        // Service worker i tak odsiewa wszystko spoza `/assets/` i `/icons/`, więc ruch
+        // do Firebase nie ma jak tu wejść.
+        const warmOfflineCache = () => {
+            const target = swRegistration && (swRegistration.active || navigator.serviceWorker.controller);
+            if (!target || typeof performance === 'undefined' || !performance.getEntriesByType) return;
+            try {
+                const urls = performance.getEntriesByType('resource')
+                    .map((e) => e.name)
+                    .filter((u) => u.startsWith(window.location.origin));
+                if (urls.length) target.postMessage({ type: 'warm-cache', urls });
+            } catch (err) {
+                console.warn('[Billiada] Dogrzanie pamięci offline nieudane:', err);
+            }
         };
 
         // --- Faza 6.4: powiadomienia push (FCM) ---

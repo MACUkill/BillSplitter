@@ -1,7 +1,8 @@
 // Billiada: service worker (Faza 6.1)
-// Offline app-shell przez runtime caching (bez precache-manifestu — Vite hashuje nazwy).
-// Strategia: network-first dla nawigacji (zawsze świeża wersja gdy online, fallback offline),
-//            cache-first + odświeżenie w tle (stale-while-revalidate) dla statycznych zasobów.
+// Offline app-shell przez precache w `install` + runtime caching (bez precache-manifestu
+// z buildu — Vite hashuje nazwy, więc listę zasobów wyczytujemy z `index.html` i z CSS).
+// Strategia: network-first z limitem czasu dla nawigacji (świeża wersja gdy sieć odpowiada,
+//            kopia z pamięci gdy milczy), cache-first + odświeżenie w tle dla statycznych zasobów.
 // NAZWA PAMIĘCI PODRĘCZNEJ JEST WERSJONOWANA i to nie jest kosmetyka.
 // Handler `activate` kasuje WSZYSTKIE pamięci o innej nazwie, więc podbicie tej stałej
 // jest jedynym sposobem, żeby telefon wyrzucił zasoby o niezmiennych nazwach: manifest,
@@ -13,11 +14,87 @@
 // powód formalny (trzeba wyrzucić starą pamięć), ale różne merytoryczne. Ze strony audytu:
 // z listy cache'owanych hostów wypadły martwe CDN-y, więc odpowiedzi z tych adresów mogły
 // jeszcze leżeć komuś na telefonie i trzeba je skasować.
+//
+// NAPRAWA OFFLINE 2026-08-20 ŚWIADOMIE NIE PODBIJA WERSJI. Tożsamość aplikacji się nie
+// zmienia (ta sama nazwa, te same ikony, ten sam manifest), a bump kasuje komuś komplet
+// zasobów i każe pobrać około megabajta od nowa bez powodu. Sam service worker i tak
+// się odświeży, bo zmieniły się jego bajty.
 const CACHE = 'billiada-v4';
 
-self.addEventListener('install', () => {
-  // Nowy SW przejmuje od razu — bez czekania na zamknięcie kart.
-  self.skipWaiting();
+// Powłoka aplikacji pod jednym, kanonicznym kluczem. Netlify przepisuje KAŻDY adres na
+// `index.html` (patrz `netlify.toml`), a numer pokoju aplikacja czyta z `location.search`
+// w czasie działania — więc `/`, `/?group=ABC` i `/?group=XYZ` to bajt w bajt ta sama
+// odpowiedź. Trzymanie jej pod adresem z zapytaniem tylko mnożyłoby kopie.
+const SHELL = '/';
+
+// Po tylu milisekundach bez odpowiedzi sieci pokazujemy kopię z pamięci.
+// Dotyczy WYŁĄCZNIE sytuacji, w której kopia istnieje — bez niej czekamy na sieć bez końca,
+// bo nie ma czego pokazać. Próg bierze się z objawu: przy „net jest, ale nie działa"
+// (hotelowe Wi-Fi, jedna kreska) `fetch` potrafi wisieć kilkadziesiąt sekund i aplikacja
+// wygląda na zawieszoną zamiast na offline.
+const NAV_TIMEOUT_MS = 3000;
+
+// Wyłuskuje z tekstu (HTML albo CSS) adresy własnych zasobów. Nazwy plików z `assets`
+// niosą skrót zawartości, więc nie da się ich wypisać na sztywno w tym pliku.
+const collectAssetUrls = (text) => {
+  const out = [];
+  const re = /["'(](\/(?:assets|icons)\/[A-Za-z0-9._-]+)["')]/g;
+  let m;
+  while ((m = re.exec(text)) !== null) out.push(m[1]);
+  return out;
+};
+
+// PIERWSZE URUCHOMIENIE MUSI ZAPEŁNIĆ PAMIĘĆ SAMO.
+// Nawigacja, w trakcie której service worker dopiero się instaluje, NIE PRZECHODZI przez
+// jego handler `fetch` — razem z całą resztą zasobów tej strony. Bez tego precache pierwszy
+// start online nie zapisywał niczego i offline kończyło się białym ekranem; dopiero drugie
+// wejście online zapełniało pamięć. Na iOS bolało podwójnie, bo aplikacja z ekranu
+// początkowego ma własny, pusty magazyn — kliknięcia w Safari go nie zapełniają.
+//
+// Zapisujemy pojedynczymi `put` w `try/catch`, NIE przez `addAll`: `addAll` jest atomowe,
+// więc jeden nieudany zasób wywala całą instalację service workera.
+const precacheShell = async () => {
+  const cache = await caches.open(CACHE);
+  let html = '';
+  try {
+    const res = await fetch(SHELL, { cache: 'reload' });
+    if (!res || !res.ok) return;
+    html = await res.clone().text();
+    await cache.put(SHELL, res);
+  } catch (_) {
+    return; // Brak sieci w chwili instalacji: runtime caching dopisze resztę przy okazji.
+  }
+
+  const urls = new Set(collectAssetUrls(html));
+
+  // Kroje pisma i ikony wektorowe siedzą w `url(...)` wewnątrz CSS, nie w HTML —
+  // trzeba wejść piętro niżej, inaczej offline aplikacja wstaje w zapasowym kroju.
+  for (const href of [...urls]) {
+    if (!href.endsWith('.css')) continue;
+    try {
+      const res = await fetch(href);
+      if (!res || !res.ok) continue;
+      const text = await res.clone().text();
+      collectAssetUrls(text).forEach((u) => urls.add(u));
+      await cache.put(href, res);
+    } catch (_) { /* pojedynczy arkusz nie może przewrócić instalacji */ }
+  }
+
+  await Promise.all([...urls].map(async (href) => {
+    if (await cache.match(href)) return;
+    try {
+      const res = await fetch(href);
+      if (res && res.ok) await cache.put(href, res);
+    } catch (_) { /* jw. */ }
+  }));
+};
+
+self.addEventListener('install', (event) => {
+  event.waitUntil((async () => {
+    try { await precacheShell(); } catch (_) {}
+    // Nowy SW przejmuje od razu — bez czekania na zamknięcie kart.
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', (event) => {
@@ -25,6 +102,29 @@ self.addEventListener('activate', (event) => {
     const keys = await caches.keys();
     await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
     await self.clients.claim();
+  })());
+});
+
+// Dogrzewanie pamięci tym, co strona faktycznie pobrała (`registerServiceWorker` w main.js).
+// Precache czyta `index.html` i CSS, więc nie zna kawałków ładowanych leniwie — na przykład
+// `heic2any`, który dojeżdża dopiero przy wgrywaniu zdjęcia z iPhone'a.
+self.addEventListener('message', (event) => {
+  const data = event.data || {};
+  if (data.type !== 'warm-cache' || !Array.isArray(data.urls)) return;
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await Promise.all(data.urls.map(async (raw) => {
+      let url;
+      try { url = new URL(raw, self.location.origin); } catch (_) { return; }
+      // Ta sama zasada co w `fetch`: TYLKO własne zasoby, nigdy ruch do Firebase.
+      if (url.origin !== self.location.origin) return;
+      if (!/^\/(assets|icons)\//.test(url.pathname)) return;
+      if (await cache.match(url.href)) return;
+      try {
+        const res = await fetch(url.href);
+        if (res && res.ok) await cache.put(url.href, res);
+      } catch (_) {}
+    }));
   })());
 });
 
@@ -67,19 +167,29 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
 
-  // Nawigacje (wejście / odświeżenie strony): network-first → offline fallback do cache.
+  // Nawigacje (wejście / odświeżenie strony): sieć wygrywa, ale ma limit czasu.
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
-      try {
-        const fresh = await fetch(req);
-        const cache = await caches.open(CACHE);
-        cache.put(req, fresh.clone()).catch(() => {});
+      const cache = await caches.open(CACHE);
+
+      // `ignoreSearch`, bo wejście do pokoju to `/?group=ABC`, a w pamięci leży `/`.
+      // Bez tego kopia powłoki była w pamięci, a i tak nie dawało się jej znaleźć.
+      const cached = (await cache.match(SHELL))
+        || (await cache.match(req, { ignoreSearch: true }))
+        || (await cache.match('/index.html'));
+
+      const network = fetch(req).then((fresh) => {
+        if (fresh && fresh.ok) cache.put(SHELL, fresh.clone()).catch(() => {});
         return fresh;
-      } catch (_) {
-        const cache = await caches.open(CACHE);
-        const cached = (await cache.match(req)) || (await cache.match('/index.html')) || (await cache.match('/'));
-        return cached || Response.error();
-      }
+      }).catch(() => null);
+
+      // Nie ma czego pokazać: czekamy na sieć tyle, ile trzeba.
+      if (!cached) return (await network) || Response.error();
+
+      // Jest kopia: dajemy sieci NAV_TIMEOUT_MS, potem pokazujemy kopię. Pobieranie leci
+      // dalej w tle i podmienia pamięć, więc następne wejście jest już świeże.
+      const timeout = new Promise((resolve) => { setTimeout(() => resolve(null), NAV_TIMEOUT_MS); });
+      return (await Promise.race([network, timeout])) || cached;
     })());
     return;
   }
@@ -124,7 +234,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Statyczne zasoby (JS/CSS/fonty, też CDN): cache-first + odświeżenie w tle.
+  // Statyczne zasoby (JS/CSS/fonty): cache-first + odświeżenie w tle.
   // Ich nazwy niosą skrót zawartości, więc stara kopia nigdy nie udaje nowej.
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
