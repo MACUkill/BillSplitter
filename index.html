@@ -848,6 +848,19 @@ the verdict, and DESIGN.md
                 </div>
             </div>
             <div class="sheet-body">
+                <!-- TA SAMA wyszukiwarka co przy uczestnikach i przy pozycjach paragonu,
+                     podpięta przez data-search-for. Pokazuje ją openChoiceSheet dopiero
+                     przy dłuższej liście; podpisy ustawia w chwili otwarcia, bo ten arkusz
+                     obsługuje i płatnika, i walutę. -->
+                <div id="choice-search" class="person-search mb-2 hidden"
+                     data-search-for="choice-options"
+                     data-search-rows=".choice-option"
+                     data-search-empty="Nic takiego tu nie ma.">
+                    <button type="button" class="person-search-toggle tap w-11 h-11 rounded-full flex items-center justify-center bg-surface-2 text-ink-2 flex-shrink-0" aria-expanded="false" aria-label="Szukaj" title="Szukaj">
+                        <i class="fas fa-magnifying-glass"></i>
+                    </button>
+                    <input type="text" class="person-search-input field min-h-tap" placeholder="Szukaj" autocomplete="off" spellcheck="false" aria-label="Szukaj">
+                </div>
                 <div id="choice-options" class="space-y-2"></div>
             </div>
         </div>

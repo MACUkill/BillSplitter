@@ -2711,9 +2711,26 @@
             });
         };
 
+        // SZUKANIE W ARKUSZU WYBORU (zgłoszenie właściciela 2026-08-20).
+        // Przy piętnastoosobowej ekipie lista płatników jest dłuższa niż ekran, a wybór
+        // jest JEDEN — czyli całą czynnością jest odnalezienie imienia. Wpisanie trzech
+        // liter bije przewijanie piętnastu wierszy.
+        //
+        // Świadomie NIE piszemy tu drugiej wyszukiwarki: to ta sama, która obsługuje
+        // uczestników i pozycje paragonu, podpięta przez `data-search-for`. Aplikacja
+        // miała już raz dwa mechanizmy do jednej czynności i skończyło się dwoma różnymi
+        // zachowaniami pod palcem — patrz uwaga przy `applyPersonFilter`.
+        //
+        // Próg ośmiu pozycji: krótsza lista mieści się na ekranie i lupa jest wtedy
+        // ozdobą, a nie pomocą. Przy trzech walutach nie pojawi się nigdy, przy płatniku
+        // od siedmiu osób w rachunku.
+        const CHOICE_SEARCH_MIN = 8;
+
         // WYBÓR JEDNOKROTNY — jeden arkusz dla każdej listy (waluta, płatnik).
         // `options`: [{ value, label, hint?, avatarHtml? }].
-        const openChoiceSheet = ({ title, options, current, onPick }) => {
+        // `search`: { label?, placeholder?, empty? } — podpisy zależą od tego, czego
+        // dotyczy lista, bo „Nikt taki nie jest w tym pokoju" przy walutach byłoby bzdurą.
+        const openChoiceSheet = ({ title, options, current, onPick, search = null }) => {
             const modal = document.getElementById('choice-modal');
             const list = document.getElementById('choice-options');
             if (!modal || !list) return;
@@ -2735,6 +2752,22 @@
                     if (btn.dataset.value !== String(current)) await onPick(btn.dataset.value);
                 };
             });
+
+            const szukajka = document.getElementById('choice-search');
+            if (szukajka) {
+                szukajka.classList.toggle('hidden', options.length < CHOICE_SEARCH_MIN);
+                const podpis = (search && search.label) || 'Szukaj';
+                const przycisk = szukajka.querySelector('.person-search-toggle');
+                const pole = szukajka.querySelector('.person-search-input');
+                if (przycisk) { przycisk.setAttribute('aria-label', podpis); przycisk.title = podpis; }
+                if (pole) { pole.placeholder = (search && search.placeholder) || podpis; pole.setAttribute('aria-label', podpis); }
+                szukajka.dataset.searchEmpty = (search && search.empty) || 'Nic takiego tu nie ma.';
+                // Arkusz otwiera się ZAWSZE ze zwiniętą lupą i pustym polem. Zapytanie
+                // zapamiętane z poprzedniego otwarcia ukrywałoby część listy, nie mówiąc
+                // dlaczego — a przy wyborze płatnika znaczyłoby to brakujące imię.
+                resetPersonSearch(szukajka.parentElement);
+            }
+
             modal.classList.add('active');
         };
 
@@ -4583,6 +4616,7 @@
                 openChoiceSheet({
                     title: 'Kto wyłożył pieniądze',
                     current: billData.payerId || '',
+                    search: { label: 'Szukaj osoby', placeholder: 'Szukaj imienia', empty: 'Nikt taki nie jest w tym rachunku.' },
                     options: [
                         { value: '', label: 'Nikt jeszcze', hint: 'wskażesz później' },
                         ...Object.values(billData.participants || {}).map((p) => ({
