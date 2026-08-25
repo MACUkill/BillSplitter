@@ -194,6 +194,15 @@ export const calculateAll = (bill) => {
     orphanAmount: fromGrosze(sharedOrphanG),
     orphanCount,
     itemCount,
+    // Z CZEGO SKŁADA SIĘ SUMA KONTROLNA. Ekran ma pokazać DZIAŁANIE, a nie zgadywać
+    // przyczynę rozjazdu: do 2026-08-25 przy nadwyżce mówił „ktoś przeliczył albo pozycja
+    // jest podwójna", więc pomijał trzeci składnik — koszty ogólne — i przy doliczonym
+    // serwisie kierował na fałszywy trop.
+    entered: {
+      individual: fromGrosze(individualSubtotalG),
+      shared: fromGrosze(sharedTotalG),
+      global: fromGrosze(Math.round(globalTotalG)),
+    },
   };
 };
 

@@ -585,6 +585,13 @@ the verdict, and DESIGN.md
                     <span id="control-sum" class="font-bold text-lg text-right">0,00 PLN</span>
                 </div>
                 <p id="control-status" class="text-sm text-ink-2 mt-1"></p>
+                <!-- NADWYŻKA POKAZUJE DZIAŁANIE, NIE DOMYSŁ. Rozpisanie składników i jedno
+                     stuknięcie naprawiające najczęstszy przypadek: kwota rachunku wpisana
+                     przed dodaniem kosztu ogólnego. Widoczne wyłącznie przy rozjeździe. -->
+                <div id="control-breakdown" class="hidden mt-2 rounded-block bg-surface-2 p-3">
+                    <div id="control-breakdown-rows" class="text-sm text-ink-2"></div>
+                    <button id="control-fix-total" class="btn btn-quiet w-full mt-3" type="button"></button>
+                </div>
                 <p id="pln-conversion-display" class="text-sm text-ink-3 mt-1"></p>
 
                 <p class="block font-bold mt-5 mb-2">Kto wyłożył pieniądze</p>
@@ -1512,7 +1519,24 @@ the verdict, and DESIGN.md
                 <p class="sheet-lede">Sprawdź i popraw. Do rachunku trafi dopiero to, co zatwierdzisz.</p>
             </div>
             <div class="sheet-body">
-                <div id="receipt-preview-warning" class="hidden mb-3 text-sm text-owe bg-owe/10 rounded-block p-3"></div>
+                <!-- KONTROLA SUMY MA TRZY STANY, NIGDY ZERO.
+                     Do 2026-08-25 ostrzeżenie pojawiało się wyłącznie wtedy, gdy model
+                     odczytał sumę paragonu I się ona nie zgadzała. Gdy sumy nie odczytał,
+                     znikało w całości — więc arkusz wyglądał DOKŁADNIE tak samo pewnie
+                     jak przy zgodnej sumie. Brak ostrzeżenia musi znaczyć „sprawdzone",
+                     a nigdy „nie miałem czym sprawdzić". Klasy podmienia `renderReceiptCheck`
+                     całymi literałami — skaner Tailwinda nie widzi klas sklejanych ze stringów. -->
+                <div id="receipt-preview-warning" class="hidden mb-3 text-sm rounded-block p-3"></div>
+                <!-- Trzeci stan: nie ma z czym porównać, więc prosimy o jedną liczbę.
+                     Trzy sekundy roboty zamieniają cichą dziurę w pełną kontrolę. -->
+                <div id="receipt-total-ask" class="hidden mb-3 rounded-block p-3 bg-surface-2">
+                    <p class="text-sm text-ink-2">Nie odczytałem sumy z paragonu, więc nie mam jak sprawdzić pozycji. Wpisz ją, a policzę.</p>
+                    <div class="flex items-center gap-2 mt-2">
+                        <label class="sr-only" for="receipt-total-input">Suma z paragonu</label>
+                        <input id="receipt-total-input" type="text" inputmode="decimal" class="field flex-grow min-w-0 p-2" placeholder="np. 183,00">
+                        <button id="receipt-total-apply" class="btn btn-dark flex-shrink-0" type="button">Sprawdź</button>
+                    </div>
+                </div>
                 <!-- WALUTA Z PARAGONU. Model odczytuje ją razem z pozycjami, a do
                      2026-08-16 wynik lądował w koszu: rachunek zostawał w walucie pokoju,
                      więc pozycje z Chorwacji wchodziły jako złotówki i nikt się o tym nie

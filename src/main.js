@@ -3,7 +3,7 @@
         // Importy Firebase (npm) + moduł obliczeń
         import { calculateAll, calculateAllForBill, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
         import { unreadNudgeCount, hasRecentNudge, inboxItems, badgeCount, hasDot } from './nudges.js';
-        import { myPlanRows, planVsPairwise } from './plan.js';
+        import { myPlanRows, planVsPairwise, netRowOrigin } from './plan.js';
         import { itemQuantity, itemPickers, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
         import {
             identityColor, initials, IDENTITY_COLORS,
@@ -18,7 +18,7 @@
         import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject, connectStorageEmulator } from "firebase/storage";
         import { getMessaging, getToken, onMessage, isSupported as isMessagingSupported } from "firebase/messaging";
         import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
-        import { normalizeReceipt, receiptItemsToSharedCosts, receiptModifiersToGlobalCosts } from './receipt.js';
+        import { normalizeReceipt, receiptItemsToSharedCosts, receiptModifiersToGlobalCosts, receiptItemFlags, receiptCheck } from './receipt.js';
 
         // Config z ENV (jeśli podany) — inaczej wpisany na sztywno projekt produkcyjny.
         // Dzięki temu testy pushu jadą na osobnym projekcie-piaskownicy (.env.local),
@@ -2142,6 +2142,22 @@
                 // Detal (które rachunki) tylko w trybie netto — „min" to zoptymalizowane przelewy bez mapowania 1:1 na rachunki.
                 const detailOf = (t) => settlementMode === 'net' ? debtDetailHtml(ledger[cur].directed, t.from, t.to, cur) : '';
 
+                // WIERSZ, ZA KTÓRYM NIE STOI ŻADEN RACHUNEK, MUSI SIĘ PRZYZNAĆ.
+                //
+                // Usterka odtworzona na żywym kodzie 2026-08-25: Kuba winien Markowi 50,
+                // Marek Oli 50. Plan minimalny każe Kubie zapłacić Oli i Kuba to robi.
+                // Salda wszystkich trzech schodzą do zera, plan minimalny jest pusty — a
+                // „Kto komu" pokazuje TRZY otwarte długi po 50 z przyciskiem „Ureguluj"
+                // przy każdym, bo `netDirected` zwija długi wyłącznie wewnątrz pary
+                // i cyklu nie widzi. Marek mógł w dobrej wierze upomnieć się o pieniądze,
+                // których nikt mu nie jest winien.
+                //
+                // NICZEGO NIE UKRYWAMY — kółko długów potrafi powstać z samych rachunków
+                // i wtedy są prawdziwe. Nazywamy tylko pochodzenie wiersza i wyciszamy
+                // przy nim akcję, żeby nikt nie wysłał pieniędzy drugi raz.
+                const widmo = (t) => settlementMode === 'net' && netRowOrigin(ledger[cur].directed, t.from, t.to) === 'payment';
+                const widmoNote = `<p class="text-xs text-ink-3 mt-2">Ten wiersz nie pochodzi z rachunku — powstał z wpłaty poprowadzonej najkrótszą drogą. Nie wysyłaj nic na jego podstawie.</p>`;
+
                 html += `<div>`;
                 if (currencies.length > 1) html += `<p class="chip mb-2">${cur}</p>`;
 
@@ -2150,19 +2166,26 @@
                     mineOwe.forEach(t => {
                         html += settleRowHtml(memberName(t.to), t.to,
                             `<span class="amount text-2xl text-owe">${fmtMoney(t.amountG, cur)}</span>`,
-                            `<button class="settle-btn btn btn-danger flex-grow" data-to="${t.to}" data-amount-g="${t.amountG}" data-currency="${cur}">Ureguluj</button>`,
-                            detailOf(t));
+                            widmo(t)
+                                ? `<button class="btn btn-quiet flex-grow opacity-60" type="button" disabled>Nic do wysłania</button>`
+                                : `<button class="settle-btn btn btn-danger flex-grow" data-to="${t.to}" data-amount-g="${t.amountG}" data-currency="${cur}">Ureguluj</button>`,
+                            (widmo(t) ? widmoNote : '') + detailOf(t));
                     });
                     html += `</div>`;
                 }
                 if (mineGet.length) {
                     html += `<p class="text-sm font-bold text-due mb-2">Dostajesz</p><div class="settle-rows space-y-2 mb-5">`;
                     mineGet.forEach(t => {
+                        // Przy wierszu widmo znika też DZWONEK. Przypomnienie o długu, który
+                        // powstał z cudzej wpłaty, jest najgorszą możliwą wiadomością:
+                        // upomina się o pieniądze, które już przyszły.
                         html += settleRowHtml(memberName(t.from), t.from,
                             `<span class="amount text-2xl text-due">${fmtMoney(t.amountG, cur)}</span>`,
-                            `<button class="receive-btn btn btn-primary flex-grow" data-from="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}">Mam wpłatę</button>
+                            widmo(t)
+                                ? `<button class="btn btn-quiet flex-grow opacity-60" type="button" disabled>Nic do odebrania</button>`
+                                : `<button class="receive-btn btn btn-primary flex-grow" data-from="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}">Mam wpłatę</button>
                              <button class="nudge-btn btn btn-quiet flex-shrink-0" data-nudge-to="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}" title="Przypomnij o długu"><i class="fas fa-bell"></i></button>`,
-                            detailOf(t));
+                            (widmo(t) ? widmoNote : '') + detailOf(t));
                     });
                     html += `</div>`;
                 }
@@ -2188,6 +2211,7 @@
                                 </span>
                                 <span class="amount text-ink-2 flex-shrink-0">${fmtMoney(t.amountG, cur)}</span>
                             </div>
+                            ${widmo(t) ? widmoNote : ''}
                             ${detailOf(t)}
                         </div>`;
                     });
@@ -4164,14 +4188,40 @@
             renderReceiptCurrencyNote();
             const wrap = document.getElementById('receipt-preview-items');
 
-            wrap.innerHTML = receiptDraft.items.map((it, i) => `
-                <div class="flex items-center gap-2 p-2 rounded-lg ${it.__use ? '' : 'opacity-50'}">
-                    <input type="checkbox" class="rp-use w-5 h-5 flex-shrink-0 accent-ink" data-i="${i}" ${it.__use ? 'checked' : ''}>
-                    <input type="text" class="rp-name field flex-grow min-w-0 p-1.5" data-i="${i}" value="${escapeHtml(it.description)}">
-                    <input type="number" min="1" step="1" class="rp-qty field w-14 p-1.5 text-center" data-i="${i}" value="${it.quantity}">
-                    <input type="text" inputmode="decimal" class="rp-amount field w-24 p-1.5 text-right font-semibold" data-i="${i}" value="${String(it.amount.toFixed(2)).replace('.', ',')}">
-                    <span class="text-xs text-ink-3 flex-shrink-0">${cur}</span>
-                </div>`).join('');
+            // OZNACZENIE IDZIE NA WIERSZ, NIE POD LISTĘ.
+            //
+            // Zgłoszenie z 2026-08-25: paragon na 183 EUR pokazywał sumę pozycji 210,50,
+            // bo „opłata za nakrycie" 27,50 trafiła na listę dwa razy. Ostrzeżenie o
+            // różnicy stało POD listą kilkunastu pozycji, więc znalezienie winnej linii
+            // było zadaniem dla człowieka. Teraz podejrzany wiersz mówi o sobie sam.
+            //
+            // ZNACZNIK, NIE KASOWANIE: pozycja zostaje zaznaczona i nietknięta, bo dwie
+            // takie same bywają czasem prawdą, a cicho usunięta linia zaniża rachunek
+            // płatnikowi. Wszystkie pola są edytowalne, więc poprawka to jedno stuknięcie.
+            const flags = receiptItemFlags(receiptDraft.items, receiptDraft.receiptTotal);
+            const ISSUE_TEXT = {
+                duplicate: 'Ta pozycja jest na liście dwa razy — zostawić obie?',
+                'over-total': 'Ta pozycja jest większa niż cały paragon. Sprawdź przecinek.',
+                'summary-line': 'To wygląda na linię podsumowania, nie na pozycję.',
+            };
+
+            wrap.innerHTML = receiptDraft.items.map((it, i) => {
+                const issues = flags[i] || [];
+                const note = issues.length
+                    ? `<p class="text-xs text-owe mt-1 pl-7">${escapeHtml(ISSUE_TEXT[issues[0]] || '')}</p>`
+                    : '';
+                return `
+                <div class="p-2 rounded-lg ${it.__use ? '' : 'opacity-50'}">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" class="rp-use w-5 h-5 flex-shrink-0 accent-ink" data-i="${i}" ${it.__use ? 'checked' : ''}>
+                        <input type="text" class="rp-name field flex-grow min-w-0 p-1.5" data-i="${i}" value="${escapeHtml(it.description)}">
+                        <input type="number" min="1" step="1" class="rp-qty field w-14 p-1.5 text-center" data-i="${i}" value="${it.quantity}">
+                        <input type="text" inputmode="decimal" class="rp-amount field w-24 p-1.5 text-right font-semibold" data-i="${i}" value="${String(it.amount.toFixed(2)).replace('.', ',')}">
+                        <span class="text-xs text-ink-3 flex-shrink-0">${cur}</span>
+                    </div>
+                    ${note}
+                </div>`;
+            }).join('');
 
             const modWrap = document.getElementById('receipt-preview-modifiers-wrap');
             modWrap.classList.toggle('hidden', receiptDraft.modifiers.length === 0);
@@ -4195,20 +4245,46 @@
             document.getElementById('receipt-preview-summary').innerHTML =
                 `Wybrano <b>${usedItems.length}</b> z ${receiptDraft.items.length} pozycji na <b>${fmtMoney(sumG, cur)}</b>`;
 
-            // Rozjazd z sumą paragonu to najczęstszy objaw przeoczonej linii — mówimy o tym wprost.
             const warn = document.getElementById('receipt-preview-warning');
+            const ask = document.getElementById('receipt-total-ask');
+            const applyBtn = document.getElementById('apply-receipt-btn');
             const totalG = receiptDraft.receiptTotal ? toGrosze(receiptDraft.receiptTotal) : 0;
             // Modyfikatory procentowe liczą się od sumy pozycji — bez tego serwis „10%" wyglądałby
             // jak brakująca linia i wywoływał fałszywy alarm (a fałszywe alarmy uczą ignorować ostrzeżenia).
             const modsG = receiptDraft.modifiers
                 .filter(m => m.__use)
                 .reduce((s, m) => s + (m.type === 'percent' ? Math.round(sumG * m.value / 100) : toGrosze(m.value)), 0);
-            const diffG = totalG > 0 ? (sumG + modsG) - totalG : 0;
-            if (totalG > 0 && Math.abs(diffG) > 1) {
-                warn.classList.remove('hidden');
-                warn.innerHTML = `<i class="fas fa-triangle-exclamation mr-1"></i>Suma wybranych pozycji (${fmtMoney(sumG + modsG, cur)}) różni się od sumy z paragonu (${fmtMoney(totalG, cur)}) o <b>${fmtMoney(Math.abs(diffG), cur)}</b>. Sprawdź, czy któraś linia nie umknęła.`;
+
+            const check = receiptCheck(sumG, modsG, totalG);
+            if (ask) ask.classList.toggle('hidden', check.status !== 'no-total');
+
+            if (check.status === 'diff') {
+                // ZNAK RÓŻNICY ROZSTRZYGA, CZEGO SZUKAĆ, więc musi być w treści.
+                // Stało tu jedno zdanie na oba kierunki — „sprawdź, czy któraś linia nie
+                // umknęła" — czyli rada, żeby szukać BRAKUJĄCEJ pozycji. Przy duplikacie
+                // (zgłoszenie z 2026-08-25) kierowała dokładnie w przeciwną stronę:
+                // człowiek szukał czegoś, czego nie było, i zatwierdził odczyt.
+                const nadmiar = check.diffG > 0;
+                warn.className = 'mb-3 text-sm rounded-block p-3 text-owe bg-owe/10';
+                warn.innerHTML = `<i class="fas fa-triangle-exclamation mr-1" aria-hidden="true"></i>${
+                    nadmiar
+                        ? `Pozycje przewyższają sumę z paragonu o <b>${fmtMoney(Math.abs(check.diffG), cur)}</b>. Poszukaj linii wpisanej dwa razy.`
+                        : `Pozycjom brakuje <b>${fmtMoney(Math.abs(check.diffG), cur)}</b> do sumy z paragonu. Sprawdź, czy któraś linia nie umknęła.`
+                } Razem wychodzi ${fmtMoney(check.sumG, cur)}, a paragon mówi ${fmtMoney(totalG, cur)}.`;
+            } else if (check.status === 'ok') {
+                // Zgodność też jest informacją — i to tą, po której wolno klikać bez czytania.
+                warn.className = 'mb-3 text-sm rounded-block p-3 text-due bg-due/10';
+                warn.innerHTML = `<i class="fas fa-circle-check mr-1" aria-hidden="true"></i>Zgadza się z sumą z paragonu co do grosza.`;
             } else {
-                warn.classList.add('hidden');
+                warn.className = 'hidden mb-3 text-sm rounded-block p-3';
+            }
+
+            // PRZYCISK NAZYWA, CO ROBI. Nie blokujemy zatwierdzenia — różnica bywa prawdziwa
+            // i człowiek o tym wie — ale zgoda na rozjazd ma być świadoma, a nie odruchowa.
+            if (applyBtn) {
+                applyBtn.textContent = check.status === 'diff'
+                    ? `Dodaj mimo różnicy ${fmtMoney(Math.abs(check.diffG), cur)}`
+                    : 'Dodaj do rachunku';
             }
         };
 
@@ -4414,9 +4490,20 @@
                 ['Koszty wspólne', pt.globalCostsAmount],
                 ['Koszt tylko Twój', pt.individualAmount],
             ], rest, pt.restAmount, true);
+            // ZNACZNIK „WSTĘPNIE" PRZY SAMEJ KWOCIE (zgłoszenie kolegi właściciela
+            // 2026-08-25: „przy tego typu rachunku pokazuje, ile jest do zapłaty, jeszcze
+            // przed zaznaczeniem pozycji, co może wprowadzić w błąd").
+            //
+            // Zdanie wyjaśniające stoi tu od 2026-08-20 i jest dobre — ale stoi POD kwotą,
+            // a człowiek patrzy NA kwotę. Liczba wygląda przez to na ostateczną, choć jest
+            // stanem przejściowym. Sama matematyka jest poprawna i celowa: kwota nierozpisana
+            // dzieli się po równo, żeby reszta nie spadła po cichu na płatnika.
+            const wstepnie = rest && rest.note
+                ? `<span class="chip flex-shrink-0">wstępnie</span>`
+                : '';
             return `<div class="mt-4 pt-3 border-t border-ink/10">
                 <div class="flex items-baseline justify-between gap-3">
-                    <span class="font-bold">Twój udział</span>
+                    <span class="font-bold flex items-baseline gap-2 min-w-0">Twój udział ${wstepnie}</span>
                     <span class="text-2xl">${amountHtml(toGrosze(pt.total), cur, 'text-ink')}</span>
                 </div>
                 ${conversion ? `<p class="text-right text-xs text-ink-2 mt-0.5">${conversion}</p>` : ''}
@@ -4656,9 +4743,59 @@
             // się z kwotą rachunku, ale nikt jeszcze nie wybrał, co jadł (typowo zaraz po
             // odczycie paragonu). Sam zielony napis „rozpisane co do grosza" przemilczałby
             // wtedy, że cała kwota idzie po równo.
+            // ROZPISANE DZIAŁANIE ZAMIAST DOMYSŁU O PRZYCZYNIE.
+            //
+            // Stało tu „Nadwyżka X. Ktoś przeliczył albo pozycja jest podwójna" — zdanie,
+            // które ZGADUJE przyczynę i pomija trzeci składnik sumy. Suma kontrolna liczy
+            // koszty własne, pozycje ORAZ koszty ogólne, więc przy doliczonym serwisie
+            // podpowiedź kierowała na fałszywy trop („szukaj podwójnej pozycji", a winny
+            // był napiwek dopisany po wpisaniu kwoty rachunku).
+            const breakdown = document.getElementById('control-breakdown');
+            const breakdownRows = document.getElementById('control-breakdown-rows');
+            const fixTotalBtn = document.getElementById('control-fix-total');
+            if (breakdown) breakdown.classList.toggle('hidden', control.status !== 'over');
+
             if (control.status === 'over') {
                 controlSumEl.classList.add('control-sum-bad');
-                if (controlStatusEl) { controlStatusEl.classList.add('control-sum-bad'); controlStatusEl.textContent = `Nadwyżka ${diffText(control.diff)}. Ktoś przeliczył albo pozycja jest podwójna`; }
+                if (controlStatusEl) {
+                    controlStatusEl.classList.add('control-sum-bad');
+                    controlStatusEl.textContent = `Pozycje przewyższają kwotę rachunku o ${diffText(control.diff)}.`;
+                }
+                if (breakdownRows) {
+                    const e = calculations.entered || { individual: 0, shared: 0, global: 0 };
+                    // `kwota`, a nie `value`: strażnik escapowania (`render.safety.test.js`)
+                    // słusznie traktuje nazwę `value` jako dane z bazy. Tu jest to liczba
+                    // z `calculateAll`, ale rozszerzanie listy wyjątków w teście po to,
+                    // żeby przepuścić jedną linię, rozluźniałoby sieć asekuracyjną dla
+                    // wszystkich następnych. Taniej i uczciwiej jest nazwać zmienną tak,
+                    // żeby nie udawała czegoś, czym nie jest.
+                    const row = (opis, kwota, strong = false) => `
+                        <div class="flex items-baseline justify-between gap-3 ${strong ? 'font-bold text-ink' : ''}">
+                            <span class="min-w-0 truncate">${escapeHtml(opis)}</span>
+                            <span class="amount flex-shrink-0">${diffText(kwota)}</span>
+                        </div>`;
+                    // Składniki zerowe nie wchodzą — pusty wiersz „0,00" tylko rozmywa obraz.
+                    breakdownRows.innerHTML = [
+                        e.shared > 0 ? row('Pozycje', e.shared) : '',
+                        e.individual > 0 ? row('Koszty własne', e.individual) : '',
+                        e.global !== 0 ? row('Koszty ogólne', e.global) : '',
+                        row('Razem', control.enteredSubtotal, true),
+                        row('Kwota rachunku', control.expectedTotal),
+                    ].join('');
+                }
+                if (fixTotalBtn) {
+                    // JEDNO STUKNIĘCIE NA NAJCZĘSTSZY PRZYPADEK: kwota rachunku wpisana,
+                    // zanim doszedł koszt ogólny. Nie robimy tego sami — to są cudze
+                    // pieniądze i decyzja należy do człowieka.
+                    fixTotalBtn.textContent = `Ustaw kwotę rachunku na ${diffText(control.enteredSubtotal)}`;
+                    fixTotalBtn.onclick = () => {
+                        fireWrite(
+                            updateDoc(itemsDocRef(), { totalAmount: control.enteredSubtotal }),
+                            'Nie udało się zmienić kwoty rachunku.',
+                        );
+                        showToast('Kwota rachunku zaktualizowana.');
+                    };
+                }
             } else if (calculations.unallocated > 0) {
                 if (controlStatusEl) {
                     controlStatusEl.textContent = calculations.perPersonUnallocated > 0
@@ -5090,6 +5227,26 @@
                 receiptDraft = null;
             };
             document.getElementById('apply-receipt-btn').onclick = applyReceiptDraft;
+
+            // SUMA Z PARAGONU WPISANA RĘCZNIE. Model nie zawsze ją odczyta — bywa ucięta
+            // na zdjęciu, rozmazana albo po prostu nie ma jej na wydruku. Do 2026-08-25
+            // znaczyło to, że kontrola milknie w całości i arkusz wygląda na sprawdzony.
+            // Jedna liczba od człowieka przywraca pełne sprawdzenie: różnicę, kierunek
+            // różnicy i oznaczenie pozycji większej niż cały paragon.
+            const totalApply = document.getElementById('receipt-total-apply');
+            const totalInput = document.getElementById('receipt-total-input');
+            if (totalApply && totalInput) {
+                totalApply.onclick = () => {
+                    if (!receiptDraft) return;
+                    const value = parseLocalFloat(totalInput.value);
+                    if (!(value > 0)) { showToast('Podaj sumę z paragonu.', true); return; }
+                    receiptDraft.receiptTotal = value;
+                    totalInput.value = '';
+                    renderReceiptPreview(); // pełne przerysowanie: dochodzą oznaczenia na wierszach
+                };
+                totalInput.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); totalApply.click(); } };
+            }
+
             // Edycja w podglądzie: każde pole od razu wraca do szkicu, żeby podsumowanie
             // i ostrzeżenie o różnicy liczyły się na tym, co użytkownik faktycznie widzi.
             const preview = document.getElementById('receipt-preview-items');
@@ -5105,9 +5262,19 @@
             };
             preview.onchange = (e) => {
                 const t = e.target;
-                if (!t.classList.contains('rp-use') || !receiptDraft) return;
-                receiptDraft.items[Number(t.dataset.i)].__use = t.checked;
-                renderReceiptPreview();
+                if (!receiptDraft) return;
+                if (t.classList.contains('rp-use')) {
+                    receiptDraft.items[Number(t.dataset.i)].__use = t.checked;
+                    renderReceiptPreview();
+                    return;
+                }
+                // Nazwa albo kwota po WYJŚCIU z pola: przeliczamy oznaczenia usterek.
+                // Nie robimy tego przy każdym znaku (`oninput`), bo pełne przerysowanie
+                // wyrzuca kursor z edytowanego pola — ale po poprawieniu duplikatu
+                // znacznik musi zniknąć, inaczej ostrzega o czymś, czego już nie ma.
+                if (t.classList.contains('rp-name') || t.classList.contains('rp-amount')) {
+                    renderReceiptPreview();
+                }
             };
             document.getElementById('receipt-preview-modifiers').onchange = (e) => {
                 const t = e.target;
