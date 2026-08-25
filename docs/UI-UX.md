@@ -1827,3 +1827,14 @@ do konsoli produkcyjnej.
 ### 20.6 Stan testów po etapie
 
 263 testy jednostkowe, 34 testy reguł, 13 sprawdzeń przebiegu offline. Wszystko zielone.
+
+### 20.7 Pułapka przy uruchamianiu testów
+
+`npm run test:rules` zakłada **czystą bazę w emulatorze**, a `tools/audit-offline.mjs`
+i `tools/shot-etap1.mjs` zostawiają w niej prawdziwe pokoje, rachunki i wpłaty. Puszczone
+w złej kolejności testy reguł wywalają kilka sprawdzeń z `PERMISSION_DENIED` i wygląda to
+jak regresja reguł, której nikt nie wprowadził — sprawdzone, ta sama liczba błędów wychodzi
+na gałęzi bazowej.
+
+Kolejność bezpieczna: **testy reguł najpierw, przebiegi przeglądarkowe potem** — albo
+restart emulatorów pomiędzy. Po restarcie 34 testy reguł przechodzą komplet.

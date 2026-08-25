@@ -12,6 +12,11 @@
 //   npx vite --port 5199 --strictPort
 // a potem:
 //   BILLIADA_URL=http://localhost:5199/ node tools/audit-offline.mjs
+//
+// KOLEJNOŚĆ MA ZNACZENIE: `npm run test:rules` puszczaj PRZED tym przebiegiem albo po
+// restarcie emulatorów. Ten audyt zakłada w emulatorze prawdziwe pokoje i rachunki,
+// a testy reguł zakładają czystą bazę — puszczone po nim wywalają kilka sprawdzeń
+// z PERMISSION_DENIED i wygląda to jak regresja reguł, którą nikt nie wprowadził.
 import puppeteer from 'puppeteer';
 
 const ADRES = process.env.BILLIADA_URL || 'http://localhost:5173/'; // nie `URL` — przykrywałoby konstruktor `new URL(...)`

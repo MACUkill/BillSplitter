@@ -590,7 +590,12 @@ the verdict, and DESIGN.md
                      przed dodaniem kosztu ogólnego. Widoczne wyłącznie przy rozjeździe. -->
                 <div id="control-breakdown" class="hidden mt-2 rounded-block bg-surface-2 p-3">
                     <div id="control-breakdown-rows" class="text-sm text-ink-2"></div>
-                    <button id="control-fix-total" class="btn btn-quiet w-full mt-3" type="button"></button>
+                    <!-- `btn-dark`, nie `btn-quiet`: cichy przycisk ma tło `surface-2`,
+                         czyli DOKŁADNIE to samo, co blok, w którym stoi — na zrzucie
+                         wyglądał jak wyśrodkowany tekst, nie jak coś do naciśnięcia.
+                         Ten sam układ (blok `surface-2` + ciemny przycisk) niesie już
+                         notka o walucie w arkuszu paragonu. -->
+                    <button id="control-fix-total" class="btn btn-dark w-full mt-3" type="button"></button>
                 </div>
                 <p id="pln-conversion-display" class="text-sm text-ink-3 mt-1"></p>
 

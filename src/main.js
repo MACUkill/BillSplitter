@@ -4816,7 +4816,10 @@
                     // JEDNO STUKNIĘCIE NA NAJCZĘSTSZY PRZYPADEK: kwota rachunku wpisana,
                     // zanim doszedł koszt ogólny. Nie robimy tego sami — to są cudze
                     // pieniądze i decyzja należy do człowieka.
-                    fixTotalBtn.textContent = `Ustaw kwotę rachunku na ${diffText(control.enteredSubtotal)}`;
+                    // Krótko, bo pełne „Ustaw kwotę rachunku na 210,50 PLN" łamie się na
+                    // wąskim telefonie na dwie linie. Czego dotyczy kwota, mówi rozpiska
+                    // stojąca bezpośrednio nad przyciskiem.
+                    fixTotalBtn.textContent = `Ustaw kwotę na ${diffText(control.enteredSubtotal)}`;
                     fixTotalBtn.onclick = () => {
                         fireWrite(
                             updateDoc(itemsDocRef(), { totalAmount: control.enteredSubtotal }),
