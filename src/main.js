@@ -4812,6 +4812,25 @@
                         row('Kwota rachunku', control.expectedTotal),
                     ].join('');
                 }
+                // WYJAŚNIENIE, A NIE SAMA ARYTMETYKA.
+                //
+                // Rozpiska mówi, ŻE się nie zgadza. Nie mówi, CZEGO szukać — a bez tego
+                // człowiek patrzy na trzy liczby i dalej nie wie, co zrobić. Poprzednia
+                // wersja próbowała to załatwić jednym zdaniem („ktoś przeliczył albo
+                // pozycja jest podwójna”), które zgadywało przyczynę i pomijało koszty
+                // ogólne. Zamiast zgadywać: jeden przypadek rozpoznajemy PEWNIE, a przy
+                // reszcie wypisujemy dwie realne możliwości zwykłymi słowami.
+                const whyEl = document.getElementById('control-breakdown-why');
+                if (whyEl) {
+                    const e = calculations.entered || { individual: 0, shared: 0, global: 0 };
+                    // Różnica równa co do grosza kosztom ogólnym to nie przypuszczenie,
+                    // tylko arytmetyka: kwota rachunku została wpisana przed ich dodaniem.
+                    const toKosztyOgolne = e.global > 0 && Math.abs(e.global - control.diff) < 0.005;
+                    whyEl.innerHTML = toKosztyOgolne
+                        ? `Różnica to dokładnie tyle, ile wynoszą koszty ogólne. Wygląda na to, że kwota rachunku (${diffText(control.expectedTotal)}) została wpisana, zanim ktoś je dopisał — wtedy wystarczy ją podnieść.`
+                        : `Najczęściej znaczy to jedno z dwóch:<br>• ta sama pozycja została wpisana dwa razy,<br>• albo kwota rachunku nie obejmuje jeszcze czegoś, co zostało dopisane (napiwek, serwis, opłata za nakrycie).`;
+                }
+
                 if (fixTotalBtn) {
                     // JEDNO STUKNIĘCIE NA NAJCZĘSTSZY PRZYPADEK: kwota rachunku wpisana,
                     // zanim doszedł koszt ogólny. Nie robimy tego sami — to są cudze
