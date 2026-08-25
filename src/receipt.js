@@ -273,3 +273,75 @@ export const receiptModifiersToGlobalCosts = (modifiers, makeId) =>
     type: m.type,
     value: m.value,
   }));
+
+// --- PODEJRZANE POZYCJE W ODCZYCIE ------------------------------------------
+//
+// DLACZEGO PO STRONIE APLIKACJI, A NIE W PROMPCIE: prompt ma już sekcję „GDY SUMA SIĘ
+// NIE ZGADZA" i mimo to przepuścił pozycję wpisaną dwa razy (zgłoszenie z 2026-08-25:
+// „opłata za nakrycie" 27,50 na liście dwukrotnie, rachunek 183 pokazywał 210,50).
+// Model, który przeoczył linię, tym samym rozumowaniem przeoczy własny błąd. Odejmowanie
+// dwóch liczb nie ma złego dnia — więc sprawdzamy tutaj, deterministycznie.
+//
+// ZNACZNIK, NIE KASOWANIE. Funkcja tylko WSKAZUJE wiersz; decyzję podejmuje człowiek.
+// Aplikacja od cudzych pieniędzy nie usuwa po cichu odczytanych danych — bo „dwie takie
+// same pozycje" bywa czasem prawdą, a cicho skasowana linia zaniża rachunek płatnikowi.
+
+// Linie podsumowania nigdy nie są pozycją. Prompt tego zabrania (reguła 9), ale to jest
+// druga warstwa: jedno przeoczenie modelu nie ma prawa wejść na rachunek bez ostrzeżenia.
+const SUMMARY_LINE_RE = /^\s*(suma|razem|łącznie|lacznie|do zapłaty|do zaplaty|total|subtotal|amount due|gotówka|gotowka|karta|reszta)\b/i;
+
+// Klucz duplikatu: nazwa bez ozdób i kwota co do grosza. Ilość NIE wchodzi do klucza —
+// „2 × woda" i „2 × woda" to nadal ta sama linia odczytana dwa razy.
+const dupKey = (it) =>
+  `${String((it && it.description) || '').trim().replace(/\s+/g, ' ').toLowerCase()}|${toGrosze((it && it.amount) || 0)}`;
+
+// Zwraca tablicę RÓWNOLEGŁĄ do `items`, w każdym miejscu lista kodów usterek:
+//   'duplicate'    — ta sama nazwa i ta sama kwota występuje w odczycie więcej niż raz.
+//                    Łapie też dwa zdjęcia tego samego paragonu, gdzie dubluje się wszystko.
+//   'over-total'   — pojedyncza pozycja przewyższa sumę całego paragonu. Zero fałszywych
+//                    alarmów: to niemożliwe, więc zawsze jest błędem (typowo przecinek
+//                    nie tam, gdzie trzeba — 275,00 zamiast 27,50).
+//   'summary-line' — nazwa wygląda na linię podsumowania, nie na pozycję.
+export function receiptItemFlags(items, receiptTotal) {
+  const list = Array.isArray(items) ? items : [];
+  const flags = list.map(() => new Set());
+
+  const byKey = new Map();
+  list.forEach((it, i) => {
+    const key = dupKey(it);
+    if (byKey.has(key)) {
+      flags[i].add('duplicate');
+      flags[byKey.get(key)].add('duplicate');
+    } else {
+      byKey.set(key, i);
+    }
+  });
+
+  const totalG = receiptTotal ? toGrosze(receiptTotal) : 0;
+  list.forEach((it, i) => {
+    if (totalG > 0 && toGrosze((it && it.amount) || 0) > totalG) flags[i].add('over-total');
+    if (SUMMARY_LINE_RE.test(String((it && it.description) || ''))) flags[i].add('summary-line');
+  });
+
+  return flags.map((s) => [...s]);
+}
+
+// Stan kontroli sumy w arkuszu akceptacji. TRZY STANY, NIGDY ZERO — i to jest cała
+// istota tej funkcji.
+//
+// Do 2026-08-25 warunek brzmiał `totalG > 0 && …`, więc gdy model nie odczytał sumy
+// paragonu, ostrzeżenie znikało w całości i arkusz wyglądał DOKŁADNIE tak samo pewnie,
+// jak wtedy, gdy wszystko się spina. Brak ostrzeżenia musi znaczyć „sprawdzone”,
+// a nigdy „nie miałem czym sprawdzić”.
+//
+//   'ok'      — pozycje i modyfikatory spinają się z sumą z paragonu
+//   'diff'    — spinają się, ale nie z tą sumą; `diffG` niesie ZNAK, bo kierunek
+//               rozstrzyga, czego szukać: nadmiar to duplikat, niedobór to przeoczona linia
+//   'no-total'— nie ma z czym porównać; ekran ma o tym powiedzieć i poprosić o kwotę
+export function receiptCheck(itemsG, modifiersG, receiptTotalG) {
+  const sumG = Math.round((itemsG || 0) + (modifiersG || 0));
+  if (!receiptTotalG || receiptTotalG <= 0) return { status: 'no-total', sumG, diffG: 0 };
+  const diffG = sumG - Math.round(receiptTotalG);
+  if (Math.abs(diffG) <= TOLERANCE_G) return { status: 'ok', sumG, diffG: 0 };
+  return { status: 'diff', sumG, diffG };
+}

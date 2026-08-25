@@ -49,6 +49,46 @@ export function planVsPairwise(ledger) {
   return { plan, pairwise };
 }
 
+// SKĄD WZIĄŁ SIĘ WIERSZ „KTO KOMU": z rachunku czy z cudzej wpłaty poprowadzonej inaczej.
+//
+// USTERKA, KTÓRĄ TO NAPRAWIA (odtworzona na żywym kodzie 2026-08-25). Kuba jest winien
+// Markowi 50, Marek Oli 50. Plan minimalny mówi „Kuba płaci Oli 50" i Kuba to robi.
+// Po wpłacie salda wszystkich trzech osób są zerowe, plan minimalny jest pusty — a
+// zakładka „Kto komu" pokazuje TRZY otwarte długi po 50, każdy z przyciskiem „Ureguluj".
+// Trzeci z nich (Ola → Kuba) nie pochodzi z żadnego rachunku: powstał wyłącznie dlatego,
+// że wpłata Kuby do Oli dokłada w `buildLedger` krawędź odwrotną. Marek mógł w dobrej
+// wierze upomnieć się o 50 zł, których Kuba nie jest winien.
+//
+// Powód siedzi w `netDirected` (functions/calc.js): zwija długi WYŁĄCZNIE wewnątrz pary,
+// więc cyklu nie widzi. `simplifyDebts` pracuje na saldach osób, więc cykl znika mu sam.
+// Stąd dwa widoki i dwie różne prawdy o tej samej sytuacji.
+//
+// Pełna naprawa to rozłożenie wpłaty na długi, które faktycznie zgasiła — ta sama robota,
+// co „za co" w planie minimalnym, i idzie razem z nią. Tutaj jest warstwa, która NICZEGO
+// NIE UKRYWA, tylko nazywa pochodzenie wiersza. Ukrywanie byłoby błędem: kółko długów
+// potrafi powstać z samych rachunków, bez ani jednej wpłaty, i wtedy są to długi prawdziwe,
+// z prawdziwym „za co”.
+//
+// Zwraca 'bill' (są rachunki po którejś stronie pary), 'payment' (sama wpłata — wiersz
+// widmo) albo 'none' (brak danych).
+export function netRowOrigin(directed, from, to) {
+  const edgeOf = (a, b) => (directed || []).find((d) => d && d.from === a && d.to === b);
+  let hasBill = false;
+  let hasPayment = false;
+  [edgeOf(from, to), edgeOf(to, from)].forEach((e) => {
+    ((e && e.contributions) || []).forEach((c) => {
+      if (c && c.kind === 'payment') hasPayment = true;
+      else hasBill = true;
+    });
+  });
+  // Rachunek wygrywa nad wpłatą: dług z rachunku spłacony w części to nadal dług z rachunku,
+  // a nie wiersz widmo. Znacznik należy się WYŁĄCZNIE wierszowi, za którym nie stoi
+  // ani jeden rachunek.
+  if (hasBill) return 'bill';
+  if (hasPayment) return 'payment';
+  return 'none';
+}
+
 // Saldo na czysto per waluta. NIEZMIENNIK, na którym stoi cały ten ekran: saldo jest
 // identyczne w obu planach — plan zmienia wyłącznie TRASĘ pieniędzy, nie to, ile komu
 // ostatecznie zostaje. Dzięki temu wielka liczba na Bilansie nie drgnie przy przełączeniu

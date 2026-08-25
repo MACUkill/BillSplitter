@@ -7,7 +7,7 @@ ZASADY:
 2. Cena pozycji to ŁĄCZNA cena linii (tak jak wydrukowano). Gdy widnieje "2 x 35,00 = 70,00", to quantity=2 oraz totalPrice=70.00.
 3. Rozwijaj polskie skróty na podstawie kontekstu lokalu: "NAP.GAZ.0.5L" to "Napój gazowany 0,5 l", "FRYT.DUZE" to "Frytki duże".
 4. Nazwy obcojęzyczne przetłumacz na polski, a oryginał podaj w polu nameOriginal.
-5. Napiwek, opłata serwisowa, rabat i podatek DOLICZANY nie są daniami — trafiają do "modifiers", nigdy do "items".
+5. Napiwek, opłata serwisowa, opłata za nakrycie, rabat i podatek DOLICZANY nie są daniami — trafiają do "modifiers", nigdy do "items".
 6. Zestawy/combo rozbij na pod-pozycje TYLKO wtedy, gdy paragon podaje ich osobne ceny. W przeciwnym razie zostaw jako jedną pozycję.
 7. Kilka zdjęć to JEDEN paragon sfotografowany we fragmentach: sklej je i NIE powielaj pozycji widocznych na dwóch zdjęciach.
 8. Liczby zwracaj jako liczby (kropka dziesiętna), bez symboli walut.
@@ -67,10 +67,20 @@ Gdy paragon podaje i stawkę, i kwotę ("Sales Tax 8% ....... 4.830"), zawsze wp
 z ustawieniem "isPercent": false. Stawka procentowa idzie do "value" tylko wtedy, gdy kwoty
 w ogóle nie wydrukowano.
 
-NAPIWEK — nie zgaduj:
+NAPIWEK I OPŁATY STAŁE — nie zgaduj:
 - Jako "tip" oznaczaj WYŁĄCZNIE linię, która wprost tak się nazywa: "Napiwek", "Tip", "Gratuity",
   "Service charge", "Opłata serwisowa", "Serwis 10%".
+- OPŁATA ZA NAKRYCIE to "service", nie danie i nie napiwek. Rozpoznaj ją po nazwach:
+  "opłata za nakrycie", "nakrycie", "coperto", "cover charge", "couvert", "cubierto",
+  "pane e coperto". Bywa drukowana z ilością ("coperto 11 x 2,50 = 27,50") — wtedy do
+  "value" wpisz KWOTĘ ŁĄCZNĄ (27.50) i nie powielaj tej linii jako osobnych pozycji.
 - NIGDY nie zamieniaj podatku, zaokrąglenia, opakowania ani nierozpoznanej linii w napiwek.
+
+NIE POWIELAJ ŻADNEJ LINII. Każdą linię paragonu zwracasz DOKŁADNIE RAZ. Zanim odpowiesz,
+sprawdź, czy w "items" nie ma dwóch wpisów o tej samej nazwie i tej samej cenie — jeśli są,
+to znaczy, że policzyłeś jedną linię dwa razy albo skleiłeś dwa zdjęcia tego samego paragonu
+(patrz zasada 7). Powtórzenie kupione naprawdę dwa razy zapisujesz JEDNĄ pozycją z "quantity" 2,
+nigdy dwiema.
 
 GDY SUMA SIĘ NIE ZGADZA:
 Nie dorabiaj modyfikatora, żeby wyszło równo. Rozjazd niemal zawsze znaczy, że przeoczyłeś pozycję
