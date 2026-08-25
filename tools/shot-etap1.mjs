@@ -135,5 +135,39 @@ const gdzie = await page.evaluate(() => ({
 console.log(JSON.stringify(gdzie, null, 2));
 await shot('03-pasek-lacznosci-lie-fi');
 
+// --- postęp wysyłki zdjęcia profilowego, przy ZDŁAWIONYM łączu ---
+//
+// Bez dławienia tego stanu NIE DA SIĘ zobaczyć: wysyłka na localhost kończy się szybciej,
+// niż zdąży się cokolwiek narysować. A to właśnie ten stan był przedmiotem zgłoszenia
+// („nie było żadnego feedbacku, że to się dzieje"), więc musi zostać obejrzany.
+await cdp.send('Network.setBlockedURLs', { urls: [] });
+await page.goto(`${ADRES}?group=${groupId}`, { waitUntil: 'domcontentloaded' });
+await page.waitForSelector('#group-dashboard-screen:not(.hidden)', { timeout: 25000 });
+await page.evaluate(() => document.getElementById('nav-me')?.click());
+await page.waitForSelector('#profile-screen:not(.hidden)', { timeout: 10000 });
+await czekaj(500);
+
+// 12 kB/s w górę: plik na 256 kB idzie wtedy kilkanaście sekund i widać każdy procent.
+await cdp.send('Network.emulateNetworkConditions', {
+  offline: false, latency: 200, downloadThroughput: -1, uploadThroughput: 12 * 1024,
+});
+
+const wejscie = await page.$('#profile-photo-input');
+await wejscie.uploadFile('logo/billiada-logo-transparent.png');
+
+// Czekamy, aż procent przestanie być zerem — inaczej złapiemy klatkę sprzed startu.
+await page.waitForFunction(
+  () => /[1-9]\d?%/.test(document.getElementById('profile-avatar-preview')?.textContent || ''),
+  { timeout: 30000 },
+).catch(() => {});
+const podglad = await page.evaluate(() => ({
+  tresc: document.getElementById('profile-avatar-preview')?.textContent?.trim(),
+  maObrazek: Boolean(document.querySelector('#profile-avatar-preview img')),
+  zrodlo: document.querySelector('#profile-avatar-preview img')?.src?.slice(0, 12),
+}));
+console.log('\n— wysyłka zdjęcia w toku —');
+console.log(JSON.stringify(podglad, null, 2));
+await shot('04-wysylka-zdjecia-procent');
+
 await browser.close();
 console.log(`\nZrzuty w ${OUT}`);
