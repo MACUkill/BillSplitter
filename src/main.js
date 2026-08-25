@@ -77,6 +77,8 @@
         let unsubscribeSettlements = null;
         let unsubscribeNudges = null;
         let unsubscribeEvents = null;
+        // Nasłuch WYŁĄCZNIE od stanu łączności — patrz `watchConnectivity`.
+        let unsubscribeNet = null;
         let latestEvents = []; // dziennik aktywności pokoju (append-only)
         let isAuthReady = false;
         let currentScreenName = null;
@@ -346,8 +348,13 @@
             if (unsubscribeSettlements) unsubscribeSettlements();
             if (unsubscribeNudges) unsubscribeNudges();
             if (unsubscribeEvents) unsubscribeEvents();
+            // Nasłuch łączności też schodzi razem z pokojem — poza pokojem nie ma czego
+            // pilnować, a zostawiony wisiałby na dokumencie, którego już nie oglądamy.
+            if (unsubscribeNet) unsubscribeNet();
             unsubscribeGroup = unsubscribeBill = unsubscribeSettlements = null;
-            unsubscribeNudges = unsubscribeEvents = null;
+            unsubscribeNudges = unsubscribeEvents = unsubscribeNet = null;
+            netFromCache = false;
+            renderNetBanner();
             currentGroupId = null;
             currentBillId = null;
             groupData = null;
@@ -509,6 +516,27 @@
             const wasFromCache = netFromCache;
             netFromCache = metadata.fromCache === true;
             if (wasFromCache !== netFromCache) renderNetBanner();
+        };
+
+        // OSOBNY NASŁUCH TYLKO OD ŁĄCZNOŚCI — i to nie jest nadmiarowość.
+        //
+        // `onSnapshot` DOMYŚLNIE NIE ZGŁASZA zmian samych metadanych. Powrót serwera przy
+        // niezmienionych danych nie wywołuje więc żadnego wywołania zwrotnego i pasek
+        // zostaje zapalony na „Sieć nie odpowiada", choć wszystko już działa. Złapał to
+        // dopiero przebieg `tools/audit-offline.mjs` — z samego kodu tego nie widać.
+        //
+        // Poprawka wymaga `includeMetadataChanges`, ale dokładanie go do nasłuchu grupy
+        // kazałoby przerysowywać CAŁY pulpit przy każdym potwierdzeniu zapisu — a w trybie
+        // rachunkowym takich potwierdzeń idzie kilka pod rząd. Dlatego stan łączności
+        // dostaje własny, pusty nasłuch: zero rysowania, jedno zadanie.
+        const watchConnectivity = (groupDocRef) => {
+            if (unsubscribeNet) unsubscribeNet();
+            unsubscribeNet = onSnapshot(
+                groupDocRef,
+                { includeMetadataChanges: true },
+                (snap) => noteSnapshot(snap.metadata),
+                (err) => console.warn('[Billiada] Nasłuch łączności przerwany:', err),
+            );
         };
 
         // ZAPIS, KTÓRY NIE ZATRZYMUJE INTERFEJSU.
@@ -1272,7 +1300,8 @@
             if (unsubscribeEvents) unsubscribeEvents();
 
             const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
-            
+            watchConnectivity(groupDocRef);
+
             onSnapshot(groupDocRef, (docSnap) => {
                 // Metadane nasłuchu to jedyne wiarygodne źródło wiedzy o tym, czy serwer
                 // odpowiada — `navigator.onLine` tego nie wie (patrz `renderNetBanner`).

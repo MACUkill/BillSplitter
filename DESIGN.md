@@ -534,6 +534,37 @@ Adres składa się **wyłącznie** z oczyszczonego uchwytu i znanej domeny — n
 tekstu, bo pole wypełnia dowolna osoba w pokoju, a `href` przyjmujący czyjś tekst to
 otwarta furtka na `javascript:`.
 
+### Stan operacji sieciowej mieszka NA RZECZY, nie w dymku
+
+Reguła nazwana, dodana 2026-08-25 po zgłoszeniu z wakacji: „wgrałem zdjęcie profilowe
+i nie było żadnego feedbacku, że to się dzieje — dopiero jakoś po minucie się
+zaktualizowało".
+
+Dymek żyje 3,6 sekundy. Wysyłka pliku przez zdychające wifi trwa minutę. Przez pozostałe
+pięćdziesiąt kilka sekund ekran nie mówił nic, a awatar był stary — czyli wyglądało to
+dokładnie tak, jakby nic się nie stało.
+
+**Dymek jest do zdarzeń chwilowych.** Operacja, która może trwać dłużej niż jego życie,
+pokazuje swój stan na elemencie, którego dotyczy: procent na awatarze przy wysyłce zdjęcia,
+znacznik wysyłki na wierszu, pasek łączności dla całej aplikacji. Stan znika dopiero wtedy,
+gdy operacja się kończy — nigdy wcześniej.
+
+Z tej samej reguły wynika druga: **brak ostrzeżenia musi znaczyć „sprawdzone", a nigdy
+„nie miałem czym sprawdzić"**. Kontrola, która milknie przy brakujących danych, wygląda
+identycznie jak kontrola, która przeszła — i uczy ufać ekranowi, który niczego nie
+sprawdził. Kontrola sumy paragonu ma dlatego trzy stany, nie dwa.
+
+### Komunikat pokazuje działanie, nie domysł o przyczynie
+
+Rozjazd kwot mówi, Z CZEGO wynika i W KTÓRĄ STRONĘ, zamiast zgadywać powód. Zdanie
+„ktoś przeliczył albo pozycja jest podwójna" trafiało w połowie przypadków, a w drugiej
+połowie kierowało na fałszywy trop — bo pomijało koszty ogólne, czyli trzeci składnik
+sumy kontrolnej. Kierunek różnicy niesie informację i musi być w treści: nadmiar znaczy
+duplikat, niedobór znaczy przeoczoną linię.
+
+Gdy da się naprawić rzecz jednym stuknięciem, obok stoi przycisk, który to robi — ale
+**aplikacja nigdy nie robi tego sama**. To są cudze pieniądze.
+
 ## Motion
 
 Jedna krzywa: `cubic-bezier(0.2, 0, 0, 1)`. Trzy dozwolone role i nic poza nimi:
