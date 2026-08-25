@@ -15,7 +15,7 @@
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, getDocFromCache, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, getDocs, runTransaction, increment, limit } from "firebase/firestore";
-        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, connectStorageEmulator } from "firebase/storage";
+        import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject, connectStorageEmulator } from "firebase/storage";
         import { getMessaging, getToken, onMessage, isSupported as isMessagingSupported } from "firebase/messaging";
         import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
         import { normalizeReceipt, receiptItemsToSharedCosts, receiptModifiersToGlobalCosts } from './receipt.js';
@@ -3362,7 +3362,13 @@
             const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
             const av = document.getElementById('profile-avatar-preview');
             if (av && myMember) {
-                if (myMember.photoURL) {
+                // WYSYŁKA W TOKU WYGRYWA ZE STANEM Z BAZY. Nasłuch grupy przerysowuje profil
+                // przy każdej cudzej zmianie, a bez tego warunku każde takie przerysowanie
+                // zdejmowałoby podgląd nowego zdjęcia i wracało do starego awatara — czyli
+                // wysyłka wyglądałaby na przerwaną.
+                if (pendingPhoto) {
+                    av.innerHTML = pendingPhotoHtml();
+                } else if (myMember.photoURL) {
                     av.innerHTML = `<img src="${escapeHtml(myMember.photoURL)}" class="w-16 h-16 rounded-full object-cover" alt="">`;
                 } else {
                     // Ten sam znak, co wszędzie indziej, tylko w pełnym rozmiarze: dopiero
@@ -3375,7 +3381,38 @@
             renderColorField(myMember);
         };
 
-        // Zdjęcie profilowe (reużycie maszynerii zdjęć paragonów: heic2any + Storage).
+        // --- ZDJĘCIE PROFILOWE ----------------------------------------------------
+        //
+        // Zgłoszenie z 2026-08-25 (kolega właściciela, wakacje, bardzo słaby zasięg):
+        // „jak uploadowałem zdjęcie profilowe, nie było żadnego feedbacku, że to się
+        // dzieje — dopiero jakoś po minucie się zaktualizowało".
+        //
+        // Przyczyna była dokładna: jedyną informacją zwrotną był dymek „Wgrywanie
+        // zdjęcia…", który żyje 3,6 sekundy (patrz `showToast`). Wysyłka trwała minutę,
+        // więc przez pozostałe pięćdziesiąt kilka sekund ekran nie mówił NIC, a awatar
+        // był stary — czyli wyglądało to dokładnie tak, jakby nic się nie stało.
+        //
+        // ZASADA OGÓLNA, KTÓRA Z TEGO WYNIKA: stan operacji sieciowej mieszka NA RZECZY,
+        // której dotyczy, a nie w dymku. Dymek jest do zdarzeń chwilowych; wysyłka pliku
+        // przez zdychające wifi zdarzeniem chwilowym nie jest.
+        let pendingPhoto = null; // { previewUrl, percent } — trwa wysyłka
+
+        const pendingPhotoHtml = () => `
+            <span class="relative block w-16 h-16">
+                <img src="${escapeHtml(pendingPhoto.previewUrl)}" class="w-16 h-16 rounded-full object-cover opacity-50" alt="">
+                <span class="absolute inset-0 flex items-center justify-center rounded-full bg-ink/60 text-surface text-xs font-bold">${pendingPhoto.percent}%</span>
+            </span>`;
+
+        const setPendingPhoto = (next) => {
+            // Adres obiektowy trzeba zwolnić ręcznie, inaczej podgląd trzyma plik w pamięci
+            // do końca życia karty. Przy kilku podejściach z rzędu to megabajty.
+            if (pendingPhoto && (!next || next.previewUrl !== pendingPhoto.previewUrl)) {
+                try { URL.revokeObjectURL(pendingPhoto.previewUrl); } catch (_) {}
+            }
+            pendingPhoto = next;
+            if (currentScreenName === 'profile') renderProfile();
+        };
+
         const uploadProfilePhoto = async (file) => {
             const myMember = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === currentUser.uid);
             if (!myMember || !file) return;
@@ -3386,16 +3423,50 @@
             }
             if (!f.type || !f.type.startsWith('image/')) { showToast('Wybierz obraz.', true); return; }
             if (f.size > 20 * 1024 * 1024) { showToast('Zdjęcie za duże (max 20 MB).', true); return; }
-            showToast('Wgrywanie zdjęcia...');
-            try {
-                const oldURL = myMember.photoURL;
-                const storageRef = ref(storage, `groups/${currentGroupId}/profile-photos/${myMember.id}/${Date.now()}-${name}`);
-                const snap = await uploadBytes(storageRef, f);
-                const url = await getDownloadURL(snap.ref);
-                await updateDoc(doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId), { [`members.${myMember.id}.photoURL`]: url });
-                if (oldURL) { try { await deleteObject(ref(storage, oldURL)); } catch (e) {} }
-                showToast('Zapisano zdjęcie profilowe.');
-            } catch (e) { console.error(e); showToast('Nie udało się wgrać zdjęcia.', true); }
+
+            // PODGLĄD NATYCHMIAST, jeszcze przed dotknięciem sieci. Awatar zmienia się
+            // w tej samej chwili, w której człowiek wybrał plik — reszta to już tylko
+            // czekanie, o którym ekran mówi wprost.
+            setPendingPhoto({ previewUrl: URL.createObjectURL(f), percent: 0 });
+
+            const oldURL = myMember.photoURL;
+            const storageRef = ref(storage, `groups/${currentGroupId}/profile-photos/${myMember.id}/${Date.now()}-${name}`);
+            // `uploadBytesResumable`, nie `uploadBytes`: tamto nie ma zdarzeń postępu,
+            // więc nie da się z niego zrobić żadnego wskaźnika poza „trwa".
+            const task = uploadBytesResumable(storageRef, f);
+
+            task.on('state_changed',
+                (snap) => {
+                    const percent = snap.totalBytes > 0
+                        ? Math.min(99, Math.round((snap.bytesTransferred / snap.totalBytes) * 100))
+                        : 0;
+                    if (pendingPhoto && pendingPhoto.percent !== percent) {
+                        setPendingPhoto({ ...pendingPhoto, percent });
+                    }
+                },
+                (err) => {
+                    console.error('[Billiada] Wysyłka zdjęcia nieudana:', err);
+                    setPendingPhoto(null);
+                    showToast('Nie udało się wgrać zdjęcia. Spróbuj ponownie.', true);
+                },
+                async () => {
+                    try {
+                        const url = await getDownloadURL(task.snapshot.ref);
+                        // Zapis adresu NIE jest czekany: offline i tak trafia do kolejki,
+                        // a nasłuch grupy pokaże nowe zdjęcie od razu.
+                        fireWrite(
+                            updateDoc(doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId), { [`members.${myMember.id}.photoURL`]: url }),
+                            'Zdjęcie wysłane, ale nie udało się go zapisać w profilu.',
+                        );
+                        if (oldURL) { try { await deleteObject(ref(storage, oldURL)); } catch (_) {} }
+                        showToast('Zapisano zdjęcie profilowe.');
+                    } catch (e) {
+                        console.error('[Billiada] Nie udało się odczytać adresu zdjęcia:', e);
+                        showToast('Zdjęcie wysłane, ale nie udało się go zapisać.', true);
+                    } finally {
+                        setPendingPhoto(null);
+                    }
+                });
         };
         const removeProfilePhoto = async () => {
             const myMember = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === currentUser.uid);
@@ -5131,6 +5202,9 @@
         // Wysyłką zajmie się backend (docelowo trigger na nudges/{id}); klient tylko rejestruje token.
         const VAPID_KEY = env.VITE_FCM_VAPID_KEY || '';
         let pushToken = null;
+        // Rejestracja w toku. Bez tego stanu przełącznik nie umiał odróżnić „zgoda jest,
+        // trwa zapisywanie urządzenia" od „zgody nie ma" — a to są dwie różne rzeczy.
+        let pushRegistering = false;
         // TOKEN NALEŻY ZAPISAĆ W KAŻDYM POKOJU, NIE W JEDNYM.
         // Tokeny mieszkają w `members.{id}.fcmTokens` WEWNĄTRZ dokumentu grupy, a wysyłka
         // (`sendNudgePush`) szuka ich w grupie, z której poszło przypomnienie. Stała tu
@@ -5212,25 +5286,55 @@
                 btn.classList.add('opacity-60');
                 return;
             }
+            // PIĘĆ STANÓW, NIE TRZY.
+            //
+            // Zgłoszenie z 2026-08-25: „jak włączyłem notifications, wyskoczył alert, że się
+            // nie powiodło, ale potem jak klikam na tę opcję, to pisze, że są włączone".
+            //
+            // Rzeczywistość ma dwa NIEZALEŻNE stany, a interfejs zlepiał je w jeden:
+            //   ZGODA        — systemowa odpowiedź `Notification.permission`
+            //   REJESTRACJA  — token FCM, który potrafi się nie udać przy słabej sieci
+            // Zgoda przyznana bez tokenu renderowała się jako „Włącz powiadomienia", czyli
+            // jako BRAK ZGODY — nieprawda. Chwilę później `setupPush` po cichu dobierał token
+            // i przełącznik mówił „włączone". Stąd dokładnie ta sprzeczność.
             const perm = Notification.permission;
-            if (perm === 'granted' && pushToken) {
-                label.textContent = 'Powiadomienia włączone';
-                note.textContent = 'Dostaniesz przypomnienie o zaległości nawet przy zamkniętej apce.';
-            } else if (perm === 'denied') {
+            if (perm === 'denied') {
                 label.textContent = 'Powiadomienia zablokowane';
                 note.textContent = 'Odblokuj je w ustawieniach przeglądarki dla tej strony.';
+            } else if (perm === 'granted' && pushToken) {
+                label.textContent = 'Powiadomienia włączone';
+                note.textContent = 'Dostaniesz przypomnienie o zaległości nawet przy zamkniętej apce.';
+            } else if (perm === 'granted' && pushRegistering) {
+                label.textContent = 'Kończę rejestrację…';
+                note.textContent = 'Zgoda jest. Zapisuję to urządzenie — przy słabej sieci chwilę to trwa.';
+            } else if (perm === 'granted') {
+                label.textContent = 'Zgoda jest, urządzenie niezapisane';
+                note.textContent = 'Spróbuję ponownie, gdy wróci sieć. Możesz też stuknąć tutaj.';
             } else {
                 label.textContent = 'Włącz powiadomienia';
                 note.textContent = 'Przypomnienia o zaległościach trafią na to urządzenie.';
             }
         };
 
+        // `getToken` potrafi wisieć bez końca przy sieci, która jest, ale nie odpowiada —
+        // a wtedy przełącznik stoi w „Kończę rejestrację…" w nieskończoność. Limit czasu
+        // zamienia to w porażkę, którą da się ponowić.
+        const PUSH_TOKEN_TIMEOUT_MS = 8000;
+        // Pierwsze podejście od razu, dwa kolejne z rosnącą przerwą. Trzy próby zamykają
+        // się w kilkunastu sekundach, czyli w czasie, w którym człowiek jeszcze patrzy.
+        const PUSH_RETRY_DELAYS_MS = [0, 2000, 6000];
+
+        const withTimeout = (promise, ms, label) => Promise.race([
+            promise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error(`${label}: przekroczono ${ms} ms`)), ms)),
+        ]);
+
         const acquirePushToken = async () => {
             const messaging = getMessaging(app);
-            pushToken = await getToken(messaging, {
+            pushToken = await withTimeout(getToken(messaging, {
                 vapidKey: VAPID_KEY,
                 serviceWorkerRegistration: swRegistration || undefined,
-            });
+            }), PUSH_TOKEN_TIMEOUT_MS, 'getToken');
             // Nie ma tu czyszczenia pamięci zapisanych tokenów i nie jest potrzebne:
             // Safari unieważnia subskrypcję po cichu, więc token po restarcie bywa NOWY —
             // ale wtedy zmienia się też klucz `pokój:osoba:token`, którego szuka
@@ -5240,23 +5344,70 @@
             // Log zostaje celowo: to jedyna droga, żeby wyjąć token z urządzenia i wysłać
             // na nie próbny dymek przez `scripts/send-test-push.mjs`. Token nie daje dostępu
             // do niczego poza wysłaniem powiadomienia na to jedno urządzenie.
-            console.info('[Billiada] Token FCM tego urządzenia:', pushToken);
+            // Log tylko w trybie deweloperskim: to jedyna droga, żeby wyjąć token
+            // z urządzenia i wysłać na nie próbny dymek przez `scripts/send-test-push.mjs`.
+            // W wydaniu dla ludzi nie ma powodu, żeby leżał w konsoli produkcyjnej.
+            if (env.DEV) console.info('[Billiada] Token FCM tego urządzenia:', pushToken);
             await savePushToken();
             return pushToken;
         };
 
+        // Rejestracja z ponowieniem. Zwraca `true`, gdy token jest.
+        const acquirePushTokenWithRetry = async () => {
+            if (pushRegistering) return Boolean(pushToken);
+            pushRegistering = true;
+            renderPushToggle();
+            try {
+                for (let i = 0; i < PUSH_RETRY_DELAYS_MS.length; i += 1) {
+                    if (PUSH_RETRY_DELAYS_MS[i]) {
+                        await new Promise((r) => setTimeout(r, PUSH_RETRY_DELAYS_MS[i]));
+                    }
+                    try {
+                        await acquirePushToken();
+                        return true;
+                    } catch (err) {
+                        console.warn(`[Billiada] Push — próba ${i + 1} nieudana:`, err);
+                    }
+                }
+                return false;
+            } finally {
+                pushRegistering = false;
+                renderPushToggle();
+            }
+        };
+
         const enablePush = async () => {
             if (!pushSupported()) { showToast('Ta przeglądarka nie obsługuje powiadomień.', true); return; }
+
+            // ZGODA I REJESTRACJA TO DWIE OSOBNE RZECZY i komunikaty muszą je rozróżniać.
+            // Dotąd nieudane pobranie tokenu dawało czerwone „Nie udało się włączyć
+            // powiadomień." — zdanie nieprawdziwe, bo zgoda BYŁA przyznana, a brakowało
+            // tylko zapisu urządzenia. Chwilę później token dochodził sam i przełącznik
+            // mówił „włączone", czyli aplikacja przeczyła własnemu alertowi sprzed minuty.
+            let perm;
             try {
-                const perm = await Notification.requestPermission();
-                if (perm !== 'granted') { showToast('Nie przyznano zgody na powiadomienia.', true); renderPushToggle(); return; }
-                await acquirePushToken();
-                showToast('Powiadomienia włączone.');
+                perm = await Notification.requestPermission();
             } catch (err) {
-                console.warn('[Billiada] Push — nie udało się pobrać tokenu:', err);
-                showToast('Nie udało się włączyć powiadomień.', true);
+                console.warn('[Billiada] Push — pytanie o zgodę nieudane:', err);
+                showToast('Nie udało się zapytać o zgodę na powiadomienia.', true);
+                renderPushToggle();
+                return;
             }
-            renderPushToggle();
+
+            if (perm !== 'granted') {
+                showToast('Nie przyznano zgody na powiadomienia.', true);
+                renderPushToggle();
+                return;
+            }
+
+            showToast('Zgoda przyznana. Kończę rejestrację…');
+            const ok = await acquirePushTokenWithRetry();
+            showToast(
+                ok
+                    ? 'Powiadomienia włączone.'
+                    : 'Zgoda jest, ale nie udało się zapisać tego urządzenia. Spróbuję ponownie, gdy wróci sieć.',
+                !ok,
+            );
         };
 
         // Wołane po rejestracji service workera. Nie prosi o zgodę — tylko odświeża token,
@@ -5272,8 +5423,16 @@
                     showToast(d.body || d.title || 'Nowe przypomnienie.');
                     if (currentGroupId) updateNudgeBadge();
                 });
-                if (Notification.permission === 'granted') await acquirePushToken();
+                if (Notification.permission === 'granted') await acquirePushTokenWithRetry();
                 renderPushToggle();
+
+                // DRUGA SZANSA PO POWROCIE SIECI. Zgoda bez tokenu to stan przejściowy,
+                // który sam się nie naprawi — a powstaje dokładnie tam, gdzie ta aplikacja
+                // pracuje: przy zasięgu na jedną kreskę. Bez tego nasłuchu człowiek zostaje
+                // z przełącznikiem mówiącym „urządzenie niezapisane" aż do restartu aplikacji.
+                window.addEventListener('online', () => {
+                    if (Notification.permission === 'granted' && !pushToken) acquirePushTokenWithRetry();
+                });
             } catch (err) {
                 console.warn('[Billiada] Push — inicjalizacja nieudana:', err);
             }
