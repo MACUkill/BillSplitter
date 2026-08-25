@@ -1735,3 +1735,95 @@ zanim ktoś zacznie ich „naprawiać": klik w zakładkę, na której już się 
 `nav-me`, nic się nie zmienia, bo nie ma czego zmieniać) oraz przełącznik trybu podziału
 (`bill-mode-own`), który zapisuje do Firestore i czeka na powrót danych — a baza w audycie
 odpowiada 403.
+
+## 20. ETAP 1 — SIEĆ, FEEDBACK I ZAUFANIE DO LICZB (2026-08-26)
+
+Partia wykonana po zgłoszeniach z wakacji (właściciel i jego kolega, oba telefony przy
+zasięgu na jedną kreskę). Zakres świadomie wąski: **żadnych zmian w danych, w regułach
+Firestore ani w service workerze.** Wszystko, co tu opisane, da się wgrać na gałąź, z której
+ekipa korzysta w trakcie wyjazdu.
+
+### 20.1 Sieć, która jest, ale nie odpowiada
+
+Zgłoszenie: „w trybie samolotowym apka od razu rozumie, że jest offline, ale przy bardzo
+wolnym internecie albo gdy wifi jest, a nie działa — ciemny ekran, potem biały, a potem
+nagle się odpala".
+
+Cztery przyczyny, wszystkie naprawione:
+
+1. **Wejście do pokoju czekało na serwer.** `await getDoc(...)` stało przed pierwszym
+   malowaniem, a `getDoc` przy włączonej pamięci trwałej i tak najpierw próbuje sieci.
+   Teraz pokój wstaje z pamięci (`getDocFromCache`), a nasłuchy dociągają świeże dane w tle.
+2. **`navigator.onLine` nie wykrywa lie-fi.** Trzy stany zamiast dwóch, czytane z
+   `metadata.fromCache`, plus licznik własnych zapisów czekających na wysyłkę.
+3. **Zapisy zawieszały interfejs.** Obietnica z `updateDoc`/`addDoc` rozwiązuje się dopiero
+   po potwierdzeniu serwera — offline nigdy. Zajęcie imienia, zapis wpłaty i potwierdzanie
+   wpłat idą teraz przez `fireWrite`: akcja wykonuje się od razu, stan wysyłki niesie pasek.
+4. **Ekran wczytywania nie miał terminu.** Po 1,5 s mówi „Łączę się…", po 4 s „Sieć nie
+   odpowiada — wchodzę na zapisane dane".
+
+**Pułapka, którą trzeba znać przy każdej kolejnej zmianie w tym obszarze:** `forgetRoom`
+kasuje pokój z `localStorage`, czyli jedyny jego ślad na urządzeniu. Wolno go wywołać
+**wyłącznie po odpowiedzi potwierdzonej przez serwer** (`!metadata.fromCache`) — odczyt
+Firestore potrafi rozwiązać się z pamięci, a wtedy „nie istnieje" znaczy tylko „nie mam
+tego u siebie".
+
+### 20.2 Nowy przebieg audytowy: `tools/audit-offline.mjs`
+
+Stanu „wifi jest, serwer milczy" **nie odtwarza przełącznik offline** w narzędziach
+przeglądarki — tamten blokuje też serwer, z którego idzie sama aplikacja, więc strona
+się nie wczytuje i nie ma czego badać. Przebieg odcina zamiast tego sam Firestore.
+
+```
+npm run emulators
+npx vite --port 5199 --strictPort
+BILLIADA_URL=http://localhost:5199/ node tools/audit-offline.mjs
+```
+
+Trzynaście sprawdzeń: zwykły start, założenie pokoju, wejście przy milczącym serwerze
+(zmierzone **136 ms**), zachowanie listy pokoi, treść paska w obu stanach, praca offline
+i powrót serwera.
+
+**Przebieg złapał błąd, którego nie widać w kodzie:** `onSnapshot` domyślnie nie zgłasza
+zmian samych metadanych, więc powrót serwera przy niezmienionych danych nie wywoływał
+żadnego wywołania zwrotnego i pasek zostawał zapalony. Stan łączności ma dlatego własny,
+pusty nasłuch z `includeMetadataChanges` — dokładanie tej opcji do nasłuchu grupy kazałoby
+przerysowywać cały pulpit przy każdym potwierdzeniu zapisu.
+
+### 20.3 Feedback: stan mieszka na rzeczy, nie w dymku
+
+Zgłoszenie: „wgrałem zdjęcie profilowe i nie było żadnego feedbacku, że to się dzieje —
+dopiero jakoś po minucie się zaktualizowało". Dymek żyje 3,6 s, wysyłka trwała minutę.
+
+Podgląd lokalny pojawia się w chwili wyboru pliku, procent idzie z `uploadBytesResumable`,
+a stan siedzi **na awatarze** i przeżywa przerysowania wywołane cudzymi zmianami. Reguła
+nazwana zapisana w `DESIGN.md`.
+
+### 20.4 Powiadomienia: zgoda to nie to samo, co rejestracja
+
+Zgłoszenie: „wyskoczył alert, że się nie powiodło, ale potem jak klikam na tę opcję, to
+pisze, że są włączone". Przełącznik ma pięć stanów zamiast trzech, `getToken` limit czasu
+i trzy próby, a po powrocie sieci rejestracja ponawia się sama. Token FCM przestał trafiać
+do konsoli produkcyjnej.
+
+### 20.5 Liczby, którym można ufać
+
+- **Rozjazd sumy pokazuje działanie, nie domysł.** „Ktoś przeliczył albo pozycja jest
+  podwójna" pomijało koszty ogólne — trzeci składnik sumy kontrolnej. Ekran rozpisuje teraz
+  składniki i daje przycisk „Ustaw kwotę rachunku na…". Aplikacja nigdy nie robi tego sama.
+- **Kontrola paragonu ma trzy stany.** Brak sumy z paragonu wyłączał ostrzeżenie w całości,
+  więc arkusz wyglądał tak samo pewnie jak przy zgodnej sumie. Trzeci stan prosi o jedną
+  liczbę i przywraca pełne sprawdzenie.
+- **Znak różnicy jest w treści.** Nadmiar znaczy duplikat, niedobór — przeoczoną linię.
+  Jedno zdanie na oba kierunki myliło w połowie przypadków.
+- **Podejrzany wiersz mówi o sobie sam** (duplikat, pozycja większa niż paragon, nazwa
+  podsumowania). Znacznik, nigdy ciche odznaczenie.
+- **„Kto komu" przestaje straszyć długami widmo.** Po wpłacie poprowadzonej planem
+  minimalnym ta zakładka pokazywała długi, których już nie ma — odtworzone w
+  `src/plan.origin.test.js`. Wiersz bez rachunku za sobą przyznaje się do tego i traci
+  przycisk akcji razem z dzwonkiem.
+- **Udział przed wyborem pozycji** dostaje znacznik „wstępnie" przy samej kwocie.
+
+### 20.6 Stan testów po etapie
+
+263 testy jednostkowe, 34 testy reguł, 13 sprawdzeń przebiegu offline. Wszystko zielone.

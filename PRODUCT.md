@@ -58,6 +58,19 @@ Wspierające, nieflagowe: brak kont (link do pokoju = dostęp) i uczciwość co 
   anonimowa, przypisana do urządzenia; lista pokoi żyje w `localStorage`.
 - Praca w restauracji: słaby zasięg jest normą. Zapisy pozycji mają ścieżkę awaryjną
   offline, aplikacja pokazuje wskaźnik braku sieci.
+
+  **Trzy stany łączności, nie dwa (2026-08-25).** `navigator.onLine` mówi wyłącznie
+  o karcie sieciowej, więc w trybie samolotowym wykrywa brak sieci od razu, a na wifi
+  bez internetu twierdzi, że wszystko gra — i wskaźnik milczał. Trzeci stan („połączenie
+  jest, serwer nie odpowiada") czytamy z metadanych nasłuchów Firestore, wraz z licznikiem
+  własnych zapisów czekających na wysyłkę. Wejście do pokoju idzie **najpierw do pamięci
+  podręcznej**, nie do sieci: zmierzone 136 ms przy milczącym backendzie
+  (`tools/audit-offline.mjs`).
+
+  **Pokój wolno zapomnieć wyłącznie na słowo serwera.** `forgetRoom` kasuje wpis
+  z `localStorage`, czyli jedyny ślad po pokoju na urządzeniu — a odczyt Firestore potrafi
+  rozwiązać się z pamięci, gdy SDK wie, że jest offline. Bez tego warunku aplikacja
+  zabierałaby ludziom pokoje przy słabym zasięgu.
 - Kilka osób pracuje na tym samym rachunku w tej samej sekundzie.
 - Zdjęcia paragonów wgrywane z aparatu telefonu (także HEIC), do pięciu na rachunek.
 - PWA instalowana na telefonie; push działa na Androidzie, a na iPhonie po dodaniu do
@@ -76,7 +89,12 @@ Funkcje, które redesign musi zachować w całości:
 - Rozliczenia w dwóch trybach: „kto komu ile" (z rozbiciem na rachunki) i „najmniej
   przelewów"; rejestr wpłat z potwierdzaniem i historią; waluty nie mieszają się.
 - Waluty PLN/EUR/USD z kursem zapisanym w dniu dodania rachunku.
-- Przypomnienia (dzwonek, skrzynka, push). Bramka anty-spamowa: dziesięć sekund między
+- Przypomnienia (dzwonek, skrzynka, push). **Zgoda systemowa i rejestracja urządzenia to
+  dwa osobne stany (2026-08-25)** — przełącznik powiadomień ma ich pięć, nie trzy. Zgoda
+  bez tokenu FCM renderowała się dotąd jako brak zgody, więc aplikacja pokazywała czerwone
+  „nie udało się włączyć", a chwilę później sama twierdziła, że są włączone. `getToken`
+  ma limit czasu i trzy próby, a po powrocie sieci rejestracja ponawia się sama.
+  Bramka anty-spamowa: dziesięć sekund między
   przypomnieniami do tej samej osoby (zmienione 2026-08-05 z sześciu godzin — produkt ma
   domykać dług, a nie chronić dłużnika; blokujemy tylko walenie w przycisk co sekundę).
 - Profil: kolor znaku wybierany DWOMA SUWAKAMI (odcień i intensywność, z omijaniem
