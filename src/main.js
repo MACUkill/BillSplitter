@@ -14,7 +14,7 @@
         import qrcode from 'qrcode-generator';
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
-        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, getDocs, runTransaction, increment, limit } from "firebase/firestore";
+        import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, getDocFromCache, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, getDocs, runTransaction, increment, limit } from "firebase/firestore";
         import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, connectStorageEmulator } from "firebase/storage";
         import { getMessaging, getToken, onMessage, isSupported as isMessagingSupported } from "firebase/messaging";
         import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
@@ -467,6 +467,104 @@
             modal.classList.remove('active');
         };
 
+        // --- ŁĄCZNOŚĆ MA TRZY STANY, NIE DWA -------------------------------------
+        //
+        // `navigator.onLine` mówi o KARCIE SIECIOWEJ, a nie o tym, czy cokolwiek dolatuje.
+        // Stąd zgłoszenie właściciela: w trybie samolotowym aplikacja „od razu rozumie",
+        // że jest offline, a na wifi bez internetu albo na jednej kresce udaje, że wszystko
+        // gra — i milczy, zamiast powiedzieć, co się dzieje.
+        //
+        // Trzeci stan czytamy z metadanych nasłuchów Firestore: `fromCache` znaczy
+        // „to, co widzisz, przyszło z pamięci, bo serwer nie odpowiada". SDK ustawia to
+        // sam, bez dodatkowego odpytywania sieci.
+        //
+        // Licznik `netPending` liczy WŁASNE zapisy czekające na potwierdzenie serwera —
+        // to jedyna liczba, która odpowiada na pytanie „czy moja zmiana na pewno poszła".
+        let netFromCache = false;
+        let netPending = 0;
+
+        const renderNetBanner = () => {
+            const banner = document.getElementById('offline-banner');
+            const text = document.getElementById('offline-banner-text');
+            if (!banner || !text) return;
+
+            const czekaja = netPending > 0
+                ? ` ${netPending} ${plural(netPending, 'zmiana czeka', 'zmiany czekają', 'zmian czeka')} na wysyłkę.`
+                : '';
+
+            let message = '';
+            if (!navigator.onLine) message = `Brak sieci — pokazuję zapisane dane.${czekaja}`;
+            else if (netFromCache) message = `Sieć nie odpowiada — pokazuję zapisane dane.${czekaja}`;
+            else if (netPending > 0) message = `Wysyłam zmiany…${czekaja}`;
+
+            banner.classList.toggle('hidden', message === '');
+            if (message) text.textContent = message;
+        };
+
+        // Wołane z każdego nasłuchu, który dostaje metadane. Jeden wspólny stan dla całej
+        // aplikacji — inaczej pasek mówiłby co innego w zależności od tego, który ekran
+        // odrysował się ostatni.
+        const noteSnapshot = (metadata) => {
+            if (!metadata) return;
+            const wasFromCache = netFromCache;
+            netFromCache = metadata.fromCache === true;
+            if (wasFromCache !== netFromCache) renderNetBanner();
+        };
+
+        // ZAPIS, KTÓRY NIE ZATRZYMUJE INTERFEJSU.
+        //
+        // Obietnica z `updateDoc`/`addDoc` rozwiązuje się dopiero po potwierdzeniu SERWERA —
+        // offline NIGDY, choć zapis jest bezpiecznie zakolejkowany lokalnie i widać go na
+        // ekranie. Każde `await` na takim zapisie zawiesza więc krok interfejsu przy słabej
+        // sieci: arkusz się nie zamyka, potwierdzenie nie przychodzi, człowiek stuka drugi raz.
+        //
+        // Tutaj czekamy na SKUTEK, a nie na serwer: akcja idzie dalej od razu, a stan wysyłki
+        // niesie pasek łączności. `await` zostaje wyłącznie tam, gdzie naprawdę potrzebna jest
+        // odpowiedź serwera (odczyty, transakcje rozstrzygające konflikt).
+        const fireWrite = (promise, failMessage) => {
+            netPending += 1;
+            renderNetBanner();
+            Promise.resolve(promise)
+                .catch((err) => {
+                    console.warn('[Billiada] Zapis nieudany:', err);
+                    if (failMessage) showToast(failMessage, true);
+                })
+                .finally(() => {
+                    netPending = Math.max(0, netPending - 1);
+                    renderNetBanner();
+                });
+        };
+
+        // --- EKRAN WCZYTYWANIA MA BUDŻET CZASU -----------------------------------
+        //
+        // Kołowrotek bez terminu kręci się tak samo przy 200 ms i przy czterdziestu
+        // sekundach, więc nie niesie żadnej informacji dokładnie wtedy, gdy jest najbardziej
+        // potrzebna. Zasada: NIGDY niemy kołowrotek dłużej niż dwie sekundy.
+        const LOADING_SPEAK_MS = 1500;
+        const LOADING_GIVE_UP_MS = 4000;
+        let loadingTimers = [];
+
+        const setLoadingNote = (message) => {
+            const note = document.getElementById('loading-note');
+            if (!note) return;
+            note.textContent = message;
+            note.classList.toggle('hidden', !message);
+        };
+
+        const stopLoadingBudget = () => {
+            loadingTimers.forEach(clearTimeout);
+            loadingTimers = [];
+            setLoadingNote('');
+        };
+
+        const startLoadingBudget = () => {
+            stopLoadingBudget();
+            loadingTimers = [
+                setTimeout(() => setLoadingNote('Łączę się…'), LOADING_SPEAK_MS),
+                setTimeout(() => setLoadingNote('Sieć nie odpowiada — wchodzę na zapisane dane.'), LOADING_GIVE_UP_MS),
+            ];
+        };
+
         const init = () => {
             setupTheme();
             showScreen('loading');
@@ -514,14 +612,11 @@
             registerServiceWorker();
             showViewportDiagnostics();
 
-            // Faza 5: wskaźnik offline (Firestore persistentLocalCache i tak kolejkuje zmiany).
-            const updateOnlineStatus = () => {
-                const banner = document.getElementById('offline-banner');
-                if (banner) banner.classList.toggle('hidden', navigator.onLine);
-            };
-            window.addEventListener('online', updateOnlineStatus);
-            window.addEventListener('offline', updateOnlineStatus);
-            updateOnlineStatus();
+            // Faza 5: wskaźnik łączności (Firestore persistentLocalCache i tak kolejkuje zmiany).
+            // Od 2026-08-25 trzy stany zamiast dwóch — patrz `renderNetBanner`.
+            window.addEventListener('online', renderNetBanner);
+            window.addEventListener('offline', renderNetBanner);
+            renderNetBanner();
 
             // Faza 3/4: kopiowanie danych płatności (delegacja — przetrwa przerenderowania; uniwersalne dla każdej metody).
             document.addEventListener('click', (e) => {
@@ -980,6 +1075,11 @@
                 targetScreen.classList.add('screen-in');
             }
             currentScreenName = screenName;
+            // Ekran wczytywania sam pilnuje swojego budżetu czasu: zapala odliczanie, gdy
+            // się pokazuje, i gasi je, gdy cokolwiek innego wejdzie na wierzch. Dzięki temu
+            // żaden ekran docelowy nie musi o tym pamiętać.
+            if (screenName === 'loading') startLoadingBudget();
+            else stopLoadingBudget();
             // Każde wejście na ekran przelicza poprawkę położenia paska: inaczej wartość
             // policzona przy poprzednim geście zostawała i pasek stał wyżej niż powinien
             // (zgłoszenie: „w sekcji Profil nawigacja jest lekko wyżej").
@@ -1007,35 +1107,79 @@
             if (screenName === 'start') renderMyRooms();
         };
 
+        // WEJŚCIE DO POKOJU IDZIE NAJPIERW DO PAMIĘCI, NIE DO SIECI.
+        //
+        // Zgłoszenie właściciela (2026-08-25): „w trybie samolotowym apka od razu rozumie,
+        // że jest offline, ale przy bardzo wolnym internecie albo gdy wifi jest, a nie
+        // działa — ciemny ekran, potem biały, a potem nagle się odpala".
+        //
+        // Powód siedział w jednej linijce: `await getDoc(...)` przed pierwszym malowaniem.
+        // `getDoc` przy włączonej pamięci trwałej I TAK najpierw próbuje serwera, a przy
+        // „sieć jest, ale nie odpowiada" potrafi wisieć kilkanaście sekund, zanim SDK sam
+        // uzna, że jest offline. Przez ten czas stoi goły ekran wczytywania. W trybie
+        // samolotowym problemu nie było, bo tam SDK wie od razu, że sieci nie ma.
+        //
+        // Teraz: kopia z pamięci rysuje pokój NATYCHMIAST, a nasłuchy `onSnapshot`
+        // z `renderGroupDashboard` dociągają świeże dane w tle i same przerysowują ekran.
         const handleGroupJoin = async (groupId) => {
             const urlParams = new URLSearchParams(window.location.search);
             currentBillId = urlParams.get('bill');
             currentGroupId = groupId;
 
             const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, groupId);
-            const groupDoc = await getDoc(groupDocRef);
-            if (!groupDoc.exists()) {
-                showToast("Taka grupa nie istnieje!", true);
-                forgetRoom(groupId); // usuń martwy skrót z „Moich pokoi"
-                history.pushState(null, '', window.location.pathname);
+
+            const enterGroup = (snap) => {
+                groupData = snap.data();
+                rememberRoom(groupId, groupData.groupName); // zapamiętaj pokój lokalnie (łatwy powrót)
+                const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
+                if (myMember) {
+                    if (currentBillId) joinBill(groupId, currentBillId);
+                    else navigateToGroup(groupId, false);
+                } else {
+                    showScreen('join');
+                    document.getElementById('join-group-name').textContent = groupData.groupName;
+                    renderJoinScreen();
+                }
+            };
+
+            // 1. Pamięć podręczna — bez czekania na cokolwiek.
+            try {
+                const cached = await getDocFromCache(groupDocRef);
+                if (cached.exists()) { enterGroup(cached); return; }
+            } catch (_) { /* pusta pamięć przy pierwszym wejściu — to normalne */ }
+
+            // 2. Nie ma kopii, więc trzeba zapytać. Dopiero TERAZ wolno czekać.
+            let fresh;
+            try {
+                fresh = await getDoc(groupDocRef);
+            } catch (err) {
+                // BRAK SIECI I BRAK KOPII. Pokoju NIE KASUJEMY — nie wiemy, czy istnieje.
+                console.warn('[Billiada] Nie udało się pobrać pokoju:', err);
+                showToast('Nie mam tego pokoju w pamięci i nie ma połączenia. Spróbuj, gdy wróci sieć.', true);
                 showScreen('start');
                 return;
             }
-            groupData = groupDoc.data();
-            rememberRoom(groupId, groupData.groupName); // zapamiętaj pokój lokalnie (łatwy powrót)
-            const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
 
-            if (myMember) {
-                 if (currentBillId) {
-                    joinBill(groupId, currentBillId);
-                } else {
-                    navigateToGroup(groupId, false);
-                }
-            } else {
-                showScreen('join');
-                document.getElementById('join-group-name').textContent = groupData.groupName;
-                renderJoinScreen();
+            if (fresh.exists()) { enterGroup(fresh); return; }
+
+            // POKÓJ WOLNO ZAPOMNIEĆ WYŁĄCZNIE NA SŁOWO SERWERA.
+            //
+            // `forgetRoom` kasuje wpis z `localStorage`, a to jest JEDYNY ślad po pokoju na
+            // urządzeniu (PRODUCT.md): po skasowaniu powrót wymaga kodu od kogoś innego.
+            // `getDoc` potrafi rozwiązać się z PAMIĘCI, gdy SDK wie, że jest offline —
+            // i wtedy „nie istnieje" znaczy tylko „nie mam tego u siebie". Kasowanie na tej
+            // podstawie zabierałoby ludziom pokoje przy słabym zasięgu, czyli dokładnie tam,
+            // gdzie ta aplikacja pracuje.
+            if (fresh.metadata && fresh.metadata.fromCache) {
+                showToast('Brak połączenia — nie mogę teraz otworzyć tego pokoju.', true);
+                showScreen('start');
+                return;
             }
+
+            showToast("Taka grupa nie istnieje!", true);
+            forgetRoom(groupId); // martwy skrót z „Moich pokoi" — potwierdzony przez serwer
+            history.pushState(null, '', window.location.pathname);
+            showScreen('start');
         };
 
         const renderJoinScreen = () => {
@@ -1067,11 +1211,24 @@
             });
         };
         
-        const claimName = async (memberId) => {
+        // ZAJĘCIE IMIENIA NIE CZEKA NA SERWER.
+        //
+        // Do 2026-08-25 stało tu `await updateDoc(...)` przed `navigateToGroup`. Offline
+        // ta obietnica NIE ROZWIĄZUJE SIĘ NIGDY (zapis czeka w kolejce na potwierdzenie
+        // serwera), więc dołączenie do pokoju wisiało w nieskończoność — mimo że imię
+        // było już zajęte lokalnie i widziałby to każdy nasłuch. Człowiek stukał drugi raz
+        // w inne imię, bo pierwsze „nie zadziałało".
+        const claimName = (memberId) => {
             const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
-            await updateDoc(groupDocRef, {
-                [`members.${memberId}.claimedBy`]: currentUser.uid
-            });
+            fireWrite(
+                updateDoc(groupDocRef, { [`members.${memberId}.claimedBy`]: currentUser.uid }),
+                'Nie udało się zająć imienia.',
+            );
+            // Kopia w pamięci od razu wie swoje: nasłuch grupy i tak zaraz to potwierdzi,
+            // ale ekran pokoju rysuje się w tej samej klatce i musi znać swojego członka.
+            if (groupData && groupData.members && groupData.members[memberId]) {
+                groupData.members[memberId].claimedBy = currentUser.uid;
+            }
             navigateToGroup(currentGroupId, false);
         };
 
@@ -1117,6 +1274,9 @@
             const groupDocRef = doc(db, `artifacts/${appId}/public/data/groups`, currentGroupId);
             
             onSnapshot(groupDocRef, (docSnap) => {
+                // Metadane nasłuchu to jedyne wiarygodne źródło wiedzy o tym, czy serwer
+                // odpowiada — `navigator.onLine` tego nie wie (patrz `renderNetBanner`).
+                noteSnapshot(docSnap.metadata);
                 if (!docSnap.exists()) return;
                 groupData = docSnap.data();
                 const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
@@ -1180,6 +1340,7 @@
 
             const billsQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`), orderBy('createdAt', 'desc'));
             unsubscribeGroup = onSnapshot(billsQuery, (snapshot) => {
+                noteSnapshot(snapshot.metadata);
                 latestBills = snapshot.docs.map(d => ({ id: d.id, data: d.data() }));
                 renderBillsList();
                 renderSettlements();
@@ -5653,7 +5814,13 @@
                     const c = e.target.closest('.inbox-confirm-btn');
                     if (c) {
                         const ref = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, c.dataset.id);
-                        await updateDoc(ref, { confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp() });
+                        // Bez czekania na serwer. Potwierdzeń bywa kilka pod rząd (jedna
+                        // osoba oddaje za kilka rachunków), więc każde zawieszone o kilka
+                        // sekund składa się na aplikację, która wygląda na zepsutą.
+                        fireWrite(
+                            updateDoc(ref, { confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp() }),
+                            'Nie udało się potwierdzić wpłaty.',
+                        );
                         showToast('Wpłata potwierdzona.');
                         return;
                     }
@@ -5800,7 +5967,14 @@
                     confirmed: receive, // otrzymana przeze mnie = od razu potwierdzona; wysłana = do potwierdzenia
                 };
                 if (receive) { rec.confirmedBy = currentUser.uid; rec.confirmedAt = serverTimestamp(); }
-                await addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`), rec);
+                // Arkusz zamyka się OD RAZU, nie po odpowiedzi serwera. Wpłata jest już
+                // zapisana lokalnie i widać ją w rejestrze; czekanie na potwierdzenie
+                // z sieci trzymało otwarty arkusz w nieskończoność przy słabym zasięgu —
+                // czyli dokładnie tam, gdzie ludzie tej aplikacji używają.
+                fireWrite(
+                    addDoc(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`), rec),
+                    'Nie udało się zapisać wpłaty.',
+                );
                 settleModal.classList.remove('active');
                 showToast(receive ? 'Zapisano otrzymaną wpłatę.' : 'Zapisano wpłatę.');
             };
