@@ -64,6 +64,101 @@
 
 ---
 
+## BRAMA ROZLICZEŃ — etap 4 (2026-08-26, gałąź `etap1-offline-i-feedback`)
+
+### Co było zepsute
+
+Kwota nierozpisana dzieliła się po równo — słusznie przy wspólnym winie, katastrofalnie
+przy „Kuba jeszcze nie stuknął swoich pozycji". Kto odklikał swoje, **dopłacał za tego,
+kto tego nie zrobił**, a przycisk „Ureguluj" stał otwarty od pierwszej sekundy, więc dało
+się przelać pieniądze za cudze jedzenie, zanim rachunek był kompletny.
+
+Przykład, na którym stoją testy (`src/calc.gate.test.js`): rachunek 300 zł, 6 osób,
+6 dań po 40, wino 40, serwis 20. Czterech odklikało, Kuba i Ola nie. Ania płaciła **63,34**
+zamiast 50, Kuba **23,34** zamiast 50.
+
+### Reguła: brama jest o PIENIĄDZACH, nie o ludziach
+
+Nie pytamy „czy wszyscy skończyli" — tego aplikacja nie wie i przy ekipie 12–25 osób
+**zawsze** są tacy, którzy nie otworzyli linku ani razu (`claimedBy: null`; nikt nie może
+odkliknąć pozycji za kogoś innego, `toggleItemPicker` idzie wyłącznie z `my.id`). Czekanie
+na nich zawiesiłoby rachunek na zawsze.
+
+Pytamy: **czy jakaś złotówka wisi bez właściciela.** Jeśli nie — nikt nie może stracić,
+brama stoi otworem sama i nikt niczego nie zatwierdza.
+
+`billSettleGate(bill)` w `functions/calc.js` zwraca `reason`:
+
+| `reason` | Stan | Skąd |
+|---|---|---|
+| `legacy` | otwarta | rachunek bez pola `gated` — sprzed wdrożenia |
+| `even` | otwarta | tryb „po równo": nie ma czego uzupełniać |
+| `exact` | otwarta | `unallocated === 0` — udziały dokładne |
+| `closed` | otwarta | płatnik zamknął ręcznie |
+| `rest` | zamknięta | coś wisi bez właściciela |
+| `changed` | zamknięta | po zamknięciu doszło więcej, niż obejmowała decyzja |
+| `over` | zamknięta | pozycje przekraczają kwotę rachunku (wszyscy by przepłacili) |
+
+### Pola w dokumencie rachunku
+
+`gated` · `settleOpen` · `everOpened` · `restTo` · `restSettledG` · `closedAt` · `closedBy`
+
+Dwa z nich są nieoczywiste i **bez nich wracają błędy**:
+
+- **`restSettledG`** — ile groszy obejmowała decyzja o reszcie. Bez tego pozycja dopisana
+  po zamknięciu rozdzielałaby się po cichu, czyli ten sam błąd tylnymi drzwiami.
+- **`everOpened`** — nigdy nie wraca do `false`. Rachunek przed pierwszym otwarciem NIE
+  wchodzi do księgi długów, ale raz otwarty **zostaje w niej na zawsze**: ktoś mógł już
+  zapłacić, a wpłata bez długu po drugiej stronie tworzy w `buildLedger` krawędź odwrotną,
+  czyli **fałszywy dług w drugą stronę** (rodzina „wiersza widma" z `src/plan.js`).
+
+### Gdzie to widać
+
+- **Rachunek** — baner `payer-confirmation-banner-advanced`, ten sam, co mówi o płatniku.
+  **Zero nowych sekcji**: ekran jest zapchany, a baner odpowiada dokładnie na to samo
+  pytanie („czemu tego jeszcze nie da się oddać").
+- **Arkusz „Zamknij rachunek"** — pokazuje **POZYCJE, nie listę spóźnialskich**: „Wino 40,00"
+  widać, że było wspólne, „Danie 40,00 · Danie 40,00", że to czyjeś jedzenie. Dwie drogi,
+  **żadna nie zaznaczona z góry**. Osoby bez apki oznaczone „(nie ma apki)", bo nie mają jak
+  się odwołać.
+- **Klucz do zamknięcia**: płatnik → admin pokoju (`adminId`, teraz widoczny w składzie jako
+  „założył/a pokój") → **każdy po 7 dniach**. Ten trzeci nie jest ozdobą: `adminId` to uid
+  urządzenia i jest zamrożony regułami, więc nowy telefon kasuje admina bezpowrotnie.
+  Sygnał („Zamknij rachunek" na kafelku) dostają jednak **tylko płatnik i admin** —
+  inaczej po tygodniu 25 osób dostałoby to samo wezwanie do jednej czynności.
+- **„To nie moje"** — wyłącznie dla wskazanych palcem przy `restTo`. Nie otwiera rachunku
+  sam; wysyła prośbę do tego, kto zamykał.
+- **Bilans / Rozliczenia** — rachunki w uzupełnianiu stoją osobno („W uzupełnianiu"),
+  nie znikają. „Wszystko rozliczone" nie pokaże się, gdy coś czeka na zamknięcie.
+- **Powiadomienia** — trzy rodzaje przypomnień zamiast jednego: `debt`, `fill`, `reopen`.
+  `sendNudgePush` ma dla nich osobne treści i deep-link `?group=…&bill=…`; bez tego telefon
+  mówiłby „Przypomnienie o zaległości" komuś, kto nie jest nic winien.
+
+### Stare rachunki
+
+**Brama obejmuje wyłącznie rachunki założone po wdrożeniu.** `gated` dostają dopiero nowe
+dokumenty; wszystko, co już żyje w pokojach ekipy, działa dokładnie jak dotąd. Objęcie ich
+bramą zamroziłoby przelewy na rachunkach rozliczanych od tygodni.
+
+### ⚠️ Uwaga przy testach na gałęzi
+
+Gałąź testowa chodzi na **tej samej bazie** co wersja ekipy. Rachunek założony na gałęzi
+dostanie `gated: true` i `restTo`, których **wersja ekipy nie rozumie**: pokaże wtedy resztę
+podzieloną po równo i pozwoli się rozliczyć od razu. Do zabawy zakładaj nowy pokój.
+
+### Co świadomie zostało poza zakresem
+
+- **Przycisk „Gotowe" per osoba** — rozważony i odrzucony: 20 stuknięć w 20-osobowej ekipie
+  po to, żeby poinformować jedną osobę, a arkusz zamknięcia i tak pyta o pozycje, nie o ludzi.
+  To pierwsza rzecz do dołożenia, gdyby okazało się, że płatnicy zamykają za wcześnie.
+- **Automatyczne przypomnienia po X godzinach** — próg sygnału (`docs/UI-UX.md` §10.2):
+  push wysyła człowiek, nie zegar.
+- **Rejestrowanie gotówki na otwartym rachunku** — rachunek w uzupełnianiu nie ma wiersza
+  w Rozliczeniach, więc „Mam wpłatę" pojawia się dopiero po zamknięciu. Przy stole zamknięcie
+  i tak następuje od razu, ale to jest znane ograniczenie, nie przeoczenie.
+
+---
+
 ## Jak sprawdzić, że wszystko stoi
 
 ```

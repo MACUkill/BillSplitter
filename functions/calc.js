@@ -30,6 +30,24 @@ export const ceilGrosze = (grosze) => {
 
 const isActive = (p) => p && p.status !== 'not_applicable';
 
+// KTO NIESIE KWOTĘ NIEROZPISANĄ.
+//
+// Domyślnie wszyscy aktywni — bo „brak wyboru znaczy wspólne" (patrz calculateAll).
+// `bill.restTo` zawęża to do wskazanych osób i zapisuje się WYŁĄCZNIE w chwili zamykania
+// rachunku, gdy płatnik świadomie odpowie na pytanie „to była wspólna rzecz czy czyjeś
+// jedzenie?". Bez tej listy aplikacja musiałaby zgadywać, a przy cudzych pieniądzach
+// zgadywanie jest gorsze niż zapytanie.
+//
+// Lista jest ODPORNA NA ZMIANY SKŁADU: kto wypadł z rachunku albo zniknął z uczestników,
+// ten wypada też stąd. Gdyby po takim odsianiu nie został NIKT, reszta wraca do wszystkich
+// aktywnych — pieniądze nie mogą wyparować tylko dlatego, że wskazana osoba odeszła.
+const restRecipients = (bill, activeParticipants) => {
+  const wanted = Array.isArray(bill && bill.restTo) ? bill.restTo : null;
+  if (!wanted || wanted.length === 0) return activeParticipants;
+  const narrowed = activeParticipants.filter((p) => wanted.includes(p.id));
+  return narrowed.length > 0 ? narrowed : activeParticipants;
+};
+
 // --- Rachunek ZAAWANSOWANY: dokładne udziały (w groszach, mogą być ułamkowe) ---
 function advancedExactSharesGrosze(bill) {
   const participants = Object.values(bill.participants || {});
@@ -133,8 +151,6 @@ export const calculateAll = (bill) => {
     orphanCount, itemCount, globalTotalG,
   } = advancedExactSharesGrosze(bill);
 
-  const activeCount = shares.filter((s) => isActive(s.participant)).length;
-
   // POZYCJA OSIEROCONA IDZIE DO RESZTY, NIE W POWIETRZE.
   // Do 2026-08-16 kwota pozycji, której nikt nie wybrał, liczyła się jako rozpisana,
   // choć nie trafiała do żadnego udziału. Skutek był cichy i kosztowny: paragon odczytany
@@ -151,10 +167,12 @@ export const calculateAll = (bill) => {
   // Nadwyżka pozycji ponad kwotę rachunku NIE staje się ujemną resztą — to błąd wpisu,
   // który zgłasza kontrola, a nie powód, żeby komukolwiek odejmować od udziału.
   const unallocatedG = Math.max(0, effectiveTotalG - allocatedG);
-  const perPersonUnallocatedG = activeCount > 0 ? unallocatedG / activeCount : 0;
+  const restTakers = restRecipients(bill, shares.filter((s) => isActive(s.participant)).map((s) => s.participant));
+  const restTakerIds = restTakers.map((p) => p.id);
+  const perPersonUnallocatedG = restTakers.length > 0 ? unallocatedG / restTakers.length : 0;
 
   const participantTotals = shares.map((s) => {
-    const restG = isActive(s.participant) ? perPersonUnallocatedG : 0;
+    const restG = restTakerIds.includes(s.participant.id) ? perPersonUnallocatedG : 0;
     const exactG = s.exactG + restG;
     const totalG = exactG > 0 ? ceilGrosze(exactG) : 0; // W GÓRĘ do grosza
     return {
@@ -186,6 +204,12 @@ export const calculateAll = (bill) => {
     // Interfejs pokazuje ją wprost, żeby nikt nie musiał się domyślać, skąd wynik.
     unallocated: fromGrosze(unallocatedG),
     perPersonUnallocated: fromGrosze(perPersonUnallocatedG),
+    // KOMU przypada reszta. Ekran musi to powiedzieć wprost, bo od 2026-08-26 nie zawsze
+    // jest to cała ekipa: przy zamykaniu rachunku płatnik może wskazać, że nierozpisane
+    // pozycje należą do tych, którzy ich nie odklikali. Kto dostał taki przydział, ma
+    // prawo wiedzieć, skąd wzięła się jego kwota — i mieć czym się odwołać.
+    restToIds: restTakerIds,
+    restToEveryone: restTakerIds.length === shares.filter((s) => isActive(s.participant)).length,
     // SKĄD bierze się kwota nierozpisana. Ekran musi to rozróżnić, bo dla czytającego
     // to dwie różne historie. Pozycja bez chętnego („nikt tego nie wziął") naprawia się
     // jednym stuknięciem. Różnica między kwotą rachunku a sumą pozycji („reszta
@@ -221,6 +245,104 @@ export const calculateSimple = (bill) => {
 
 // Jedna reguła dla każdego rachunku — typ nie rozgałęzia już obliczeń.
 export const calculateAllForBill = (bill) => calculateAll(bill);
+
+// TRYB PODZIAŁU — jedno źródło prawdy dla frontu i dla bramy rozliczeń.
+// Rachunki sprzed wprowadzenia przełącznika nie mają tego pola, więc tryb czytamy z ich
+// zawartości: skoro ktoś rozpisał pozycje albo wpisał koszt własny, to rachunek jest
+// „ze swoimi kosztami", a przestawienie go po cichu na „po równo" byłoby zmianą cudzych kwot.
+export const billSplitMode = (bill) => {
+  if (bill && (bill.splitMode === 'even' || bill.splitMode === 'own')) return bill.splitMode;
+  const items = (bill && bill.sharedCosts) || [];
+  const anyOwn = Object.values((bill && bill.participants) || {})
+    .some((p) => Number(p && p.individualAmount) > 0);
+  return (items.length > 0 || anyOwn) ? 'own' : 'even';
+};
+
+// --- BRAMA ROZLICZEŃ ---------------------------------------------------------
+//
+// PROBLEM, KTÓRY TO NAPRAWIA (zgłoszenie 2026-08-26). Kwota nierozpisana dzieli się po
+// równo — i słusznie, gdy chodzi o wspólne wino albo napiwek. Ale ta sama reguła obejmowała
+// przypadek zupełnie inny: „Kuba jeszcze nie stuknął swoich pozycji". Wtedy podział po równo
+// jest KARĄ DLA SUMIENNYCH — kto odklikał swoje, dopłacał za tego, kto tego nie zrobił.
+// A przycisk „Ureguluj" stał otwarty od pierwszej sekundy, więc dało się przelać pieniądze
+// za cudze jedzenie, zanim rachunek w ogóle był kompletny.
+//
+// REGUŁA JEST O PIENIĄDZACH, NIE O LUDZIACH. Nie pytamy „czy wszyscy skończyli" — tego
+// aplikacja nie wie i nie ma jak sprawdzić (a przy ekipie 12–25 osób zawsze są tacy, którzy
+// nie otworzyli linku ani razu; czekanie na nich zawiesiłoby rachunek na zawsze).
+// Pytamy: CZY JAKAŚ ZŁOTÓWKA WISI BEZ WŁAŚCICIELA. Jeśli nie — nikt nie może stracić,
+// więc brama stoi otworem sama z siebie i nikt niczego nie zatwierdza.
+//
+// POLA W DOKUMENCIE RACHUNKU:
+//   gated        — czy rachunek w ogóle podlega bramie (dostają je tylko nowe rachunki)
+//   settleOpen   — czy brama została otwarta ręcznie (płatnik odpowiedział o resztę)
+//   everOpened   — czy KIEDYKOLWIEK była otwarta; nigdy nie wraca do false
+//   restTo       — komu przypisano resztę (null = wszystkim)
+//   restSettledG — ile groszy nierozpisanych obejmowała ta decyzja
+//
+// DLACZEGO `restSettledG`. Po zamknięciu rachunku płatnik może jeszcze dopisać pozycję.
+// Bez tej liczby nowa, nieodklikana pozycja rozdzieliłaby się po cichu — czyli dokładnie
+// ten błąd, przed którym brama ma chronić, tyle że tylnymi drzwiami. Porównanie „ile wisi
+// teraz" z „ile obejmowała decyzja" wyłapuje to bez ani jednego dodatkowego zapisu
+// i działa tak samo offline.
+//
+// DLACZEGO `everOpened`. Rachunek, którego brama NIGDY nie była otwarta, nie wchodzi do
+// księgi długów — nie ma z niego czego regulować. Ale rachunek raz otwarty musi w niej
+// ZOSTAĆ, nawet gdy brama zamknie się z powrotem: ktoś mógł już za niego zapłacić, a wpłata
+// bez długu po drugiej stronie tworzy w `buildLedger` krawędź odwrotną, czyli fałszywy dług
+// w drugą stronę (ta sama rodzina usterek co „wiersz widmo" opisany w src/plan.js).
+//
+// Zwraca:
+//   open    — czy wolno się rozliczać z tego rachunku
+//   reason  — 'legacy' | 'even' | 'exact' | 'closed' | 'rest' | 'over' | 'changed'
+//   needsDecision — czy jest co zamykać ręcznie
+export function billSettleGate(bill) {
+  // STARE RACHUNKI NIE MAJĄ BRAMY. Pole `gated` dostają wyłącznie rachunki założone po
+  // wdrożeniu. Gdyby brama obejmowała wszystkie, w dniu wdrożenia zamroziłaby ekipom
+  // przelewy na rachunkach, które od dawna żyją i są rozliczane — czyli zabrałaby ludziom
+  // działającą funkcję za to, że korzystali z aplikacji wcześniej.
+  if (!bill || bill.gated !== true) return { open: true, reason: 'legacy', needsDecision: false };
+
+  // Po równo nie ma czego uzupełniać: cała kwota jest nierozpisana Z ZAŁOŻENIA i to jest
+  // dokładnie ten podział, o który poprosiła ekipa. Brama nie ma tu czego pilnować —
+  // i dzięki temu scena „20 sekund przy stole" zostaje nietknięta.
+  if (billSplitMode(bill) === 'even') return { open: true, reason: 'even', needsDecision: false };
+
+  const wynik = calculateAll(bill);
+  const unallocatedG = toGrosze(wynik.unallocated);
+
+  // NADWYŻKA BLOKUJE ZAMKNIĘCIE. Pozycje ponad kwotę rachunku to jedyny prawdziwy błąd
+  // wpisu (`computeControl`), a przy nim `unallocated` wynosi zero — więc bez tego warunku
+  // brama otwierałaby się na rachunku, na którym WSZYSCY przepłacają.
+  if (wynik.control.status === 'over') {
+    return { open: false, reason: 'over', needsDecision: false, unallocatedG, diff: wynik.control.diff };
+  }
+
+  // Nic nie wisi bez właściciela — udziały są dokładne, nikt nie może stracić, więc brama
+  // stoi otworem sama i NIKT niczego nie zatwierdza. To jest ścieżka, którą przejdzie
+  // większość rachunków rozpisanych do końca.
+  if (unallocatedG <= 0) return { open: true, reason: 'exact', needsDecision: false, unallocatedG: 0 };
+
+  if (bill.settleOpen === true) {
+    const objeteG = Math.max(0, Math.round(Number(bill.restSettledG) || 0));
+    // Doszło coś, czego decyzja o reszcie nie obejmowała — brama wraca na miejsce.
+    // TOLERANCE_GROSZE, nie zero: kwoty ułamkowe z procentowych kosztów ogólnych potrafią
+    // przesunąć wynik o grosz bez żadnej zmiany w treści rachunku.
+    if (unallocatedG > objeteG + TOLERANCE_GROSZE) {
+      return { open: false, reason: 'changed', needsDecision: true, unallocatedG, settledG: objeteG };
+    }
+    return { open: true, reason: 'closed', needsDecision: false, unallocatedG };
+  }
+
+  return { open: false, reason: 'rest', needsDecision: true, unallocatedG };
+}
+
+// Czy rachunek wchodzi do księgi długów (Bilans, Rozliczenia).
+//
+// Rachunek przed pierwszym otwarciem bramy NIE wchodzi: jego kwoty są wstępne i nikt nie
+// mógł za niego zapłacić. Raz otwarty zostaje na zawsze — patrz `everOpened` wyżej.
+export const billCountsInLedger = (bill) =>
+  !!bill && (bill.everOpened === true || billSettleGate(bill).open);
 
 // Agregacja podsumowań grupy z LISTY rachunków — przeliczenie OD ZERA.
 // Zastępuje kruche delty przyrostowe: brak dryfu, odporne na retry / at-least-once.

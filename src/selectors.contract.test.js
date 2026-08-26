@@ -27,6 +27,12 @@ const RUNTIME_CREATED_IDS = new Set([
   'bills-filter-reset',        // „Pokaż wszystkie" w stanie pustym listy rachunków
   'bill-settle-btn',           // „Ureguluj" na limonkowej karcie „Twój udział" (myBillSettleHtml)
   'viewport-diag',             // panel z wymiarami okna — powstaje dopiero po ukrytym geście
+  // Brama rozliczeń (2026-08-26): wszystkie cztery żyją w treści wstrzykiwanej do
+  // istniejących pojemników — baner stanu rachunku i arkusz „Zamknij rachunek".
+  'close-bill-btn',            // „Zamknij rachunek" w banerze stanu (gateBannerHtml)
+  'remind-fill-btn',           // „Przypomnij" obok niego, dla płatnika/admina
+  'close-bill-later',          // „Jeszcze poczekam" w arkuszu zamknięcia
+  'rest-dispute-btn',          // „To nie moje" pod własnym udziałem (restClaimHtml)
 ]);
 
 // Klasy-uchwyty renderowane przez JS do innerHTML — w index.html ich nie ma i być nie musi,

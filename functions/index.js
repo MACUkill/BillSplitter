@@ -113,14 +113,34 @@ export const sendNudgePush = onDocumentCreated(
     const currency = nudge.currency || "PLN";
     const kwota = amount > 0 ? `${amount.toFixed(2).replace(".", ",")} ${currency}` : "";
 
+    // TRZY RODZAJE PRZYPOMNIEŃ, TRZY RÓŻNE TREŚCI (2026-08-26).
+    // Do wprowadzenia bramy rozliczeń istniał jeden („oddaj pieniądze"). Doszły dwa,
+    // które o pieniądze nie proszą — i gdyby jechały tą samą treścią, telefon mówiłby
+    // „Przypomnienie o zaległości" komuś, kto nie jest nic winien. To jest najkrótsza
+    // droga do wyłączenia powiadomień od tej aplikacji.
+    //
+    // Odnośnik prowadzi WPROST do rachunku (`&bill=`), bo obie nowe prośby dotyczą
+    // konkretnego rachunku, a nie pokoju: bez tego człowiek ląduje na liście i szuka.
+    const nazwa = nudge.billName ? ` „${nudge.billName}"` : "";
+    const link = nudge.billId ? `/?group=${groupId}&bill=${nudge.billId}` : `/?group=${groupId}`;
+    let title = "Przypomnienie o zaległości";
+    let body = kwota
+      ? `${fromName} przypomina o ${kwota}. Już zapłaciłeś? Zapisz wpłatę.`
+      : `${fromName} przypomina o zaległości.`;
+    if (nudge.kind === "fill") {
+      title = "Rachunek czeka na Ciebie";
+      body = `${fromName} czeka, aż stukniesz swoje pozycje na rachunku${nazwa}.`;
+    } else if (nudge.kind === "reopen") {
+      title = "Prośba o otwarcie rachunku";
+      body = `${fromName}: to nie moje — prosi o otwarcie rachunku${nazwa}.`;
+    }
+
     const res = await admin.messaging().sendEachForMulticast({
       tokens,
       data: {
-        title: "Przypomnienie o zaległości",
-        body: kwota
-          ? `${fromName} przypomina o ${kwota}. Już zapłaciłeś? Zapisz wpłatę.`
-          : `${fromName} przypomina o zaległości.`,
-        url: `/?group=${groupId}`,
+        title,
+        body,
+        url: link,
         tag: `nudge-${groupId}`,
       },
       webpush: { headers: { Urgency: "high", TTL: "3600" } },

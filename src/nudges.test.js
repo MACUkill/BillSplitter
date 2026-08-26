@@ -109,3 +109,50 @@ describe('próg sygnału: inboxItems / badgeCount / hasDot', () => {
     expect(items.map((x) => x.id)).toEqual(['n-nowy', 'n-stary', 'b1']);
   });
 });
+
+// TRZY RODZAJE PRZYPOMNIEŃ (brama rozliczeń, 2026-08-26). Dwa nowe NIE proszą o pieniądze,
+// więc muszą dojechać do skrzynki rozróżnialne — inaczej wiersz podstawi pod nie „Ureguluj"
+// i każe płacić komuś, kto nic nie jest winien.
+describe('rodzaje przypomnień', () => {
+  const base = { myId: 'm1', myUid: 'u1' };
+
+  it('przypomnienie o zaległości zostaje domyślne', () => {
+    const [x] = inboxItems({ ...base, nudges: [{ id: 'n1', to: 'm1', from: 'm2', amountG: 5000 }] });
+    expect(x.nudgeKind).toBe('debt');
+  });
+
+  it('prośba o uzupełnienie niesie rachunek, do którego prowadzi', () => {
+    const [x] = inboxItems({
+      ...base,
+      nudges: [{ id: 'n2', to: 'm1', from: 'm2', kind: 'fill', billId: 'b7', billName: 'Kolacja' }],
+    });
+    expect(x.nudgeKind).toBe('fill');
+    expect(x.billId).toBe('b7');
+    expect(x.billName).toBe('Kolacja');
+  });
+
+  it('prośba o otwarcie rachunku („To nie moje") ma własny rodzaj', () => {
+    const [x] = inboxItems({
+      ...base,
+      nudges: [{ id: 'n3', to: 'm1', from: 'm2', kind: 'reopen', billId: 'b7' }],
+    });
+    expect(x.nudgeKind).toBe('reopen');
+  });
+
+  it('wszystkie trzy to poziom 1 — za każdym stoi czekający człowiek', () => {
+    const items = inboxItems({
+      ...base,
+      nudges: [
+        { id: 'n1', to: 'm1', from: 'm2' },
+        { id: 'n2', to: 'm1', from: 'm3', kind: 'fill' },
+        { id: 'n3', to: 'm1', from: 'm4', kind: 'reopen' },
+      ],
+    });
+    expect(badgeCount(items)).toBe(3);
+  });
+
+  it('nieznany rodzaj z przyszłej wersji nie wywraca skrzynki — traktujemy jak zaległość', () => {
+    const [x] = inboxItems({ ...base, nudges: [{ id: 'n9', to: 'm1', from: 'm2', kind: 'cos-nowego' }] });
+    expect(x.nudgeKind).toBe('debt');
+  });
+});

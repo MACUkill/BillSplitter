@@ -37,7 +37,22 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
     if (Array.isArray(n.readBy) && n.readBy.includes(myUid)) return;
     // `message` niesie treść napisaną przez człowieka — widzi ją wyłącznie adresat,
     // a tu i tak jesteśmy już po filtrze „do mnie".
-    items.push({ level: 1, kind: 'nudge', id: n.id, from: n.from, amountG: n.amountG, currency: n.currency, message: n.message, at: n.createdAtMs });
+    //
+    // TRZY RODZAJE, TRZY RÓŻNE ŻĄDANIA (2026-08-26). Do wprowadzenia bramy rozliczeń
+    // przypomnienie znaczyło zawsze „oddaj pieniądze", więc rodzaju nie było. Teraz doszły
+    // dwa, które o pieniądze NIE proszą: „stuknij swoje pozycje" (rachunek czeka na
+    // zamknięcie) i „to nie moje" (prośba o otwarcie rachunku z powrotem). Bez rozróżnienia
+    // skrzynka podstawiałaby pod nie przycisk „Ureguluj" — czyli kazałaby płacić komuś,
+    // kto nic nie jest winien, i to na rachunku, którego jeszcze nie da się rozliczyć.
+    //
+    // Poziom zostaje 1 dla wszystkich trzech: każde z nich wysłał ŻYWY CZŁOWIEK, który na
+    // coś czeka. To jest dokładnie ten próg, który opisuje docs/UI-UX.md §10.2.
+    const rodzaj = n.kind === 'fill' || n.kind === 'reopen' ? n.kind : 'debt';
+    items.push({
+      level: 1, kind: 'nudge', nudgeKind: rodzaj, id: n.id, from: n.from,
+      amountG: n.amountG, currency: n.currency, message: n.message,
+      billId: n.billId || null, billName: n.billName || '', at: n.createdAtMs,
+    });
   });
 
   settlements.forEach((s) => {

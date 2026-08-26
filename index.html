@@ -400,6 +400,12 @@ the verdict, and DESIGN.md
                 <div id="balance-waiting-list" class="space-y-2"></div>
             </div>
 
+            <!-- W UZUPEŁNIANIU — rachunki, które jeszcze nie weszły do salda.
+                 Wielka kwota nad tym blokiem liczy WYŁĄCZNIE rachunki gotowe do
+                 rozliczenia, więc bez tej linijki reszta znikałaby bez śladu i wracała
+                 w dniu, w którym ktoś zamknie rachunek — jako niespodzianka. -->
+            <div id="balance-filling" class="hidden mt-5"></div>
+
             <!-- Pusty pokój na Bilansie: zero to tu stan sukcesu, ale w świeżym pokoju
                  znaczy „jeszcze nic nie ma". Bez tego zakładka była samym limonkowym
                  blokiem i pustką pod nim. -->
@@ -1317,6 +1323,33 @@ the verdict, and DESIGN.md
                     <span class="person-search-count text-sm font-bold text-ink-3 flex-shrink-0"></span>
                 </div>
                 <div id="bill-members-list" class="space-y-1"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ZAMKNIJ RACHUNEK — jedyny moment, w którym człowiek decyduje o kwocie
+         nierozpisanej, i jedyne miejsce, gdzie ta decyzja jest podejmowana świadomie.
+
+         Arkusz pokazuje POZYCJE, nie listę spóźnialskich: „Wino 40,00" widać, że było
+         wspólne, a „Danie 40,00 · Danie 40,00" widać, że to czyjeś jedzenie. Imiona tej
+         wiedzy nie niosą, paragon tak.
+
+         Żadna z dwóch dróg NIE JEST zaznaczona z góry. To jest ten jeden moment, w którym
+         chcemy, żeby człowiek się zatrzymał — a zaznaczona domyślnie odpowiedź zamienia
+         decyzję o cudzych pieniądzach w przeklikanie. -->
+    <div id="close-bill-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Zamknij rachunek</h3>
+                    <button id="close-close-bill-modal" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+                <p class="sheet-lede">Po zamknięciu ekipa może przelewać pieniądze, a kwoty przestają się zmieniać.</p>
+            </div>
+            <div class="sheet-body">
+                <div id="close-bill-summary"></div>
+                <div id="close-bill-options" class="mt-4 space-y-3"></div>
             </div>
         </div>
     </div>
