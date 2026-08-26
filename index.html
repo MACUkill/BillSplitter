@@ -582,11 +582,20 @@ the verdict, and DESIGN.md
              a dopiero niżej paragon, koszty wspólne i rozpiska uczestników. -->
         <div id="bill-screen" class="hidden">
 
-            <header class="flex items-center gap-2 mb-5">
+            <!-- Nagłówek wyrównany DO GÓRY, nie do środka: nazwa rachunku zawija się teraz
+                 na kilka wierszy, a przy wyśrodkowaniu strzałka powrotu i znak zapytania
+                 odjeżdżałyby razem z nią na środek wysokości. -->
+            <header class="flex items-start gap-2 mb-5">
                 <button id="back-to-dashboard-btn" class="tap w-12 h-12 -ml-2 rounded-full flex items-center justify-center text-ink-2 flex-shrink-0" title="Wróć do pokoju">
                     <i class="fas fa-arrow-left text-lg"></i>
                 </button>
-                <h2 id="bill-name" class="font-display text-3xl md:text-4xl font-extrabold tracking-tight leading-none truncate min-w-0 flex-grow"></h2>
+                <!-- PEŁNA NAZWA, BEZ UCINANIA (zgłoszenie właściciela 2026-08-26:
+                     „Pizzeria u Wujka Stacha" schodziła do „Pizzeria u W…"). Nazwa jest
+                     tożsamością rachunku — po niej odróżnia się dwie kolacje z tego samego
+                     tygodnia, więc ucięcie zabiera dokładnie tę część, która rozróżnia.
+                     `leading-tight` zamiast `leading-none`: przy zawijaniu wiersze
+                     w stopniu 3xl zachodziły na siebie ogonkami. -->
+                <h2 id="bill-name" class="font-display text-3xl md:text-4xl font-extrabold tracking-tight leading-tight min-w-0 flex-grow break-words pt-1.5"></h2>
                 <button class="help-btn tap w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2 flex-shrink-0" title="Pomoc: jak to działa?" aria-label="Pomoc">
                     <i class="fas fa-question"></i>
                 </button>
@@ -1226,7 +1235,11 @@ the verdict, and DESIGN.md
 
             <div class="sheet-body">
                 <label for="new-bill-name" class="block text-sm font-bold text-ink-3">Nazwa rachunku</label>
-                <input type="text" id="new-bill-name" class="field min-h-tap w-full mt-1.5 mb-4" placeholder="np. Lunch w piątek">
+                <!-- `maxlength` dołożone 2026-08-26 razem z rezygnacją z ucinania nazw:
+                     skoro nazwa zawija się teraz na tyle wierszy, ile potrzeba, to bez
+                     ograniczenia wklejony akapit rozepchnąłby kafelek na pół ekranu.
+                     Sześćdziesiąt znaków mieści każdą sensowną nazwę rachunku. -->
+                <input type="text" id="new-bill-name" class="field min-h-tap w-full mt-1.5 mb-4" placeholder="np. Lunch w piątek" maxlength="60">
 
                 <div class="mb-2 flex items-center gap-2">
                     <span class="text-sm font-bold text-ink-3">Rachunek dla</span>

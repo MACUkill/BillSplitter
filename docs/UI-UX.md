@@ -2100,6 +2100,22 @@ uwag, wszystkie o tym samym: **zakładka „Rachunki" niosła za dużo naraz.**
   jest dla części ludzi ścianą.
 - **Filtr „Ukryte" pokazuje liczbę.** To jedyny filtr, który człowiek nakłada sam na
   siebie, i jedyny, po którym rachunek znika mu z oczu.
+- **NAZWY RACHUNKÓW NIE UCINAJĄ SIĘ.** „Pizzeria u Wujka Stacha" schodziła do
+  „Pizzeria u W…" i na liście, i w nagłówku ekranu rachunku. Nazwa jest tożsamością
+  wiersza — po niej odróżnia się dwie kolacje z tego samego tygodnia — więc ucięcie
+  zabierało dokładnie tę część, która rozróżnia.
+
+  Samo zdjęcie `truncate` nie wystarczyło: kolumna nazwy miała przy 390 px około 150 px,
+  bo po prawej stała kwota albo status. W trybie rachunkowym prawa kolumna niesie SAM
+  ZNACZEK, a ten czyta się równie dobrze w rzędzie podpisów piętro niżej — więc tam
+  schodzi, a nazwa dostaje całą szerokość wiersza. W pozostałych trybach po prawej stoi
+  LICZBA, która musi być wyrównana do prawej, i zostaje na miejscu.
+
+  Razem z tym doszedł `maxlength="60"` na polu nazwy: skoro nazwa zawija się na tyle
+  wierszy, ile trzeba, to bez ograniczenia wklejony akapit rozepchnąłby kafelek na pół
+  ekranu. Nagłówek rachunku dostał `leading-tight` zamiast `leading-none` — przy zawijaniu
+  wiersze w stopniu 3xl zachodziły na siebie ogonkami — i wyrównanie `items-start`,
+  żeby strzałka powrotu nie odjeżdżała na środek wysokości razem z drugim wierszem.
 
 Rozstrzygnięcie osi gestu jest w `attachSwipeToHide`: kierunek ustala się RAZ, przy
 pierwszym wyraźnym ruchu (próg 8 px). Bez tego lista albo nie chce się przewijać, albo

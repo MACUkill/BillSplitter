@@ -4381,16 +4381,21 @@
                 // to samo — a czerwień, która powtarza samą siebie, przestaje cokolwiek
                 // znaczyć. Kto wyłożył pieniądze, jest tu informacją, nie ostrzeżeniem.
                 let chipClass = status.chipClass;
+                // Czy prawa kolumna niesie ZNACZEK (schodzi do rzędu podpisów), czy LICZBĘ
+                // (zostaje po prawej, wyrównana). Patrz uwaga przy budowie wiersza niżej.
+                let statusWWierszu = false;
                 if (perBillActive && status.tone === 'owe') {
                     kwotaHtml = mojDlug
                         ? statusChip('text-owe', 'fa-circle-exclamation', 'Nieopłacone')
                         : statusChip('text-due', 'fa-check', 'Opłacone');
                     chipClass = 'chip';
+                    statusWWierszu = true;
                 } else if (perBillActive && status.tone === 'due' && typeof doMnie === 'number') {
                     kwotaHtml = doMnie > 0
                         ? statusChip('', 'fa-hourglass-half', 'Czeka na zwrot')
                         : statusChip('text-due', 'fa-check', 'Rozliczony');
                     chipClass = 'chip';
+                    statusWWierszu = true;
                 }
 
                 // WIERSZ ODSUWANY PALCEM. Kartę i przycisk ukrywania rozdziela teraz gest,
@@ -4403,19 +4408,29 @@
                 // Tło barwi się tylko przy zadaniu do wykonania — reszta listy zostaje biała,
                 // więc oko trafia w to jedno miejsce bez szukania.
                 if (status.tone === 'action') billEl.style.backgroundColor = 'rgb(var(--info) / 0.06)';
+                // PEŁNA NAZWA RACHUNKU, BEZ UCINANIA (zgłoszenie właściciela 2026-08-26:
+                // „Pizzeria u Wujka Stacha" schodziła do „Pizzeria u W…"). Nazwa jest
+                // tożsamością wiersza — po niej odróżnia się dwie kolacje z tego samego
+                // tygodnia — więc ucięcie zabiera dokładnie tę część, która rozróżnia.
+                //
+                // Sama rezygnacja z `truncate` nie wystarczyła: kolumna nazwy miała przy
+                // 390 px około 150 px, bo po prawej stała jeszcze kwota albo status.
+                // W trybie rachunkowym prawa kolumna niesie SAM ZNACZEK, a ten czyta się
+                // równie dobrze w rzędzie podpisów piętro niżej — więc tam schodzi,
+                // a nazwa dostaje całą szerokość. W pozostałych trybach po prawej stoi
+                // LICZBA, która musi być wyrównana do prawej i zostaje na miejscu.
                 billEl.innerHTML = `
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-start gap-3">
                     ${bill.payerId ? avatarHtml(memberName(bill.payerId), bill.payerId, 'w-11 h-11 text-base') : ''}
                     <div class="min-w-0 flex-grow">
-                        <p class="font-bold text-lg truncate leading-tight">${escapeHtml(bill.billName)}</p>
-                        <div class="mt-1 flex items-center gap-2 flex-wrap">
+                        <p class="font-bold text-lg leading-tight break-words">${escapeHtml(bill.billName)}</p>
+                        <div class="mt-1.5 flex items-center gap-2 flex-wrap">
                             <span class="${chipClass}">${status.labelHtml}</span>
+                            ${statusWWierszu ? kwotaHtml : ''}
                             <span class="text-sm text-ink-3">${created}</span>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2 flex-shrink-0">
-                        ${kwotaHtml}
-                    </div>
+                    ${statusWWierszu ? '' : `<div class="flex items-center gap-2 flex-shrink-0 pt-0.5">${kwotaHtml}</div>`}
                     </div>
                 `;
                 billEl.onclick = (e) => {
