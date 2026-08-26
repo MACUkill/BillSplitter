@@ -158,12 +158,16 @@ tym, żeby trzy tryby stały się trzema księgowościami.
   przelewem, a odklikuję pięć razy". Właściciel: *„całkiem fajne, możemy to zapisać, ale
   nie wiem czy wprowadzę"*.
 
+**Gałąź jest na `origin`** (wypchnięta 2026-08-26 za zgodą właściciela) jako osobna,
+nowa gałąź obok `main`, `BillSplitterV2`, `MacuTestowy` i `worktree-ux-poprawki-v2`.
+`BillSplitterV2` stoi nietknięta na `e61188e1`. Pracuj przez `git push` na tej gałęzi,
+nie przez scalanie do V2 — o scaleniu decyduje właściciel, po sprawdzeniu na telefonie.
+
 ## Pytania otwarte dla właściciela
 
-1. Czy wypchnąć gałąź `etap1-offline-i-feedback` na `origin`
-   (`github.com/MACUkill/BillSplitter`) jako NOWĄ, osobną gałąź? Nie dotyka to
-   `BillSplitterV2` ani `main` — znajomi właściciela nie zobaczyliby nic. Pytane
-   trzykrotnie, wciąż bez rozstrzygnięcia.
+Brak na dziś — wszystkie z etapu 3 rozstrzygnięte. Otwarte zostają wyłącznie punkty
+etapu 4 (algorytm planu minimalnego, P1/P2/P7 z artifactu) i pytanie o odświeżanie,
+o które właściciel dopytuje kolegę.
 
 ---
 
