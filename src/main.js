@@ -5382,12 +5382,62 @@
         // Faza 6.1: rejestracja service workera (offline + kryterium instalowalności + push).
         // Tylko w PROD — w dev Vite HMR nie współpracuje z SW (cache modułów).
         let swRegistration = null;
+        // NOWA WERSJA MUSI SIĘ ZGŁOSIĆ SAMA.
+        //
+        // Od 2026-08-26 powłoka idzie z pamięci natychmiast (patrz `public/sw.js`), więc
+        // po wdrożeniu człowiek pracuje na POPRZEDNIEJ wersji aż do odświeżenia. Bez tego
+        // paska zamienilibyśmy trzy sekundy czekania na cichą starą wersję — problem
+        // gorszy od naprawianego, bo niewidoczny.
+        //
+        // Nowy service worker czeka (nie ma już `skipWaiting` w `install`), a sterowanie
+        // przejmuje dopiero na wyraźne stuknięcie. Wtedy i tak cały kod ładuje się od nowa,
+        // więc nie ma ryzyka, że nowy worker poda nowe pliki staremu kodowi.
+        const showUpdateBanner = (worker) => {
+            const banner = document.getElementById('update-banner');
+            const button = document.getElementById('update-reload-btn');
+            if (!banner || !button || !worker) return;
+            banner.classList.remove('hidden');
+            button.onclick = () => {
+                button.disabled = true;
+                button.textContent = 'Odświeżam…';
+                worker.postMessage({ type: 'skip-waiting' });
+            };
+        };
+
+        const watchForUpdate = (registration) => {
+            if (!registration) return;
+            // Worker mógł skończyć instalację, zanim strona zdążyła się podpiąć.
+            if (registration.waiting && navigator.serviceWorker.controller) {
+                showUpdateBanner(registration.waiting);
+            }
+            registration.addEventListener('updatefound', () => {
+                const nowy = registration.installing;
+                if (!nowy) return;
+                nowy.addEventListener('statechange', () => {
+                    // `controller` odróżnia AKTUALIZACJĘ od pierwszej instalacji w życiu.
+                    // Przy pierwszej nie ma o czym informować — nie ma poprzedniej wersji.
+                    if (nowy.state === 'installed' && navigator.serviceWorker.controller) {
+                        showUpdateBanner(nowy);
+                    }
+                });
+            });
+            // Przejęcie sterów przez nowego workera to jedyny moment, w którym wolno
+            // przeładować stronę: od tej chwili wszystkie zasoby idą już z nowego wydania.
+            let przeladowano = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (przeladowano) return;
+                przeladowano = true;
+                window.location.reload();
+            });
+        };
+
         const registerServiceWorker = () => {
             if (!('serviceWorker' in navigator)) return;
             if (!import.meta.env.PROD) return;
             window.addEventListener('load', async () => {
                 try {
                     swRegistration = await navigator.serviceWorker.register('/sw.js');
+                    watchForUpdate(swRegistration);
                     await navigator.serviceWorker.ready;
                     warmOfflineCache();
                     setupPush();

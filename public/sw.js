@@ -27,12 +27,22 @@ const CACHE = 'billiada-v4';
 // odpowiedź. Trzymanie jej pod adresem z zapytaniem tylko mnożyłoby kopie.
 const SHELL = '/';
 
-// Po tylu milisekundach bez odpowiedzi sieci pokazujemy kopię z pamięci.
-// Dotyczy WYŁĄCZNIE sytuacji, w której kopia istnieje — bez niej czekamy na sieć bez końca,
-// bo nie ma czego pokazać. Próg bierze się z objawu: przy „net jest, ale nie działa"
-// (hotelowe Wi-Fi, jedna kreska) `fetch` potrafi wisieć kilkadziesiąt sekund i aplikacja
-// wygląda na zawieszoną zamiast na offline.
-const NAV_TIMEOUT_MS = 3000;
+// POWŁOKA IDZIE Z PAMIĘCI NATYCHMIAST — bez czekania na sieć ani sekundy.
+//
+// Do 2026-08-26 stał tu limit czasu (3000 ms): sieć dostawała trzy sekundy, a dopiero
+// potem pokazywaliśmy kopię z pamięci. Przy „net jest, ale nie działa" to były trzy
+// sekundy PUSTEGO EKRANU, zanim przeglądarka dostała choćby HTML — czyli dokładnie ten
+// „ciemny ekran" ze zgłoszenia właściciela.
+//
+// Czekanie nie miało zresztą czego kupić. Powłoka to JEDEN plik, identyczny dla każdego
+// pokoju; wszystkie dane idą z Firestore na żywo, osobnym kanałem. Świeższa powłoka nie
+// znaczy świeższych danych — znaczy tylko nowszą wersję aplikacji, a ta może spokojnie
+// dojechać w tle i zgłosić się paskiem „Nowa wersja gotowa".
+//
+// CENA, KTÓRĄ ŚWIADOMIE PŁACIMY: po wdrożeniu człowiek zobaczy poprzednią wersję do czasu
+// odświeżenia. Dlatego strona MUSI mieć obsługę `updatefound` (patrz `registerServiceWorker`
+// w main.js) — bez niej ta zmiana zamienia trzy sekundy czekania na cichą starą wersję,
+// co jest gorszym problemem niż ten, który naprawiamy.
 
 // Wyłuskuje z tekstu (HTML albo CSS) adresy własnych zasobów. Nazwy plików z `assets`
 // niosą skrót zawartości, więc nie da się ich wypisać na sztywno w tym pliku.
@@ -92,9 +102,23 @@ const precacheShell = async () => {
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     try { await precacheShell(); } catch (_) {}
-    // Nowy SW przejmuje od razu — bez czekania na zamknięcie kart.
-    await self.skipWaiting();
   })());
+});
+
+// NOWY SW NIE PRZEJMUJE STERÓW SAM — i to jest zmiana z 2026-08-26, nie przeoczenie.
+//
+// Stało tu `skipWaiting()`, czyli nowy service worker wchodził natychmiast, w środku życia
+// otwartej strony. Przy pamięci pierwszej (patrz komentarz przy nawigacji) znaczyłoby to,
+// że NOWY worker podaje NOWE pliki stronie działającej na STARYM kodzie. Nazwy zasobów
+// niosą skrót zawartości, więc kawałek doładowywany leniwie (`heic2any` przy zdjęciu
+// z iPhone'a) może po prostu nie istnieć w nowym wydaniu — i wtedy funkcja przestaje
+// działać w połowie sesji, bez żadnego komunikatu.
+//
+// Teraz nowy worker czeka, strona wykrywa go przez `updatefound` i pokazuje pasek
+// „Nowa wersja gotowa". Sterowanie przejmuje dopiero wtedy, gdy CZŁOWIEK naciśnie odśwież —
+// czyli w momencie, w którym i tak cały kod ładuje się od nowa.
+self.addEventListener('message', (event) => {
+  if ((event.data || {}).type === 'skip-waiting') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -183,13 +207,16 @@ self.addEventListener('fetch', (event) => {
         return fresh;
       }).catch(() => null);
 
-      // Nie ma czego pokazać: czekamy na sieć tyle, ile trzeba.
+      // Nie ma czego pokazać: czekamy na sieć tyle, ile trzeba. Dotyczy wyłącznie
+      // pierwszego wejścia w życiu, zanim `install` zdąży zapełnić pamięć.
       if (!cached) return (await network) || Response.error();
 
-      // Jest kopia: dajemy sieci NAV_TIMEOUT_MS, potem pokazujemy kopię. Pobieranie leci
-      // dalej w tle i podmienia pamięć, więc następne wejście jest już świeże.
-      const timeout = new Promise((resolve) => { setTimeout(() => resolve(null), NAV_TIMEOUT_MS); });
-      return (await Promise.race([network, timeout])) || cached;
+      // Jest kopia — oddajemy ją OD RAZU. Pobieranie leci dalej w tle i podmienia pamięć,
+      // więc następne wejście dostaje świeżą powłokę. `waitUntil` trzyma service workera
+      // przy życiu do końca tego pobrania; bez tego przeglądarka może go uśpić zaraz po
+      // odpowiedzi i odświeżenie nigdy by się nie dokończyło.
+      event.waitUntil(network);
+      return cached;
     })());
     return;
   }

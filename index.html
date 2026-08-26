@@ -157,8 +157,17 @@ the verdict, and DESIGN.md
          wykrywa brak sieci od razu, a na zdychającym wifi twierdzi, że wszystko gra.
          Trzeci stan („połączenie jest, ale serwer milczy") czytamy z metadanych
          nasłuchów Firestore — patrz `noteSnapshot` w main.js. -->
-    <div id="offline-banner" class="hidden fixed top-0 left-0 right-0 z-50 bg-info text-surface text-sm font-semibold text-center py-2 px-4" role="status">
-        <i class="fas fa-triangle-exclamation mr-2" aria-hidden="true"></i><span id="offline-banner-text"></span>
+    <!-- PASKI SYSTEMOWE STOJĄ W JEDNYM STOSIE. Oba są przypięte do góry ekranu, więc bez
+         wspólnego rodzica nachodziłyby na siebie w chwili, gdy pokażą się naraz (nowa
+         wersja doszła, a potem zniknęła sieć). Kolumna układa je jeden pod drugim sama. -->
+    <div class="fixed top-0 left-0 right-0 z-50 flex flex-col">
+        <div id="update-banner" class="hidden bg-brand text-brand-ink text-sm font-semibold py-2 px-4 flex items-center justify-center gap-3 flex-wrap" role="status">
+            <span>Nowa wersja aplikacji jest gotowa.</span>
+            <button id="update-reload-btn" class="btn btn-dark px-4 py-1.5" type="button">Odśwież</button>
+        </div>
+        <div id="offline-banner" class="hidden bg-info text-surface text-sm font-semibold text-center py-2 px-4" role="status">
+            <i class="fas fa-triangle-exclamation mr-2" aria-hidden="true"></i><span id="offline-banner-text"></span>
+        </div>
     </div>
 
     <!-- PRZEWIJA SIĘ TEN KONTENER, A NIE DOKUMENT.
