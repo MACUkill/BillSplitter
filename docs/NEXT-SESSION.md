@@ -13,14 +13,19 @@
 > **`main` zostaje nietknięty.** Scalenie V2 na `main` robi wyłącznie właściciel, ręcznie
 > i nie teraz — patrz pamięć projektu.
 >
-> ### Zostało do zrobienia po stronie właściciela
+> ### Funkcje push WDROŻONE 2026-08-26
 >
-> **Wdrożenie dwóch funkcji push** (kod jest, funkcje nie są wdrożone — do tego czasu
-> telefon przy wpłacie milczy, choć odznaka i skrzynka działają):
+> `sendSettlementPush` i `sendSettlementConfirmedPush` utworzone na
+> `billsplitter-push-test`, region `europe-central2`. Telefon odzywa się teraz przy
+> wpłacie zgłoszonej (do odbiorcy) i przy potwierdzonej (do wpłacającego).
 >
-> ```
-> firebase deploy --only functions:sendSettlementPush,functions:sendSettlementConfirmedPush --project billsplitter-push-test
-> ```
+> **Pierwszy prawdziwy test dopiero przed nami** — wyzwalaczy nie da się sprawdzić
+> lokalnie (powód niżej, w „Długach"), więc dowodem będzie dopiero wpłata zrobiona na
+> dwóch telefonach z włączonymi powiadomieniami.
+>
+> Przy wdrożeniu wyszło ostrzeżenie: **`firebase-functions` w `functions/package.json`
+> jest przestarzałe**. Podniesienie wersji niesie zmiany łamiące, więc to osobna robota
+> na spokojnie, nie przy okazji.
 >
 > ### Gałąź testowa na telefon (branch deploy Netlify)
 >
@@ -158,15 +163,10 @@ Wszystkie uwagi właściciela dotyczyły jednego: zakładka „Rachunki" niosła
 - **Około czterdziestu czekanych zapisów** w `src/main.js` (`await updateDoc` / `addDoc`).
   Offline te obietnice nie rozwiązują się nigdy. Przerobione są dołączanie do pokoju, zapis
   wpłaty i wszystkie trzy ścieżki potwierdzania wpłat — wzorzec to `fireWrite`.
-- **PUSH PRZY WPŁACIE CZEKA NA WDROŻENIE FUNKCJI.** `functions/index.js` ma od 2026-08-26
-  dwie nowe funkcje: `sendSettlementPush` (wpłata zgłoszona → push do odbiorcy)
-  i `sendSettlementConfirmedPush` (potwierdzona → push do wpłacającego). Treść jest
-  krótka, szczegóły „za co" są w aplikacji. **Kod jest na gałęzi, ale funkcje NIE SĄ
-  wdrożone** — dopóki właściciel tego nie zrobi, telefon przy wpłacie milczy:
-
-  ```
-  firebase deploy --only functions:sendSettlementPush,functions:sendSettlementConfirmedPush --project billsplitter-push-test
-  ```
+- **PUSH PRZY WPŁACIE — WDROŻONY, ALE NIEPRZETESTOWANY NA ŻYWO.** `sendSettlementPush`
+  (wpłata zgłoszona → push do odbiorcy) i `sendSettlementConfirmedPush` (potwierdzona →
+  push do wpłacającego) stoją na `billsplitter-push-test`. Treść jest krótka, szczegóły
+  „za co" są w aplikacji.
 
   **Wyzwalaczy funkcji NIE DA SIĘ sprawdzić lokalnie w tym repozytorium.** Emulator
   funkcji startuje pod projektem `billsplitter-push-test`, a przeglądarka w trybie
@@ -199,8 +199,10 @@ przyszłości. Asystent tego nie robi nawet przy zielonych testach — patrz pam
 
 ## Pytania otwarte dla właściciela
 
-1. **Wdrożenie dwóch funkcji push** — komenda wyżej, w „Długach". Bez tego telefon przy
-   wpłacie milczy, choć odznaka i skrzynka działają.
+1. **Czy push przy wpłacie doszedł na telefon?** Funkcje są wdrożone, ale wyzwalaczy nie
+   da się sprawdzić lokalnie — dowodem będzie dopiero wpłata zrobiona na dwóch telefonach
+   z włączonymi powiadomieniami. Gdyby nie doszedł: logi w konsoli Firebase, funkcja
+   `sendSettlementPush`, region `europe-central2`.
 2. Punkty etapu 4 (algorytm planu minimalnego, P1/P2/P7 z artifactu) i pytanie
    o odświeżanie, o które właściciel dopytuje kolegę.
 
