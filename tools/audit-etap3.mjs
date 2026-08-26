@@ -302,24 +302,32 @@ const skrzynka = await tekstem(ala, '#nudges-list');
 sprawdz('wiersz w skrzynce mówi, ZA CO jest wpłata', skrzynka.includes('Kolacja'), skrzynka.slice(0, 120));
 await ala.click('#close-nudges-modal');
 
-// „Kto już oddał" na ekranie rachunku.
+// STATUS ROZLICZENIA SIEDZI PRZY OSOBIE, w zwijanej „Ekipie" — nie w osobnej sekcji
+// (zgłoszenie właściciela 2026-08-26: druga lista tych samych ludzi jest zbędna).
 await ala.click('#nav-bills');
 await ala.waitForSelector('#bills-history-list .card', { timeout: 10000 });
 await ala.click('#bills-history-list .card');
 await ala.waitForSelector('#bill-screen:not(.hidden)', { timeout: 20000 });
-const ktoOddal = await czekajNa(
+
+sprawdz('osobna sekcja „Kto już oddał" zniknęła z rachunku',
+  (await ala.$$('#bill-settle-section')).length === 0);
+
+const podpisEkipy = await czekajNa(
   ala,
-  () => {
-    const el = document.querySelector('#bill-settle-section');
-    return el && !el.classList.contains('hidden') && el.textContent.includes('Kto już oddał');
-  },
-  'sekcja „Kto już oddał"',
+  () => (document.querySelector('#participants-summary-label') || {}).textContent?.includes('oddało'),
+  'podpis „Ekipy" z licznikiem rozliczonych',
 );
-sprawdz('rachunek pokazuje płatnikowi, kto już oddał', ktoOddal);
-const trescSekcji = await tekstem(ala, '#bill-settle-section');
-sprawdz('Bartek jest odznaczony jako ten, który oddał',
-  trescSekcji.includes('Bartek') && trescSekcji.includes('oddał'), trescSekcji.replace(/\s+/g, ' ').slice(0, 120));
-sprawdz('licznik mówi „1 z 1"', trescSekcji.includes('1 z 1'));
+sprawdz('podpis „Ekipy" mówi, ilu oddało', podpisEkipy, await tekstem(ala, '#participants-summary-label'));
+sprawdz('licznik mówi „1 z 1"',
+  (await tekstem(ala, '#participants-summary-label')).includes('1 z 1'),
+  await tekstem(ala, '#participants-summary-label'));
+
+// Rozwijamy „Ekipę" i sprawdzamy znacznik przy osobie.
+await ala.$eval('#participants-details', (el) => { el.open = true; });
+await chwila(300);
+const trescEkipy = (await tekstem(ala, '#participants-list')).replace(/\s+/g, ' ');
+sprawdz('Bartek jest odznaczony przy swoim imieniu jako ten, który oddał',
+  trescEkipy.includes('Bartek') && trescEkipy.includes('Oddał/a'), trescEkipy.slice(0, 120));
 
 // ----------------------------------------------------- wpłata bez przypisania
 //

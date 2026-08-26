@@ -2071,7 +2071,7 @@ npx vite --port 5199 --strictPort
 BILLIADA_URL=http://localhost:5199/ node tools/audit-etap3.mjs
 ```
 
-41 sprawdzeń. Uwaga na dwie pułapki pisania takich przebiegów, obie zapisane w kodzie:
+42 sprawdzenia. Uwaga na dwie pułapki pisania takich przebiegów, obie zapisane w kodzie:
 ekran rachunku pokazuje się ZANIM `renderBillScreen` dopnie nasłuchy (stąd `klikAzOtworzy`),
 a pole kwoty zapisuje się przy utracie ogniska i potrafi trafić w moment przerysowania
 (stąd `wpiszKwote` z powtórzeniem).
@@ -2202,10 +2202,31 @@ pozostałych, a nie pomyłka.
 nim wypisana — w skrzynce, na Bilansie i w rejestrze. Stare pole `billId` (jeden napis)
 jest nadal czytane, dla wpłat zapisanych, zanim wybór wielu rachunków istniał.
 
-### 22.11 Stan testów po etapie
+### 22.11 „Kto już oddał" schodzi do „Ekipy" (2026-08-26)
+
+Osobna sekcja „Kto już oddał" na ekranie rachunku była DRUGĄ LISTĄ TYCH SAMYCH LUDZI,
+dwa ekrany pod pierwszą. Zgłoszenie właściciela: zbędna — statusy mają siedzieć przy
+osobach, w zwijanej „Ekipie", razem z resztą szczegółów uczestnika.
+
+- Znacznik stoi w rzędzie z imieniem: **„✓ Oddał/a"** albo **„Zostaje 45,00 PLN"**.
+- Podpis zwiniętej sekcji niesie to, po co się ją rozwija: **„Ekipa: 3 osoby · oddało
+  2 z 3"**. Licznik uzupełnień wraca do podpisu, gdy nie ma jeszcze czego rozliczać
+  (rachunek bez potwierdzonego płatnika albo bez kwoty).
+- **WYŁĄCZNIE W TRYBIE RACHUNKOWYM.** To zmiana wobec pierwotnej decyzji („w każdym
+  trybie") i wynika z modelu z §22.10: w planie minimalnym wpłaty idą trasami, których
+  żaden rachunek nie stworzył, więc zdanie „oddał za TEN rachunek" nie ma się z czego
+  wziąć. Dokładnie z tego samego powodu w tym trybie nie ma statusu na liście rachunków
+  ani filtra „Do oddania" — jedna reguła, trzy miejsca.
+- Strona dłużnika zostaje bez zmian na limonkowej karcie „Twój udział".
+
+Nasłuch wpłat przerysowuje teraz CAŁY ekran rachunku (`renderBillScreen`), a nie samą
+sekcję: znaczniki liczą się z wpłat, więc po cudzej wpłacie ekran musi się odświeżyć,
+inaczej pokazuje stan sprzed niej.
+
+### 22.12 Stan testów po etapie
 
 **298 testów jednostkowych** (35 w `src/perbill.test.js`), 34 testy reguł, 13 sprawdzeń
-przebiegu offline, 9 sprawdzeń service workera, 41 sprawdzeń przebiegu etapu 3. Wszystko
+przebiegu offline, 9 sprawdzeń service workera, 42 sprawdzenia przebiegu etapu 3. Wszystko
 zielone. Reguły Firestore **nie wymagały zmiany**: `settlementMode` na dokumencie grupy
 i `billId` na wpłacie mieszczą się w istniejących regułach, a pola podsumowań nadal są
 zamrożone.

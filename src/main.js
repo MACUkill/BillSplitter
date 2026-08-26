@@ -1399,7 +1399,9 @@
                 renderBillsList();
                 renderSettlements();
                 renderBalancePanel();
-                if (currentScreenName === 'bill') renderBillSettleSection();
+                // Znaczniki „oddał/a" w „Ekipie" liczą się z wpłat, więc ekran rachunku
+                // musi się przerysować po cudzej wpłacie — inaczej pokazuje stan sprzed niej.
+                if (currentScreenName === 'bill') withFocusPreserved(renderBillScreen);
                 updateNudgeBadge();
                 savePushToken(); // token mógł powstać zanim wiedzieliśmy, kim jest użytkownik
                 if (currentScreenName === 'profile') renderProfile();
@@ -1423,7 +1425,9 @@
                 // zmienia każda cudza wpłata — bez tego kafelek pokazywałby dług,
                 // który ktoś właśnie spłacił, aż do następnej zmiany rachunku.
                 renderBillsList();
-                if (currentScreenName === 'bill') renderBillSettleSection();
+                // Znaczniki „oddał/a" w „Ekipie" liczą się z wpłat, więc ekran rachunku
+                // musi się przerysować po cudzej wpłacie — inaczej pokazuje stan sprzed niej.
+                if (currentScreenName === 'bill') withFocusPreserved(renderBillScreen);
                 // ODZNAKA NA DZWONKU (poprawione 2026-08-26). Cudza wpłata czekająca na
                 // moje potwierdzenie jest sygnałem poziomu 1, ale ten nasłuch nie wołał
                 // `updateNudgeBadge`, więc odznaka zapalała się dopiero przy następnej
@@ -5407,63 +5411,24 @@
             </div>`;
         };
 
-        // ROZLICZENIE TEGO RACHUNKU — sekcja pod własnym udziałem.
+        // CZY TA OSOBA ODDAŁA ZA TEN RACHUNEK — znacznik do wiersza „Ekipy".
         //
-        // „KTO JUŻ ODDAŁ" DZIAŁA W KAŻDYM TRYBIE (decyzja właściciela 2026-08-26). To nie
-        // jest część trybu rachunkowego, tylko odpowiedź na pytanie, które pada zawsze:
-        // „oddałeś mi za tę kolację?". Do tej pory rachunek nie miał na nie ani słowa —
-        // płatnik musiał iść do rejestru wpłat i składać sobie odpowiedź z dat i kwot.
+        // Stała tu do 2026-08-26 osobna sekcja „Kto już oddał", czyli DRUGA lista tych
+        // samych ludzi, dwa ekrany pod pierwszą. Zgłoszenie właściciela: niepotrzebna,
+        // te statusy mają siedzieć przy osobach, w zwijanej „Ekipie" — tam, gdzie i tak
+        // stoją wszystkie szczegóły uczestnika.
         //
-        // „UREGULUJ" na rachunku pokazuje się WYŁĄCZNIE w trybie rachunkowym: w planie
-        // minimalnym przelew za pojedynczy rachunek rozjeżdża się z planem, którym gra
-        // reszta ekipy, i tworzy dokładnie te wpłaty bez przypisania, które trzeba potem
-        // tłumaczyć osobnym blokiem.
-        const renderBillSettleSection = () => {
-            const wrap = document.getElementById('bill-settle-section');
-            if (!wrap) return;
-            const hide = () => { wrap.classList.add('hidden'); wrap.innerHTML = ''; };
-            if (!billData || !groupData || !currentBillId) return hide();
-            const my = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
-            if (!my) return hide();
-
-            const per = perBillNow();
-            const who = billSettledBy(per, currentBillId);
-            if (who.length === 0) return hide(); // rachunek bez potwierdzonego płatnika albo bez kwoty
-
-            // STRONA DŁUŻNIKA MIESZKA NA LIMONKOWEJ KARCIE „Twój udział" (`myBillSettleHtml`),
-            // a nie tutaj. Tu zostaje wyłącznie widok PŁATNIKA — „kto już oddał".
-            const isPayer = billData.payerId === my.id;
-            let html = '';
-
-            if (isPayer) {
-                // Kto NIE oddał, stoi wyżej — po to się tu wchodzi. Wewnątrz grupy
-                // alfabetycznie, żeby lista nie skakała po każdej wpłacie.
-                const kolejnosc = [...who].sort((a, b) =>
-                    (Number(a.settled) - Number(b.settled))
-                    || memberName(a.debtor).localeCompare(memberName(b.debtor), 'pl'));
-                const oddalo = who.filter((x) => x.settled).length;
-                const wiersze = kolejnosc.map((x) => `
-                    <div class="flex items-center gap-3 py-1.5">
-                        ${avatarHtml(memberName(x.debtor), x.debtor, 'w-9 h-9 text-sm')}
-                        <span class="min-w-0 flex-grow truncate font-semibold">${escapeHtml(memberName(x.debtor))}</span>
-                        ${x.settled
-                            ? `<span class="text-sm font-bold text-due flex items-center gap-1.5 flex-shrink-0"><i class="fas fa-check"></i>oddał/a</span>`
-                            : `<span class="amount text-owe flex-shrink-0">${fmtMoney(x.openG, x.currency)}</span>`}
-                    </div>`).join('');
-                html += `<div class="card p-4">
-                    <div class="flex items-baseline justify-between gap-3">
-                        <p class="text-sm font-bold text-ink-3">Kto już oddał</p>
-                        <p class="text-sm text-ink-3">${oddalo} z ${who.length}</p>
-                    </div>
-                    <div class="mt-2">${wiersze}</div>
-                    ${who.some((x) => !x.settled)
-                        ? `<p class="text-xs text-ink-3 mt-2">Wpłaty odbierasz i przypominasz o nich w zakładce „Rozliczenia".</p>`
-                        : ''}
-                </div>`;
-            }
-
-            wrap.innerHTML = html;
-            wrap.classList.toggle('hidden', !html);
+        // WYŁĄCZNIE W TRYBIE RACHUNKOWYM. W planie minimalnym wpłaty idą trasami, których
+        // żaden rachunek nie stworzył, więc zdanie „oddał za TEN rachunek" nie ma się
+        // z czego wziąć — dokładnie z tego powodu w tym trybie nie ma też statusu na
+        // liście rachunków ani filtra „Do oddania". Jedna reguła, trzy miejsca.
+        const billSettledMarkHtml = (rozliczeni, participantId) => {
+            if (groupSettlementMode() !== 'perBill') return '';
+            const x = (rozliczeni || []).find((r) => r.debtor === participantId);
+            if (!x) return ''; // płatnik albo rachunek jeszcze bez długów
+            return x.settled
+                ? `<span class="chip text-due flex-shrink-0"><i class="fas fa-check"></i>Oddał/a</span>`
+                : `<span class="chip text-owe flex-shrink-0"><i class="fas fa-circle-exclamation"></i>Zostaje ${fmtMoney(x.openG, x.currency)}</span>`;
         };
 
         const renderBillScreen = async () => {
@@ -5780,8 +5745,12 @@
             // Raz na przerysowanie, nie raz na osobę: przy ekipie piętnastoosobowej to
             // piętnaście przebiegów po tych samych polach dla identycznego wyniku.
             const reszta = restInfo(calculations);
-            // Ile z TEGO rachunku wciąż jestem winien — na dół limonkowej karty.
-            const mojWiersz = billSettledBy(perBillNow(), currentBillId).find((x) => x.debtor === myGroupMember.id);
+            // Rozliczenie tego rachunku liczone RAZ na przerysowanie: własna kwota na dół
+            // limonkowej karty i znaczniki przy wszystkich pozostałych osobach w „Ekipie".
+            // Przy piętnastu osobach liczenie tego w pętli byłoby piętnastoma przebiegami
+            // po tych samych danych.
+            const rozliczeniRachunku = billSettledBy(perBillNow(), currentBillId);
+            const mojWiersz = rozliczeniRachunku.find((x) => x.debtor === myGroupMember.id);
             const mojeRozliczenie = myBillSettleHtml(mojWiersz);
 
             sortedParticipants.forEach(pt => {
@@ -5873,14 +5842,18 @@
                         ${myShareHtml(pt, paymentInfo, reszta, mojeRozliczenie)}
                     </div>`;
                 } else { // Other participants view
+                    // Znacznik rozliczenia stoi PRZY OSOBIE, w rzędzie z jej imieniem —
+                    // nie w osobnej sekcji dwa ekrany niżej. `items-start`, bo znacznik
+                    // ma trafić na wysokość imienia, a nie na środek dwuwierszowej kolumny.
                     participantHTML = `
                     <div class="card p-4">
-                        <div class="flex items-center min-w-0">
+                        <div class="flex items-start min-w-0 gap-2">
                             ${avatarHtml(p.name, p.id)}
-                            <div class="flex flex-col min-w-0">
+                            <div class="flex flex-col min-w-0 flex-grow">
                                 <span class="text-lg font-semibold truncate">${escapeHtml(p.name)}</span>
                                 ${statusDisplayHtml}
                             </div>
+                            ${billSettledMarkHtml(rozliczeniRachunku, p.id)}
                         </div>
                         ${participantBreakdownHtml(pt, false, paymentInfo, reszta)}
                     </div>`;
@@ -5895,17 +5868,29 @@
 
             // Podpis zwiniętej sekcji niesie to, co bez niej trzeba by rozwijać:
             // ilu jest uczestników i ilu ma jeszcze coś do uzupełnienia.
+            // PODPIS ZWINIĘTEJ „EKIPY" NIESIE TO, PO CO SIĘ JĄ ROZWIJA.
+            //
+            // W trybie rachunkowym pytanie brzmi „kto już oddał", więc licznik rozliczonych
+            // wypiera z podpisu licznik uzupełnień — inaczej trzeba by rozwinąć sekcję,
+            // żeby dowiedzieć się rzeczy, dla której się ją rozwija. Uzupełnianie wraca do
+            // podpisu, gdy nie ma jeszcze czego rozliczać (rachunek bez potwierdzonego
+            // płatnika albo bez kwoty) i w planie minimalnym, gdzie statusu nie ma wcale.
             const participantsLabel = document.getElementById('participants-summary-label');
             if (participantsLabel) {
                 const others = calculations.participantTotals.filter(pt => pt.participant.id !== myGroupMember.id);
                 const pending = others.filter(pt => !participantReady(billData, pt.participant.id)).length;
                 const people = `${others.length} ${plural(others.length, 'osoba', 'osoby', 'osób')}`;
-                participantsLabel.textContent = pending > 0
-                    ? `Ekipa: ${people} · ${pending} do uzupełnienia`
-                    : `Ekipa: ${people} · wszystko uzupełnione`;
+                const doRozliczenia = groupSettlementMode() === 'perBill' ? rozliczeniRachunku : [];
+                if (doRozliczenia.length) {
+                    const oddalo = doRozliczenia.filter((x) => x.settled).length;
+                    participantsLabel.textContent = `Ekipa: ${people} · oddało ${oddalo} z ${doRozliczenia.length}`;
+                } else {
+                    participantsLabel.textContent = pending > 0
+                        ? `Ekipa: ${people} · ${pending} do uzupełnienia`
+                        : `Ekipa: ${people} · wszystko uzupełnione`;
+                }
             }
 
-            renderBillSettleSection();
             // Przycisk siedzi w limonkowej karcie („Twój udział"), więc nasłuch dopinamy
             // po jej wstawieniu — karta powstaje w pętli wyżej, razem z resztą uczestników.
             const settleBtn = document.getElementById('bill-settle-btn');

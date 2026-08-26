@@ -25,7 +25,7 @@ const RUNTIME_CREATED_IDS = new Set([
   'confirm-payer-btn-simple',  // j.w. dla rachunku prostego
   'toast-notification',        // toast budowany przez showToast()
   'bills-filter-reset',        // „Pokaż wszystkie" w stanie pustym listy rachunków
-  'bill-settle-btn',           // „Ureguluj" w sekcji rozliczenia rachunku (renderBillSettleSection)
+  'bill-settle-btn',           // „Ureguluj" na limonkowej karcie „Twój udział" (myBillSettleHtml)
   'viewport-diag',             // panel z wymiarami okna — powstaje dopiero po ukrytym geście
 ]);
 

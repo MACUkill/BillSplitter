@@ -67,7 +67,7 @@ npm run emulators                # w osobnym oknie
 npm run test:rules               # 34 testy reguł — WYMAGA CZYSTEGO EMULATORA
 npx vite --port 5199 --strictPort
 BILLIADA_URL=http://localhost:5199/ node tools/audit-offline.mjs   # 13 sprawdzeń
-BILLIADA_URL=http://localhost:5199/ node tools/audit-etap3.mjs     # 41 sprawdzeń
+BILLIADA_URL=http://localhost:5199/ node tools/audit-etap3.mjs     # 42 sprawdzenia
 
 VITE_USE_EMULATOR=true npx vite build
 npx vite preview --port 5197 --strictPort
@@ -107,7 +107,8 @@ na wszystkich trzech ekranach. Pełny wywód: **§22.10**.
   wybrane; reguła „od najstarszego" zostaje dla wpłat bez tej listy.
 - **Jeden przelew = jedna wpłata** (odwraca wcześniejsze „5 rachunków = 5 wpłat").
   Odbiorca dostaje jeden wiersz do potwierdzenia, z wypisanymi rachunkami.
-- **„Kto już oddał" na ekranie rachunku — w KAŻDYM trybie.**
+- **„Kto już oddał" przy osobie w zwijanej „Ekipie"** na ekranie rachunku (tylko w trybie
+  rachunkowym — patrz §22.11).
 - **Niezmiennik pod testem:** saldo na czysto każdej osoby jest identyczne w obu trybach
   (także na stu losowych pokojach i na kółku długów).
 
