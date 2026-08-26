@@ -595,6 +595,59 @@ body:has(#offline-banner:not(.hidden)) #app-container {
   .seg-btn:disabled[aria-pressed='true'] { opacity: 1; }
   .seg-btn:disabled:active { transform: none; filter: none; }
 
+  /* TRZY SEGMENTY NIE MIESZCZĄ SIĘ W JEDNYM RZĘDZIE na telefonie poniżej 400 px.
+     Przewijanie w poziomie zamiast zawijania: zawinięta pigułka rozpada się wizualnie
+     na dwa osobne przełączniki. Ten sam wzorzec (i te same trzy linijki) co
+     `.filter-pills` przy filtrach rachunków. */
+  .seg-scroll {
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .seg-scroll::-webkit-scrollbar { display: none; }
+  .seg-scroll > .seg { min-width: max-content; }
+  .seg-scroll .seg-btn { flex-shrink: 0; }
+
+  /* TRYB, NA KTÓRY UMÓWIŁA SIĘ GRUPA, ŚWIECI LIMONKĄ MARKI (decyzja właściciela
+     2026-08-26). Kropka stoi przy nim ZAWSZE — także gdy oglądam inny tryb — bo to
+     ona odpowiada na pytanie „którym z nich gramy". Wybrany segment trybu grupy dostaje
+     pełną limonkę pod czarnym tekstem, czyli ten sam język, co blok Bilansu. */
+  .seg-btn[data-group-mode='true']::before {
+    content: '';
+    display: inline-block;
+    width: 0.4375rem;
+    height: 0.4375rem;
+    margin-right: 0.375rem;
+    border-radius: 999px;
+    background-color: rgb(var(--brand));
+    vertical-align: 0.05em;
+  }
+  .seg-btn[data-group-mode='true'][aria-pressed='true'] {
+    background-color: rgb(var(--brand));
+    color: rgb(var(--brand-ink));
+  }
+  .seg-btn[data-group-mode='true'][aria-pressed='true']::before {
+    background-color: rgb(var(--brand-ink));
+  }
+  :root[data-theme='dark'] .seg-btn[data-group-mode='true'][aria-pressed='true'] {
+    background-color: rgb(var(--brand));
+    color: rgb(var(--brand-ink));
+  }
+
+  /* Pigułka NA limonkowym bloku. Zwykły `.chip` ma tło `surface-2`, które na limonce
+     robi się brudną plamą — tu tłem jest przyciemniona sama limonka. */
+  .pill-on-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    background-color: rgb(var(--brand-ink) / 0.10);
+    color: rgb(var(--brand-ink));
+  }
+
   .chip {
     display: inline-flex;
     align-items: center;

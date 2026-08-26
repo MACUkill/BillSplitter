@@ -36,6 +36,32 @@ export function myPlanRows(ledger, myId) {
   return out.sort((a, b) => (b.payTotalG + b.receiveTotalG) - (a.payTotalG + a.receiveTotalG));
 }
 
+// To samo, ale w trybie „Kto komu": bez optymalizacji trasy, para po parze.
+//
+// DLACZEGO TEN SAM KSZTAŁT WYNIKU co `myPlanRows`: Bilans rysuje „Co masz zrobić"
+// jednym kawałkiem kodu, a tryb ma zmieniać wyłącznie to, SKĄD biorą się wiersze.
+// Dwa osobne szablony na dwa tryby rozjechałyby się przy pierwszej poprawce w jednym
+// z nich — a to są ekrany, na których ludzie podejmują decyzje o cudzych pieniądzach.
+export function myNetRows(ledger, myId) {
+  const out = [];
+  if (!ledger || !myId) return out;
+  for (const [currency, data] of Object.entries(ledger)) {
+    const net = (data && data.net) || [];
+    const pay = net.filter((t) => t.from === myId).map((t) => ({ other: t.to, amountG: t.amountG }));
+    const receive = net.filter((t) => t.to === myId).map((t) => ({ other: t.from, amountG: t.amountG }));
+    if (pay.length || receive.length) {
+      out.push({
+        currency,
+        pay,
+        receive,
+        payTotalG: pay.reduce((s, r) => s + r.amountG, 0),
+        receiveTotalG: receive.reduce((s, r) => s + r.amountG, 0),
+      });
+    }
+  }
+  return out.sort((a, b) => (b.payTotalG + b.receiveTotalG) - (a.payTotalG + a.receiveTotalG));
+}
+
 // Ile przelewów robi cała ekipa planem minimalnym, a ile robiłaby para po parze.
 // Służy zdaniu „rozliczamy się w N przelewach zamiast w M" — liczby muszą być prawdziwe,
 // więc liczymy je z danych, a nie wpisujemy na sztywno.

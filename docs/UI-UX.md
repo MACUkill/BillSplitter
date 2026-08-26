@@ -1920,3 +1920,161 @@ przejęcie sterów po stuknięciu.
 
 263 testy jednostkowe, 34 testy reguł, 13 sprawdzeń przebiegu offline, 9 sprawdzeń
 przebiegu service workera. Wszystko zielone.
+
+---
+
+## 22. ETAP 3 — TRYB GLOBALNY I „RACHUNEK PO RACHUNKU" (2026-08-26)
+
+Aplikacja umie się rozliczać na trzy sposoby i grupa wybiera JEDEN. Do tej pory
+przełącznik na ekranie rozliczeń był ustawieniem widoku jednej osoby (zwykła zmienna
+w `main.js`, ginąca przy przeładowaniu), a plan minimalny był jedyną odpowiedzią na
+pytanie „co mam zrobić".
+
+### 22.1 Trzy tryby to JEDNA DRABINA ZWIJANIA
+
+| Tryb | Co zwija | Gdzie liczy |
+|---|---|---|
+| Najmniej przelewów (`min`) | **między osobami** — optymalizuje trasę | `simplifyDebts` |
+| Kto komu (`net`) | **na osobie** — sumuje należności wobec jednej | `netDirected` |
+| Rachunek po rachunku (`perBill`) | **nic** — wiersz na rachunek, w kolejności dodawania | `src/perbill.js` |
+
+**REGUŁA TWARDA: żaden tryb nie dowozi tego, co robi sąsiedni.** W trybie rachunkowym
+NIE MA podsumowań po osobie, sum ani grupowania. Kto chce wiedzieć, ile łącznie idzie do
+Marka, przełącza się na „Kto komu" — po to on jest. Ta reguła była w rozmowie łamana trzy
+razy i dlatego stoi tu wprost.
+
+Jedyny wyjątek jest w TREŚCI PRZYPOMNIENIA: jedna osoba, która nie oddała za trzy
+rachunki, dostaje jedno przypomnienie na sumę, a nie trzy pod rząd. To jest wiadomość
+do człowieka, nie obraz długu — dług obok zostaje rozpisany rachunek po rachunku.
+
+### 22.2 Tryb GRUPY i tryb WIDOKU to dwie różne rzeczy
+
+- **Tryb grupy** — pole `settlementMode` w dokumencie grupy (`'min' | 'net' | 'perBill'`).
+  **Brak pola znaczy `'min'`**, czyli dzisiejsze zachowanie: żaden istniejący pokój nie
+  zmienia się sam z siebie po wgraniu tej wersji. Wartość spoza listy też schodzi do
+  `'min'` — do dokumentu grupy pisze każdy, kto ma link, więc śmieć w tym polu nie może
+  zepsuć ekranu rozliczeń.
+- **Tryb widoku** — to, na co patrzę w tej chwili. Wolno obejrzeć każdy z trzech, ale
+  **w cudzym trybie ekran nie daje ANI JEDNEGO przycisku akcji**, tylko jedną cichą linię
+  „grupa umówiła się inaczej". Przelew wykonany planem, na który grupa się nie umówiła,
+  kończy się wpłatą, której nie ma jak przypisać — i to jest dokładnie ten dług, który
+  trzeba potem tłumaczyć osobnym blokiem.
+
+Tryb grupy świeci **limonką marki** na przełączniku, ZAWSZE — także gdy oglądam inny.
+Widok idzie za trybem grupy, dopóki człowiek sam nie przestawi przełącznika
+(`settlementViewPinned`); po ręcznym przestawieniu nie wyrywamy mu ekranu spod palca.
+
+Wybór mieszka w **ustawieniach pokoju**, trzema wierszami z pełnym zdaniem wyjaśnienia
+przy każdym — nie arkuszem wyboru z samymi nazwami. „Kto komu" i „Rachunek po rachunku"
+brzmią podobnie, dopóki nie napisze się wprost, co się w nich zwija. Zmiana idzie do
+dziennika aktywności: przy cudzych pieniądzach zmiana bez śladu jest gorsza od zmiany,
+o której ktoś nie wiedział.
+
+### 22.3 Gdzie mieszka tryb rachunkowy
+
+- **Rachunki** — filtr „Do oddania (N)" na istniejącej liście. Filtr działa w KAŻDYM
+  trybie: pytanie „co jeszcze wisi" nie zależy od tego, jak grupa się umówiła. Kwota na
+  kafelku pokazuje w trybie rachunkowym **ile ZOSTAŁO**, nie ile było, a „Ureguluj" stoi
+  osobnym wierszem pod kafelkiem — czwarty element w rzędzie z imieniem, kwotą i krzyżykiem
+  ukrywania zaczyna się zawijać poniżej 400 px.
+- **„Kto już oddał" na ekranie rachunku — w KAŻDYM trybie.** To nie jest część trybu
+  rachunkowego, tylko odpowiedź na pytanie, które pada zawsze: „oddałeś mi za tę kolację?".
+  Do tej pory rachunek nie miał na nie ani słowa, a płatnik składał sobie odpowiedź
+  z dat i kwot w rejestrze wpłat.
+- **Rozliczenia NIE powtarzają listy rachunków.** Sekcja „Do oddania" to trzy linijki
+  z przejściem do zakładki „Rachunki". Strona „Dostajesz" idzie tam wierszami rachunek po
+  rachunku — bo to jedyne miejsce, w którym płatnik odbiera wpłaty i przypomina o nich.
+  Rejestr wpłat i windykator działają w każdym trybie.
+- **Bilans** — wielka kwota **bez zmian** (saldo na czysto jest identyczne we wszystkich
+  trybach, patrz 22.5), podpis liczy rachunki zamiast osób, nad kwotą pigułka trybu.
+
+### 22.4 Wpłaty: `billId` i reguła przypisania
+
+Wpłata dostaje **opcjonalne** pole `billId`, dopisywane tylko wtedy, gdy wpłata faktycznie
+dotyczy jednego rachunku. Stare wpłaty działają bez migracji.
+
+**PRZYPISANIE TYLKO W OBRĘBIE PARY.** Wpłata X→Y gasi wyłącznie długi X wobec Y, od
+najstarszego rachunku. Wcześniejsza wersja tej reguły (najstarszy dług X wobec KOGOKOLWIEK)
+była błędna: pokazywałaby rachunek jako spłacony Markowi, choć pieniądze poszły do Oli.
+Wskazany `billId` idzie pierwszy, reszta pary po nim; nadwyżka ponad wskazany rachunek
+schodzi na resztę tej samej pary, zanim uzna się ją za nieprzypisaną.
+
+**Czego nie da się przypisać, to się przyznaje.** Wpłata poprowadzona planem minimalnym
+(„Kuba płaci Oli za dług wobec Marka") nie ma po stronie pary ani jednego rachunku.
+W pokoju działającym od miesięcy takich wpłat prawdopodobnie już trochę jest. Nie wolno
+ich ukryć (pieniądze wyszły z konta) ani doliczyć na siłę do cudzego rachunku (fałszywy
+dowód wpłaty). Lądują w bloku **„Wpłaty bez przypisania"** z kwotą, odbiorcą i zdaniem
+„powstała w trybie »Najmniej przelewów«", a różnicę nazywa **linia uzgadniająca**:
+
+```
+1 rachunek 30,00 PLN · wpłata bez przypisania −30,00 PLN · zostaje 0,00 PLN
+```
+
+Bez niej lista rachunków mówiłaby „30,00 do oddania", a saldo na czysto „0,00" — i nic
+by tej sprzeczności nie tłumaczyło.
+
+### 22.5 NIEZMIENNIK: saldo na czysto jest identyczne we wszystkich trzech trybach
+
+Tryb zmienia wyłącznie trasę pieniędzy i grubość ziarna, **nigdy wynik**. To jedyna rzecz,
+która broni przed tym, żeby trzy tryby stały się trzema księgowościami — i dlatego ma
+własny test (`netFromBills` vs `myNetByCurrency`), a nie przypis w komentarzu. Test
+sprawdza to także na stu losowych pokojach po pięć osób i na kółku długów zamkniętym
+planem minimalnym.
+
+### 22.6 Potwierdzanie — NIE BUDOWANE OD NOWA
+
+`src/nudges.js` miał już `kind: 'confirm-payment'` na poziomie 1 progu sygnału. Dołożone
+są dwie rzeczy:
+
+- **nazwa rachunku** (`billId` jedzie przez `inboxItems` do skrzynki, Bilansu i rejestru),
+- **sortowanie tak, żeby wiersze tej samej osoby stały obok siebie**. Pięć rachunków
+  odklikniętych naraz to nadal **pięć wpłat, odznaka „5" i pięć wierszy** — nie zwijamy
+  ich (decyzja właściciela: „w trybie rachunkowym robimy łopatologicznie bardzo"). Ale
+  rozsypane po skrzynce zmuszałyby do pięciu osobnych decyzji o tej samej osobie; obok
+  siebie są jedną sprawą z pięcioma stuknięciami. Kolejność OSÓB nadal idzie od najnowszej
+  sprawy, więc świeże rzeczy zostają na górze.
+
+### 22.7 Usterki znalezione przy okazji (wszystkie zastane)
+
+- **Kwota wpłaty nie wyświetlała się nigdzie poza rejestrem.** Wpłata zapisuje kwotę
+  w złotych, w polu `amount`; pola `amountG` nie ma na niej nigdy. Skrzynka i dziennik
+  aktywności czytały `s.amountG`, więc pisały „Bartek zgłosił/a wpłatę." i „Bartek → Ala:
+  0,00 PLN". Przypomnienia mają `amountG` i stąd wzięła się ta pomyłka: sąsiednie źródła,
+  dwa różne kształty danych.
+- **Odznaka na dzwonku nie zapalała się po cudzej wpłacie.** Nasłuch wpłat nie wołał
+  `updateNudgeBadge`, więc sygnał poziomu 1 pojawiał się dopiero przy następnej zmianie
+  dokumentu grupy — czyli często wcale.
+- **Skład grupy nie odświeżał się po dopisaniu osoby.** `renderRoomMembers` wołało
+  wyłącznie `openRoomSettings`; dopisanie dawało toast „Dodano: X" i ani jednej zmiany na
+  liście dwa centymetry wyżej. Wyglądało to na zapis, który nie przeszedł.
+- **Nasłuch dokumentu grupy nie miał zapisanego `unsubscribe`** (dług z etapu 1). Każda
+  powtórna nawigacja do pokoju dokładała kolejny nasłuch.
+- **Trzy potwierdzenia wpłat przerobione na `fireWrite`** — offline `await updateDoc` nie
+  rozwiązuje się nigdy, a tryb rachunkowy mnoży te potwierdzenia.
+
+### 22.8 Nowy przebieg audytowy: `tools/audit-etap3.mjs`
+
+Testy jednostkowe pilnują matematyki, kontrakt etykiet — istnienia identyfikatorów. Żaden
+z nich nie sprawdza, czy „Ureguluj" zapisuje wpłatę z `billId` i czy druga osoba widzi ją
+jako spłatę TEGO rachunku. Przebieg prowadzi **trzy tożsamości w trzech kontekstach
+przeglądarki** (Ala, Bartek, Celina) przez pełny scenariusz, z kółkiem długów zamkniętym
+planem minimalnym włącznie.
+
+```
+npm run emulators
+npx vite --port 5199 --strictPort
+BILLIADA_URL=http://localhost:5199/ node tools/audit-etap3.mjs
+```
+
+28 sprawdzeń. Uwaga na dwie pułapki pisania takich przebiegów, obie zapisane w kodzie:
+ekran rachunku pokazuje się ZANIM `renderBillScreen` dopnie nasłuchy (stąd `klikAzOtworzy`),
+a pole kwoty zapisuje się przy utracie ogniska i potrafi trafić w moment przerysowania
+(stąd `wpiszKwote` z powtórzeniem).
+
+### 22.9 Stan testów po etapie
+
+**293 testy jednostkowe** (30 nowych w `src/perbill.test.js`), 34 testy reguł, 13 sprawdzeń
+przebiegu offline, 9 sprawdzeń service workera, 28 sprawdzeń przebiegu etapu 3. Wszystko
+zielone. Reguły Firestore **nie wymagały zmiany**: `settlementMode` na dokumencie grupy
+i `billId` na wpłacie mieszczą się w istniejących regułach, a pola podsumowań nadal są
+zamrożone.

@@ -353,6 +353,11 @@ the verdict, and DESIGN.md
                      akcje siedziały tutaj, blok pokazywał saldo liczone parami, a jedyny
                      przycisk celował w największego dłużnika i nigdy się nie zmieniał —
                      przy piętnastu osobach dawało się przypomnieć tylko jednej z nich. -->
+                <!-- PIGUŁKA TRYBU. Wielka kwota jest we wszystkich trzech trybach
+                     IDENTYCZNA (saldo na czysto to niezmiennik — patrz src/perbill.js),
+                     więc bez tej pigułki nic na Bilansie nie mówiłoby, jak ta grupa
+                     zamierza je domknąć. Pigułka odpowiada na to jednym słowem. -->
+                <p id="balance-mode-pill" class="pill-on-brand mb-3 hidden"></p>
                 <div id="balance-amounts" class="space-y-2"></div>
                 <p id="balance-caption" class="mt-3 text-sm font-semibold opacity-70"></p>
                 <span id="dashboard-user-name-display" class="sr-only"></span>
@@ -415,13 +420,27 @@ the verdict, and DESIGN.md
                      poniżej 400 px i zaczynają się zawijać jedno na drugie. -->
                 <div class="mb-3">
                     <h3 class="view-title">Kto komu ile</h3>
-                    <!-- Najmniej przelewów stoi PIERWSZE i jest domyślne: to odpowiedź
-                         na pytanie „ile razy mam wejść w bank". Rozkład „kto komu"
-                         zostaje jako druga opcja, do sprawdzenia szczegółów. -->
-                    <div class="seg mt-2">
-                        <button data-mode="min" class="settle-mode-btn seg-btn" aria-pressed="true">Najmniej przelewów</button>
-                        <button data-mode="net" class="settle-mode-btn seg-btn" aria-pressed="false">Kto komu</button>
+                    <!-- TRZY TRYBY TO JEDNA DRABINA ZWIJANIA tego samego długu:
+                         „Najmniej przelewów" zwija MIĘDZY OSOBAMI (optymalizuje trasę),
+                         „Kto komu" zwija NA OSOBIE (sumuje należności wobec jednej),
+                         „Rachunek po rachunku" NIE ZWIJA NIC.
+
+                         Segmenty jadą w poziomie, a nie zawijają się do dwóch rzędów:
+                         trzy etykiety nie mieszczą się w jednym rzędzie poniżej 400 px,
+                         a zawinięta pigułka przestaje wyglądać na jeden przełącznik.
+                         Ten sam wzorzec co filtry rachunków. -->
+                    <div class="seg-scroll mt-2">
+                        <div class="seg">
+                            <button data-mode="min" class="settle-mode-btn seg-btn" aria-pressed="true">Najmniej przelewów</button>
+                            <button data-mode="net" class="settle-mode-btn seg-btn" aria-pressed="false">Kto komu</button>
+                            <button data-mode="perBill" class="settle-mode-btn seg-btn" aria-pressed="false">Rachunek po rachunku</button>
+                        </div>
                     </div>
+                    <!-- Zdanie o trybie grupy. Tryb, na który grupa się umówiła, świeci
+                         limonką marki i niesie „Tak rozlicza się ta grupa"; pozostałe dwa
+                         wolno otworzyć i obejrzeć, ale bez przycisków akcji — z jedną
+                         cichą linią, że grupa umówiła się inaczej. -->
+                    <p id="settle-mode-note" class="text-sm text-ink-2 mt-2"></p>
                 </div>
                 <div id="settlements-content">
                     <div id="settlements-list" class="space-y-2"></div>
@@ -458,6 +477,12 @@ the verdict, and DESIGN.md
                 <div id="bill-filters" class="filter-pills mb-3">
                     <button data-filter="all" class="bill-filter-btn filter-pill" aria-pressed="true" title="Rachunki, które Cię dotyczą">Wszystkie</button>
                     <button data-filter="waiting" class="bill-filter-btn filter-pill" aria-pressed="false" title="Czekają na Twój ruch">Czekają na Ciebie</button>
+                    <!-- DO ODDANIA — rachunki, za które wciąż jestem winien płatnikowi.
+                         Filtr, nie osobny ekran: lista rachunków już umie wszystko, czego
+                         tryb „Rachunek po rachunku" potrzebuje, a druga lista tych samych
+                         rachunków w innym miejscu byłaby drugą prawdą o tym samym.
+                         Liczba w nawiasie dopisuje się z kodu (`bill-filter-owed-count`). -->
+                    <button data-filter="owed" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które jeszcze nie oddałeś/aś">Do oddania<span id="bill-filter-owed-count"></span></button>
                     <button data-filter="mine" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które wyłożyłeś pieniądze">Moje</button>
                     <button data-filter="others" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki grupy, które Cię nie dotyczą">Reszta grupy</button>
                     <button data-filter="hidden" class="bill-filter-btn filter-pill" aria-pressed="false" title="Ukryte przez Ciebie">Ukryte</button>
@@ -654,6 +679,19 @@ the verdict, and DESIGN.md
                  „z czego się składa" chowa się w zwijanym wierszu: suma nad rzeczami,
                  które ją tworzą, jest w porządku, ale rozpisana suma nad nimi już nie. -->
             <div id="my-participant-card" class="mb-3 mt-6"></div>
+
+            <!-- ROZLICZENIE TEGO RACHUNKU — dwie rzeczy, obie dostępne W KAŻDYM TRYBIE,
+                 bo obie są pytaniem o ten konkretny rachunek, a nie o sposób rozliczania:
+
+                   • dłużnikowi: ile jeszcze zostaje za TEN rachunek i „Ureguluj",
+                   • płatnikowi: KTO JUŻ ODDAŁ.
+
+                 Do 2026-08-26 rachunek nie mówił ani słowa o tym, kto się z niego
+                 rozliczył — a pytanie „oddałeś mi za tę kolację?" pada zawsze, także
+                 w pokoju rozliczającym się planem minimalnym. Sekcja stoi zaraz pod
+                 własnym udziałem: najpierw ile jestem winien, zaraz potem co z tym
+                 zrobić. Buduje ją `renderBillSettleSection`. -->
+            <section id="bill-settle-section" class="mb-3 mt-6 hidden"></section>
 
             <!-- PARAGON — źródło pozycji, więc stoi NAD nimi. Do 2026-08-15 był pod listą
                  pozycji, czyli pod czymś, co z niego powstaje: przy pierwszym rachunku
@@ -1104,6 +1142,22 @@ the verdict, and DESIGN.md
                         <span id="room-currency-label">PLN</span>
                         <i class="fas fa-chevron-down choice-field-chevron"></i>
                     </button>
+                </div>
+
+                <!-- SPOSÓB ROZLICZANIA. Ustawienie CAŁEJ GRUPY, nie widoku jednej osoby:
+                     rozliczenie ma sens tylko wtedy, gdy wszyscy robią to samo. Brak pola
+                     w dokumencie grupy znaczy „Najmniej przelewów", czyli dokładnie to,
+                     co pokoje robiły dotąd — żaden istniejący pokój nie zmienia się sam
+                     z siebie po wgraniu tej wersji.
+
+                     Trzy opcje z jednym zdaniem wyjaśnienia przy każdej, a nie arkusz
+                     wyboru z samymi nazwami: „Kto komu" i „Rachunek po rachunku" brzmią
+                     podobnie, dopóki nie napisze się wprost, co się w nich zwija.
+                     Wiersze buduje `renderRoomSettlementMode`. -->
+                <div class="card p-5">
+                    <p class="text-sm font-bold text-ink-3">Jak rozlicza się ta grupa</p>
+                    <p class="mt-1 text-sm text-ink-2">Wybór dotyczy wszystkich w pokoju. Kwoty się nie zmieniają — zmienia się tylko to, ile przelewów robicie i jak grubo są policzone.</p>
+                    <div id="room-settlement-mode" class="mt-3 space-y-2"></div>
                 </div>
 
                 <div class="card p-5 grid grid-cols-2 gap-5">

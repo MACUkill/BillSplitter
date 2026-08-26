@@ -42,15 +42,21 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
 
   settlements.forEach((s) => {
     if (!s) return;
+    // `billId` jedzie dalej, bo od niego zależy, czy wiersz powie „za co". W trybie
+    // rachunkowym pięć rachunków odklikniętych naraz daje PIĘĆ wpłat i pięć wierszy —
+    // i tak ma zostać (decyzja właściciela: „robimy łopatologicznie bardzo"). Bez nazwy
+    // rachunku byłoby to pięć identycznych wierszy z tą samą kwotą i tym samym imieniem.
+    // Nazwę dokleja warstwa interfejsu — tu nie ma dostępu do rachunków.
+    //
     // Ktoś zgłosił wpłatę DO MNIE i czeka na potwierdzenie — blokuje domknięcie długu.
     if (s.to === myId && s.from !== myId && !s.confirmed) {
-      items.push({ level: 1, kind: 'confirm-payment', id: s.id, from: s.from, amountG: s.amountG, currency: s.currency, at: s.createdAtMs });
+      items.push({ level: 1, kind: 'confirm-payment', id: s.id, from: s.from, amountG: s.amountG, currency: s.currency, billId: s.billId || null, at: s.createdAtMs });
       return;
     }
     // Odbiorca potwierdził MOJĄ wpłatę — zamyka pętlę. Bez tego użytkownik nie wie,
     // że skończył. Znika po obejrzeniu (lista `seenConfirmations`).
     if (s.from === myId && s.confirmed && s.confirmedBy !== myUid && !seenConfirmations.includes(s.id)) {
-      items.push({ level: 1, kind: 'payment-confirmed', id: s.id, from: s.to, amountG: s.amountG, currency: s.currency, at: s.confirmedAtMs });
+      items.push({ level: 1, kind: 'payment-confirmed', id: s.id, from: s.to, amountG: s.amountG, currency: s.currency, billId: s.billId || null, at: s.confirmedAtMs });
     }
   });
 
@@ -59,8 +65,28 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
     items.push({ level: 2, kind: 'bill-action', id: b.id, title: b.title, label: b.label, at: b.at });
   });
 
-  // Najpilniejsze na górze, w obrębie poziomu najnowsze pierwsze.
-  return items.sort((a, b) => (a.level - b.level) || ((b.at || 0) - (a.at || 0)));
+  // Najpilniejsze na górze, w obrębie poziomu najnowsze pierwsze — ALE WIERSZE TEJ SAMEJ
+  // OSOBY STOJĄ RAZEM.
+  //
+  // DLACZEGO (etap 3): tryb „Rachunek po rachunku" mnoży wpłaty. Kto oddaje za pięć
+  // rachunków, wysyła pięć wpłat, więc odbiorca dostaje odznakę „5" i pięć wierszy do
+  // potwierdzenia. Zwijać ich nie wolno (decyzja właściciela) — ale rozsypane po
+  // skrzynce między cudzymi sprawami zmuszają do pięciu osobnych decyzji o tej samej
+  // osobie. Posortowane obok siebie są jedną sprawą z pięcioma stuknięciami.
+  //
+  // Kolejność OSÓB nadal idzie od najnowszej sprawy, więc świeże rzeczy zostają na górze:
+  // sortujemy po najnowszym wpisie DANEJ OSOBY, a dopiero wewnątrz osoby po czasie.
+  const newestByPerson = new Map();
+  items.forEach((x) => {
+    const key = `${x.level}|${x.from || ''}`;
+    newestByPerson.set(key, Math.max(newestByPerson.get(key) || 0, x.at || 0));
+  });
+  const personKey = (x) => `${x.level}|${x.from || ''}`;
+  return items.sort((a, b) =>
+    (a.level - b.level)
+    || ((newestByPerson.get(personKey(b)) || 0) - (newestByPerson.get(personKey(a)) || 0))
+    || (personKey(a) < personKey(b) ? -1 : personKey(a) > personKey(b) ? 1 : 0)
+    || ((b.at || 0) - (a.at || 0)));
 }
 
 // Odznaka liczbowa NALEŻY SIĘ WYŁĄCZNIE poziomowi 1. Poziom 2 dostaje kropkę bez
