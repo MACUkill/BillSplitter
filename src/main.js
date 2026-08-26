@@ -1021,6 +1021,14 @@
                     if (currentScreenName !== 'group-dashboard') showScreen('group-dashboard');
                     showDeckView(viewId);
                     if (btnId === 'nav-bills') markBillsSeen();
+                    // „Odbiorca potwierdził Twoją wpłatę" domyka pętlę i nie ma czego
+                    // obsłużyć — gaśnie po obejrzeniu. Do 2026-08-26 gasło WYŁĄCZNIE po
+                    // otwarciu skrzynki spod dzwonka; odkąd Bilans jest głównym domem spraw
+                    // ruszających saldo, wiersz zostawałby tam w nieskończoność u kogoś,
+                    // kto do skrzynki nigdy nie zagląda. Gasimy na ŚWIADOME wejście
+                    // na zakładkę, nie na samo narysowanie ekranu — tak samo jak kropkę
+                    // na „Rachunkach".
+                    if (btnId === 'nav-room') markConfirmationsSeen();
                 };
             });
             const meBtn = document.getElementById('nav-me');
@@ -2054,7 +2062,20 @@
             });
 
             if (!myParticipant || myParticipant.status === 'not_applicable') return make('none', 'Nie dotyczy Cię');
-            if (!bill.payerId) return make('action', 'Wskaż, kto płacił');
+            // SYGNAŁ DOSTAJE TEN, KTO MOŻE WYKONAĆ CZYNNOŚĆ — I NIKT INNY.
+            //
+            // Reguła istniała tu od 2026-08-17 („wołanie do czynności, której ta osoba nie
+            // ma jak wykonać" jest usterką), ale obowiązywała tylko w jednym miejscu.
+            // Rachunek BEZ WSKAZANEGO PŁATNIKA nie ma właściciela zadania z definicji — kod
+            // nie ma skąd wiedzieć, kto wyłożył pieniądze — więc ton `action` szedł do
+            // WSZYSTKICH uczestników. Przy ekipie piętnastu osób jeden świeży rachunek
+            // zapalał „czeka na Twój ruch" piętnastu ludziom, a robiła to jedna osoba
+            // w pięć sekund. Wszyscy zaalarmowani, nikt odpowiedzialny — najgorszy możliwy
+            // rodzaj sygnału i najkrótsza droga do ślepoty na kropkę.
+            //
+            // Chip zostaje w każdym z tych przypadków: informacja jest, tylko przestaje być
+            // wezwaniem. Ton `wait` nie zapala ani kropki, ani wiersza „czeka na Ciebie".
+            if (!bill.payerId) return make('wait', 'Wskaż, kto płacił');
             if (!bill.payerConfirmed) {
                 return myMember.id === bill.payerId
                     ? make('action', 'Potwierdź, że zapłaciłeś/aś')
@@ -2077,7 +2098,14 @@
             // pytanie, czemu jej nie da się oddać dopiero po wejściu do środka.
             const gate = billSettleGate(bill);
             if (!gate.open) {
-                if (gate.reason === 'over') return make('action', 'Rachunek się nie spina');
+                // Nadwyżkę poprawia ten, kto ma otwarte pola rachunku — czyli płatnik
+                // (i admin). Reszta ekipy widzi, że coś się nie zgadza, ale nie dostaje
+                // wezwania do czynności, której nie ma jak wykonać.
+                if (gate.reason === 'over') {
+                    return isPrimaryCloser(bill, myMember.id)
+                        ? make('action', 'Rachunek się nie spina')
+                        : make('wait', 'Rachunek się nie spina');
+                }
                 return isPrimaryCloser(bill, myMember.id)
                     ? make('action', 'Zamknij rachunek')
                     : make('wait', 'Uzupełniamy');
@@ -2462,6 +2490,7 @@
                 if (serial) serial.textContent = formatSerial(currentGroupId);
             }
             renderBalanceWaiting();
+            renderBalanceTasks();
             renderBalanceFilling();
 
             // PIGUŁKA TRYBU. Wielka kwota jest we wszystkich trzech trybach identyczna
@@ -3554,8 +3583,24 @@
                 ${actionsHtml ? `<div class="flex items-center gap-2 mt-2.5">${actionsHtml}</div>` : ''}
             </div>`;
 
-        const renderInboxForYou = (container) => {
-            const items = currentInbox();
+        // KAŻDA SPRAWA MA JEDEN DOM (decyzja właściciela 2026-08-26).
+        //
+        // Skrzynka i sekcja „Czeka na Ciebie" na Bilansie pokazywały DOKŁADNIE TO SAMO,
+        // więc jedna z nich była zawsze zbędna — a powtórzony sygnał uczy przewijać oba.
+        // Podział nie idzie po poziomach progu, tylko po pytaniu, na które dana rzecz
+        // odpowiada:
+        //
+        //   SKRZYNKA  — sprawy od LUDZI. Przypomnienie ma cykl życia (nieprzeczytane,
+        //               przeczytane, ureguluj), a miejsce, w którym ten cykl ma sens,
+        //               jest jedno. Nic się nie chowa: liczba na dzwonku wisi na każdym
+        //               ekranie, więc sprawa jest zawsze jedno stuknięcie stąd.
+        //   BILANS    — rzeczy, które RUSZAJĄ SALDO. Cudza wpłata czekająca na moje
+        //               potwierdzenie nie jest wiadomością, tylko stanem pieniędzy:
+        //               dopóki jej nie potwierdzę, wielka liczba wyżej kłamie.
+        //   RACHUNKI  — rachunki czekające na mój ruch. Tam stoi chip, filtr i kropka.
+        const INBOX_SALDO_KINDS = ['confirm-payment', 'payment-confirmed'];
+
+        const renderInboxForYou = (container, items = currentInbox()) => {
             if (items.length === 0) {
                 // Stan pusty skrzynki ma być SPOKOJNY, bez zachęty do działania:
                 // brak spraw jest tu dobrą wiadomością, a nie pustą półką do zapełnienia.
@@ -3712,10 +3757,36 @@
             const wrap = document.getElementById('balance-waiting');
             const list = document.getElementById('balance-waiting-list');
             if (!wrap || !list) return;
-            const items = currentInbox();
+            // Wyłącznie sprawy ruszające saldo — patrz `INBOX_SALDO_KINDS`.
+            const items = currentInbox().filter((x) => INBOX_SALDO_KINDS.includes(x.kind));
             wrap.classList.toggle('hidden', items.length === 0);
             if (items.length === 0) { list.innerHTML = ''; return; }
-            renderInboxForYou(list);
+            renderInboxForYou(list, items);
+        };
+
+        // RACHUNKI CZEKAJĄCE NA MÓJ RUCH — na Bilansie JEDNA LINIJKA, nie lista kart.
+        //
+        // Zadania mieszkają na zakładce „Rachunki", ale kropka przy niej gaśnie po pierwszym
+        // wejściu, nawet gdy nic nie zrobiłem (`markBillsSeen`). Bez tej linijki zadanie
+        // zostawałoby, a sygnał znikał — i nic już by o nim nie przypomniało. To jest tania
+        // siatka pod tym, a nie druga lista: jedno zdanie i jedno przejście na miejsce.
+        const renderBalanceTasks = () => {
+            const wrap = document.getElementById('balance-tasks');
+            if (!wrap) return;
+            const ile = currentInbox().filter((x) => x.level === 2).length;
+            wrap.classList.toggle('hidden', ile === 0);
+            if (ile === 0) { wrap.innerHTML = ''; return; }
+            wrap.innerHTML = `<div class="block-quiet p-4 flex items-center justify-between gap-3">
+                <span class="text-sm text-ink-2"><b class="text-ink">${ile} ${plural(ile, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')}</b> na Twój ruch.</span>
+                <button id="balance-tasks-btn" class="btn btn-quiet flex-shrink-0">Pokaż</button>
+            </div>`;
+            document.getElementById('balance-tasks-btn').onclick = () => {
+                // Filtr ustawiamy PRZED przejściem: inaczej człowiek ląduje na pełnej liście
+                // dwudziestu rachunków i sam ma znaleźć te dwa, o których mowa.
+                currentBillFilter = 'waiting';
+                showDeckView('view-bills');
+                renderBillsList();
+            };
         };
 
         // Rząd twarzy całej ekipy pod nominałem został usunięty 2026-08-15 na wniosek
@@ -3791,19 +3862,27 @@
             const readAllBtn = document.getElementById('nudges-readall-btn');
             if (readAllBtn) readAllBtn.classList.toggle('hidden', unread === 0 || inboxMode !== 'you');
             if (inboxMode === 'all') { renderInboxAll(container); return; }
-            renderInboxForYou(container);
+            // Rachunki czekające na mój ruch NIE wchodzą do skrzynki — mają własny dom
+            // na zakładce „Rachunki" (chip, filtr, kropka). Wchodzą za to nadal do
+            // `currentInbox`, bo z nich liczy się właśnie ta kropka.
+            renderInboxForYou(container, currentInbox().filter((x) => x.level === 1));
+        };
+
+        // Potwierdzenie mojej wpłaty nie ma czego „obsłużyć" — samo obejrzenie zamyka sprawę.
+        // Wiersz stoi w DWÓCH miejscach (skrzynka i Bilans), więc i gaszenie musi działać
+        // z obu — inaczej u kogoś, kto zagląda tylko w jedno, zostaje na zawsze.
+        const markConfirmationsSeen = () => {
+            const confirmations = currentInbox().filter((x) => x.kind === 'payment-confirmed').map((x) => x.id);
+            if (!confirmations.length) return;
+            writeSeen('confirmations', [...readSeen('confirmations'), ...confirmations]);
+            updateNudgeBadge();
+            renderBalanceWaiting();
         };
 
         const openNudgesModal = () => {
             inboxMode = 'you';
             renderNudges();
-            // Potwierdzenie mojej wpłaty nie ma czego „obsłużyć" — samo obejrzenie
-            // zamyka sprawę, więc gaśnie po otwarciu skrzynki.
-            const confirmations = currentInbox().filter((x) => x.kind === 'payment-confirmed').map((x) => x.id);
-            if (confirmations.length) {
-                writeSeen('confirmations', [...readSeen('confirmations'), ...confirmations]);
-                updateNudgeBadge();
-            }
+            markConfirmationsSeen();
             document.getElementById('nudges-modal').classList.add('active');
         };
 

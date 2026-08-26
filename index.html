@@ -392,13 +392,19 @@ the verdict, and DESIGN.md
                 <p id="balance-plan-note" class="text-xs text-ink-3 mt-2"></p>
             </section>
 
-            <!-- CO CZEKA NA CIEBIE — te same sprawy, co w skrzynce (poziom 1 i 2 progu),
-                 ale na wejściu do pokoju. Skrzynka jest dla tych, którzy jej szukają;
-                 to jest dla tych, którzy po prostu weszli. -->
+            <!-- CO CZEKA NA CIEBIE — WYŁĄCZNIE rzeczy ruszające saldo (cudza wpłata do
+                 potwierdzenia, potwierdzenie mojej wpłaty). Przypomnienia od ludzi mają
+                 własny dom w skrzynce spod dzwonka, a rachunki czekające na mój ruch —
+                 na zakładce „Rachunki". Do 2026-08-26 stały tu wszystkie trzy rzeczy naraz,
+                 czyli dokładnie to samo, co w skrzynce. Powtórzony sygnał uczy przewijać oba. -->
             <div id="balance-waiting" class="hidden mt-5">
                 <h4 class="text-sm font-bold text-ink-3 mb-2">Czeka na Ciebie</h4>
                 <div id="balance-waiting-list" class="space-y-2"></div>
             </div>
+
+            <!-- Rachunki czekające na mój ruch — jedno zdanie i przejście na miejsce.
+                 Powód, dla którego to tu w ogóle jest, przy `renderBalanceTasks`. -->
+            <div id="balance-tasks" class="hidden mt-5"></div>
 
             <!-- W UZUPEŁNIANIU — rachunki, które jeszcze nie weszły do salda.
                  Wielka kwota nad tym blokiem liczy WYŁĄCZNIE rachunki gotowe do

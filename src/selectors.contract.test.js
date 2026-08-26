@@ -35,6 +35,7 @@ const RUNTIME_CREATED_IDS = new Set([
   'rest-dispute-btn',          // „To nie moje" pod własnym udziałem (restClaimHtml)
   'reopen-bill-btn',           // „Otwórz rachunek z powrotem" w banerze płatnika
   'settle-locked-btn',         // wyszarzone „Ureguluj", które po stuknięciu tłumaczy powód
+  'balance-tasks-btn',         // „Pokaż" przy linijce o rachunkach czekających na mój ruch
 ]);
 
 // Klasy-uchwyty renderowane przez JS do innerHTML — w index.html ich nie ma i być nie musi,
