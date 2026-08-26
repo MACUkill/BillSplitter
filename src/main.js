@@ -4156,8 +4156,15 @@
         // Dwa otwarte wiersze znaczyłyby dwa przyciski „Ukryj" na ekranie i pytanie,
         // który z nich dotyczy czego. Zamykamy poprzedni przy otwarciu następnego.
         let otwartyWiersz = null;
+        // CZYŚCIMY WSZYSTKIE ODSUNIĘTE WIERSZE, nie tylko ten zapamiętany.
+        //
+        // Wersja pilnująca jednej zmiennej zostawiała wiersz otwarty, gdy klasa trafiła
+        // na niego inną drogą niż śledzony gest — a wtedy nic już jej nie zdejmowało
+        // i wiersz zastawał odsunięty „sam z siebie". Przy kilkunastu wierszach przebieg
+        // po liście kosztuje tyle co nic, a księgowość, która może się rozjechać ze stanem
+        // w drzewie, przestaje istnieć.
         const zamknijWiersz = () => {
-            if (otwartyWiersz) otwartyWiersz.classList.remove('is-open');
+            document.querySelectorAll('.bill-swipe.is-open').forEach((el) => el.classList.remove('is-open'));
             otwartyWiersz = null;
         };
 
