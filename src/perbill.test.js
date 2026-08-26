@@ -24,8 +24,10 @@ const bill = (id, totalAmount, payerId, people, { currency = 'PLN', at = 0, name
   participants: Object.fromEntries(people.map((pid) => [pid, { id: pid, status: 'unpaid' }])),
 });
 
-const pay = (id, from, to, amount, { currency = 'PLN', at = 0, billId = null } = {}) => ({
-  id, from, to, amount, currency, createdAtMs: at, ...(billId ? { billId } : {}),
+const pay = (id, from, to, amount, { currency = 'PLN', at = 0, billId = null, billIds = null } = {}) => ({
+  id, from, to, amount, currency, createdAtMs: at,
+  ...(billId ? { billId } : {}),
+  ...(billIds ? { billIds } : {}),
 });
 
 const key = (r) => `${r.billId}:${r.debtor}->${r.payer}=${r.openG}`;
@@ -92,6 +94,60 @@ describe('kolejność gaszenia: OD NAJSTARSZEGO rachunku', () => {
     expect(byId.nowy.openG).toBe(0);
     expect(byId.stary.openG).toBe(1500);
     expect(res.unassigned).toEqual([]);
+  });
+});
+
+describe('WYBRANE RACHUNKI (arkusz „Za co płacisz")', () => {
+  // Trzy rachunki tej samej pary. Jeden przelew pokrywa DWA z nich — ten wybór musi
+  // przeżyć w danych, bo reguła „od najstarszego" zgasiłaby inne niż wskazane.
+  const bills = [
+    bill('a1', 40, 'ala', ['ala', 'bartek'], { at: 1, name: 'Kolacja' }),
+    bill('a2', 40, 'ala', ['ala', 'bartek'], { at: 2, name: 'Taxi' }),
+    bill('a3', 40, 'ala', ['ala', 'bartek'], { at: 3, name: 'Hotel' }),
+  ];
+
+  it('gasi DOKŁADNIE wskazane rachunki, także gdy pomijają najstarszy', () => {
+    const res = billLedger(bills, [pay('w1', 'bartek', 'ala', 40, { billIds: ['a2', 'a3'] })]);
+    const byId = Object.fromEntries(res.rows.map((r) => [r.billId, r]));
+    expect(byId.a1.openG).toBe(2000); // najstarszy NIETKNIĘTY
+    expect(byId.a2.openG).toBe(0);
+    expect(byId.a3.openG).toBe(0);
+    expect(res.unassigned).toEqual([]);
+  });
+
+  it('nadwyżka ponad wybrane schodzi na resztę pary, zanim uzna się ją za nieprzypisaną', () => {
+    // Udział w każdym rachunku to 20,00. Wpłata 50,00 ze wskazaniem „Hotel":
+    // 20,00 gasi Hotel, a 30,00 nadwyżki idzie po parze od najstarszego —
+    // 20,00 na Kolację i 10,00 na Taxi.
+    const res = billLedger(bills, [pay('w1', 'bartek', 'ala', 50, { billIds: ['a3'] })]);
+    const byId = Object.fromEntries(res.rows.map((r) => [r.billId, r]));
+    expect(byId.a3.openG).toBe(0);
+    expect(byId.a1.openG).toBe(0);
+    expect(byId.a2.openG).toBe(1000);
+    expect(res.unassigned).toEqual([]);
+  });
+
+  it('kwota mniejsza niż wybrane rachunki gasi je po kolei, od najstarszego z WYBRANYCH', () => {
+    const res = billLedger(bills, [pay('w1', 'bartek', 'ala', 25, { billIds: ['a2', 'a3'] })]);
+    const byId = Object.fromEntries(res.rows.map((r) => [r.billId, r]));
+    expect(byId.a2.openG).toBe(0);
+    expect(byId.a3.openG).toBe(1500);
+    expect(byId.a1.openG).toBe(2000);
+  });
+
+  it('stare pole `billId` działa dalej, obok nowego `billIds`', () => {
+    const res = billLedger(bills, [pay('w1', 'bartek', 'ala', 20, { billId: 'a3' })]);
+    expect(res.rows.find((r) => r.billId === 'a3').openG).toBe(0);
+    expect(res.rows.find((r) => r.billId === 'a1').openG).toBe(2000);
+  });
+
+  it('niezmiennik trzyma się także przy wyborze rachunków', () => {
+    const settlements = [pay('w1', 'bartek', 'ala', 40, { billIds: ['a2', 'a3'] })];
+    const ledger = buildLedger(bills, settlements);
+    const perBill = billLedger(bills, settlements);
+    ['ala', 'bartek'].forEach((id) => {
+      expect(netFromBills(perBill, id)).toEqual(myNetByCurrency(ledger, id));
+    });
   });
 });
 

@@ -159,12 +159,12 @@ sprawdz('domyślny tryb bez pola w bazie to „Najmniej przelewów"',
 await ala.click('#room-settings-btn');
 await ala.waitForSelector('#room-settings-modal.active', { timeout: 10000 });
 const ileOpcji = await ala.$$eval('#room-settlement-mode .room-mode-btn', (els) => els.length);
-sprawdz('ustawienia pokoju dają trzy tryby do wyboru', ileOpcji === 3, `${ileOpcji} opcje`);
+sprawdz('ustawienia pokoju dają DWA tryby do wyboru', ileOpcji === 2, `${ileOpcji} opcje`);
 
-await klikPoTresci(ala, '#room-settlement-mode .room-mode-btn', 'Rachunek po rachunku');
+await klikPoTresci(ala, '#room-settlement-mode .room-mode-btn', 'Rachunkowy');
 const trybZapisany = await czekajNa(
   ala,
-  () => document.querySelector('#balance-mode-pill') && document.querySelector('#balance-mode-pill').textContent.trim() === 'Rachunek po rachunku',
+  () => document.querySelector('#balance-mode-pill') && document.querySelector('#balance-mode-pill').textContent.trim() === 'Rachunkowy',
   'pigułka trybu na Bilansie',
 );
 sprawdz('pigułka na Bilansie mówi o nowym trybie', trybZapisany);
@@ -176,8 +176,14 @@ sprawdz('podpis Bilansu liczy RACHUNKI, nie osoby',
   podpisBilansu);
 
 // Ala jest płatnikiem, więc na jej Bilansie stoi strona odbierania.
-const planAli = await tekstem(ala, '#balance-plan-list');
-sprawdz('Bilans płatnika mówi o zwrocie za rachunki', planAli.includes('Czekasz na zwrot za'), planAli.slice(0, 80));
+// Bilans w trybie rachunkowym PODSUMOWUJE i odsyła do Rozliczeń — nie powtarza
+// wierszy osób ani listy rachunków (decyzja właściciela 2026-08-26).
+const planAli = (await tekstem(ala, '#balance-plan-list')).replace(/\s+/g, ' ');
+sprawdz('Bilans płatnika podsumowuje zwroty', planAli.includes('Czekasz na zwrot'), planAli.slice(0, 90));
+sprawdz('podsumowanie liczy rachunki I osoby',
+  /\d+ rachun\w+ · od \d+ osob\w*|\d+ rachun\w+ · od 1 osoby/.test(planAli), planAli.slice(0, 90));
+sprawdz('Bilans odsyła do Rozliczeń, nie do listy rachunków',
+  planAli.includes('Zobacz kto') && !planAli.includes('Zobacz rachunki'), planAli.slice(0, 90));
 
 // --------------------------------------------------------------- Bartek: druga osoba
 console.log('\n— 3. Dłużnik oddaje za konkretny rachunek —');
@@ -192,7 +198,7 @@ if (await bartek.$('#join-screen:not(.hidden)')) {
 
 const bartekWidziTryb = await czekajNa(
   bartek,
-  () => document.querySelector('#balance-mode-pill') && document.querySelector('#balance-mode-pill').textContent.trim() === 'Rachunek po rachunku',
+  () => document.querySelector('#balance-mode-pill') && document.querySelector('#balance-mode-pill').textContent.trim() === 'Rachunkowy',
   'tryb grupy u drugiej osoby',
 );
 sprawdz('tryb ustawiony przez Alę dociera do Bartka', bartekWidziTryb);
@@ -391,8 +397,8 @@ await czekajNa(bartek, () => !document.querySelector('#settle-modal').classList.
 
 // Grupa przechodzi na tryb rachunkowy — i wtedy ta wpłata nie ma czego zgasić.
 await klikAzOtworzy(ala, '#room-settings-btn', '#room-settings-modal.active');
-await klikPoTresci(ala, '#room-settlement-mode .room-mode-btn', 'Rachunek po rachunku');
-await czekajNa(ala, () => (document.querySelector('#balance-mode-pill') || {}).textContent.trim() === 'Rachunek po rachunku', 'tryb rachunkowy');
+await klikPoTresci(ala, '#room-settlement-mode .room-mode-btn', 'Rachunkowy');
+await czekajNa(ala, () => (document.querySelector('#balance-mode-pill') || {}).textContent.trim() === 'Rachunkowy', 'tryb rachunkowy');
 await ala.click('#close-room-settings-btn');
 
 const widziBlok = await czekajNa(
@@ -409,31 +415,68 @@ sprawdz('linia uzgadniająca rozpisuje działanie co do grosza',
   planBartka.includes('1 rachunek 30,00 PLN') && planBartka.includes('−30,00 PLN') && planBartka.includes('zostaje 0,00 PLN'),
   planBartka.slice(0, 200));
 
-// ------------------------------------------------- podgląd cudzego trybu bez akcji
-console.log('\n— 6. Cudzy tryb: podgląd bez przycisków —');
-await ala.goto(`${ADRES}?group=${groupId}`, { waitUntil: 'domcontentloaded' });
-await ala.waitForSelector('#group-dashboard-screen:not(.hidden)', { timeout: 20000 });
-await ala.click('#nav-settle');
-await czekajNa(ala, () => document.querySelectorAll('.settle-mode-btn').length === 3, 'trzy segmenty');
+// ---------------------------------- Rozliczenia po osobach + arkusz „Za co płacisz"
+console.log('\n— 6. Rozliczenia: wiersz na osobę i wybór rachunków —');
 
-const oznaczonyTrybGrupy = await ala.$$eval('.settle-mode-btn', (els) =>
-  els.filter((e) => e.dataset.groupMode === 'true').map((e) => e.textContent.trim()));
-sprawdz('tryb grupy jest oznaczony na przełączniku',
-  oznaczonyTrybGrupy.length === 1 && oznaczonyTrybGrupy[0] === 'Rachunek po rachunku', oznaczonyTrybGrupy.join(', '));
+sprawdz('przełącznik trybu zniknął z ekranu Rozliczeń',
+  (await ala.$$('.settle-mode-btn')).length === 0);
 
-const notaWTrybieGrupy = await tekstem(ala, '#settle-mode-note');
-sprawdz('w trybie grupy nota mówi „Tak rozlicza się ta grupa"',
-  notaWTrybieGrupy.includes('Tak rozlicza się ta grupa'), notaWTrybieGrupy);
+// Bartek ma teraz DWA otwarte rachunki wobec Ali: „Kolacja" spłacona wcześniej,
+// więc zostaje „Taxi" (30,00). Dorzucamy drugi, żeby było co odznaczać.
+await dodajRachunek(ala, 'Bufet', 40, 'Ala', ['Celina']);
 
-await klikPoTresci(ala, '.settle-mode-btn', 'Kto komu');
+await bartek.goto(`${ADRES}?group=${groupId}`, { waitUntil: 'domcontentloaded' });
+await bartek.waitForSelector('#group-dashboard-screen:not(.hidden)', { timeout: 20000 });
+await bartek.click('#nav-settle');
+const dwaRachunki = await czekajNa(
+  bartek,
+  () => {
+    const el = document.querySelector('#settlements-list');
+    return el && el.textContent.includes('2 rachunki') && el.querySelector('.pick-bills-btn');
+  },
+  'wiersz osoby z dwoma rachunkami',
+);
+sprawdz('Rozliczenia zwijają rachunki NA OSOBIE', dwaRachunki);
+
+const wierszyOsob = await bartek.$$eval('#settlements-list .pick-bills-btn', (els) => els.length);
+sprawdz('jeden wiersz na osobę, nie na rachunek', wierszyOsob === 1, `${wierszyOsob} wierszy`);
+
+const zaCo = await bartek.$eval('#settlements-list details', (el) => el.textContent.replace(/\s+/g, ' '));
+sprawdz('rozwijane „Za co" wylicza rachunki', zaCo.includes('Taxi') && zaCo.includes('Bufet'), zaCo.slice(0, 80));
+
+// Arkusz wyboru: domyślnie wszystko zaznaczone, odznaczamy jeden.
+await bartek.click('#settlements-list .pick-bills-btn');
+await bartek.waitForSelector('#pick-bills-modal.active', { timeout: 10000 });
+const wszystkieZaznaczone = await bartek.$$eval('#pick-bills-list .person-row',
+  (els) => els.every((e) => e.getAttribute('aria-pressed') === 'true'));
+sprawdz('arkusz otwiera się z WSZYSTKIMI rachunkami zaznaczonymi', wszystkieZaznaczone);
+sprawdz('przycisk niesie sumę wszystkich zaznaczonych',
+  (await tekstem(bartek, '#pick-bills-confirm')).includes('50,00'),
+  await tekstem(bartek, '#pick-bills-confirm'));
+
+await klikPoTresci(bartek, '#pick-bills-list .person-row', 'Bufet');
 await chwila(200);
-const notaObok = await tekstem(ala, '#settle-mode-note');
-sprawdz('w cudzym trybie nota mówi, że grupa umówiła się inaczej',
-  notaObok.includes('grupa umówiła się inaczej'), notaObok);
-const przyciskiWCudzymTrybie = await ala.$$eval('#settlements-list', (els) =>
-  els[0] ? els[0].querySelectorAll('.settle-btn, .receive-btn, .nudge-btn, .receive-bill-btn, .open-owed-btn').length : -1);
-sprawdz('cudzy tryb nie daje ANI JEDNEGO przycisku akcji',
-  przyciskiWCudzymTrybie === 0, `${przyciskiWCudzymTrybie} przycisków`);
+sprawdz('odznaczenie rachunku przelicza sumę',
+  (await tekstem(bartek, '#pick-bills-confirm')).includes('30,00'),
+  await tekstem(bartek, '#pick-bills-confirm'));
+
+await bartek.click('#pick-bills-confirm');
+await bartek.waitForSelector('#settle-modal.active', { timeout: 10000 });
+sprawdz('arkusz wpłaty mówi, KTÓRY rachunek pokrywa',
+  (await tekstem(bartek, '#settle-record-note')).includes('Taxi'),
+  await tekstem(bartek, '#settle-record-note'));
+await bartek.click('#settle-record-btn');
+
+// Wpłata gasi WYBRANY rachunek, nie najstarszy.
+const zostalBufet = await czekajNa(
+  bartek,
+  () => {
+    const el = document.querySelector('#settlements-list');
+    return el && el.textContent.includes('Bufet') && !el.textContent.includes('Taxi');
+  },
+  'po wpłacie zostaje sam „Bufet"',
+);
+sprawdz('wpłata zgasiła DOKŁADNIE wybrany rachunek', zostalBufet);
 
 // ---------------------------------------------------------------------------- koniec
 console.log('\n— 7. Konsola —');

@@ -3,7 +3,7 @@
         // Importy Firebase (npm) + moduł obliczeń
         import { calculateAll, calculateAllForBill, buildLedger, simplifyDebts, fromGrosze, toGrosze } from './calc.js';
         import { unreadNudgeCount, hasRecentNudge, inboxItems, badgeCount, hasDot } from './nudges.js';
-        import { myPlanRows, myNetRows, planVsPairwise, netRowOrigin } from './plan.js';
+        import { myPlanRows, planVsPairwise } from './plan.js';
         import { billLedger, myBillsToPay, billSettledBy, myUnassigned, reconcileToPay, currenciesToPay } from './perbill.js';
         import { itemQuantity, itemPickers, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
         import {
@@ -91,24 +91,18 @@
         let latestEvents = []; // dziennik aktywności pokoju (append-only)
         let isAuthReady = false;
         let currentScreenName = null;
-        // TRYB ROZLICZANIA — DWIE RÓŻNE RZECZY O TEJ SAMEJ NAZWIE. Nie mylić ich:
+        // TRYB ROZLICZANIA JEST JEDEN I NALEŻY DO GRUPY — pole `settlementMode`
+        // w dokumencie grupy (`'min'` | `'perBill'`). Brak pola znaczy `'min'`, więc żaden
+        // istniejący pokój nie zmienia się sam z siebie po wgraniu tej wersji.
         //
-        //   • TRYB GRUPY — pole `settlementMode` w dokumencie grupy. To on mówi, jak ta
-        //     ekipa UMÓWIŁA SIĘ rozliczać, i tylko z niego biorą się przyciski akcji.
-        //     Brak pola znaczy 'min', czyli dzisiejsze zachowanie: żaden istniejący pokój
-        //     nie zmienia się sam z siebie po wgraniu tej wersji.
-        //   • TRYB WIDOKU — zmienna poniżej. To, na co PATRZĘ w tej chwili. Wolno obejrzeć
-        //     każdy z trzech, ale w cudzym trybie ekran nie daje ani jednego przycisku
-        //     akcji — bo wykonanie planu, na który grupa się nie umówiła, kończy się
-        //     przelewem, którego druga strona się nie spodziewa.
-        //
-        // Widok startuje z trybu grupy (patrz `syncSettlementView`) i żyje do przeładowania.
-        let settlementMode = 'min';
-        // Czy człowiek SAM przestawił widok w tej wizycie. Dopóki nie przestawił, widok
-        // idzie za trybem grupy — także wtedy, gdy ktoś inny zmieni go w ustawieniach
-        // przy stole. Po przestawieniu ręcznym nie wyrywamy mu ekranu spod palca.
-        let settlementViewPinned = false;
-        let settleContext = null; // { to, currency } — kontekst modala „Ureguluj"
+        // NIE MA TRYBU WIDOKU (usunięty 2026-08-26, decyzja właściciela). Przez pół dnia
+        // istniał przełącznik na ekranie Rozliczeń, którym dało się obejrzeć cudzy tryb
+        // bez przycisków akcji. Wypadł, bo dwa tryby nie są dwoma widokami tych samych
+        // pieniędzy: „Najmniej przelewów" prowadzi przelewy trasami, których żaden
+        // rachunek nie stworzył, a tryb rachunkowy trzyma je przy rachunkach. To są dwa
+        // różne sposoby wydawania pieniędzy, a nie dwa powiększenia — i każdy z nich
+        // potrzebuje INNYCH informacji na Bilansie, w Rozliczeniach i na Rachunkach.
+        let settleContext = null; // { to, currency, billIds } — kontekst modala „Ureguluj"
         let paymentEditMethods = [];
         let paymentEditMemberId = null;
         let newBillState = { name: '', type: null, participantIds: [] };
@@ -999,11 +993,6 @@
             // tylko ukrywa węzły, więc bez tego wiersz zastawał odsunięty i po powrocie
             // wyglądał na zepsuty — „jest przesunięty, choć go nie ruszałem".
             zamknijWiersz();
-            // Przełącznik trybu liczy swoje przewinięcie z wymiarów, a te są zerowe,
-            // dopóki zakładka jest schowana. Dociągamy je w chwili jej otwarcia.
-            if (viewId === 'view-settle') {
-                pokazWybranySegment(document.querySelector('.settle-mode-btn[aria-pressed="true"]'));
-            }
             refreshDeckPin();
         };
 
@@ -1393,9 +1382,9 @@
                     renderColorField(myMember);
                 }
                 // Tryb rozliczania mieszka w dokumencie grupy, więc przychodzi TĄ drogą —
-                // także wtedy, gdy zmienił go ktoś inny przy stole. Widok idzie za nim,
-                // dopóki sam nie przestawiłem przełącznika (patrz `settlementViewPinned`).
-                syncSettlementView();
+                // także wtedy, gdy zmienił go ktoś inny przy stole. Wszystkie trzy ekrany
+                // czytają go wprost przez `groupSettlementMode()`, więc wystarczy je
+                // przerysować (dalej w tej funkcji).
                 const roomSettings = document.getElementById('room-settings-modal');
                 if (roomSettings && roomSettings.classList.contains('active')) {
                     renderRoomSettlementMode();
@@ -1882,6 +1871,27 @@
             return (b && b.data && b.data.billName) || '';
         };
 
+        // ZA CO BYŁA WPŁATA — nazwy rachunków, które pokrywa. `billIds` (tablica) niesie
+        // wybór z arkusza „Za co płacisz"; `billId` (jeden napis) zostaje dla wpłat
+        // zapisanych, zanim ten wybór istniał. Wpłaty spoza trybu rachunkowego nie mają
+        // ani jednego, ani drugiego — i wtedy nie zmyślamy odpowiedzi.
+        const billNamesOfSettlement = (s) => {
+            const ids = Array.isArray(s && s.billIds) && s.billIds.length
+                ? s.billIds
+                : ((s && s.billId) ? [s.billId] : []);
+            return ids.map(billNameById).filter(Boolean);
+        };
+
+        // Zdanie „za co" do wiersza skrzynki i rejestru. Przy jednym rachunku nazwa
+        // wprost, przy kilku — liczba i wyliczenie, bo pięć nazw w jednej linii nie
+        // mieści się na telefonie, a ucięcie zabiera właśnie tę część, która rozróżnia.
+        const settlementForWhat = (s) => {
+            const nazwy = billNamesOfSettlement(s);
+            if (!nazwy.length) return '';
+            if (nazwy.length === 1) return ` za „${escapeHtml(nazwy[0])}"`;
+            return ` za ${nazwy.length} ${plural(nazwy.length, 'rachunek', 'rachunki', 'rachunków')}`;
+        };
+
         // Nominał: złotówki niosą wagę, grosze schodzą o klasę niżej. Chwyt podpatrzony
         // w referencjach — przy kolumnie kwot różnica w czytelności jest natychmiastowa.
         // `withCurrency` wyłączamy tam, gdzie waluta jest już powiedziana raz na całą listę
@@ -1937,17 +1947,12 @@
             {
                 id: 'min',
                 tytul: 'Najmniej przelewów',
-                opis: 'Aplikacja układa najkrótszą drogę dla całej ekipy. Część długów przechodzi bokiem, za to przelewów robicie jak najmniej.',
-            },
-            {
-                id: 'net',
-                tytul: 'Kto komu',
-                opis: 'Rozliczacie się para po parze. Wszystko, co jesteś winien jednej osobie, schodzi do jednej kwoty.',
+                opis: 'Aplikacja układa najkrótszą drogę dla całej ekipy. Przelewów robicie jak najmniej, ale część długów przechodzi bokiem — i wtedy nie da się powiedzieć, który rachunek został opłacony.',
             },
             {
                 id: 'perBill',
-                tytul: 'Rachunek po rachunku',
-                opis: 'Nic się nie zwija. Za każdy rachunek oddajesz osobno, w kolejności dodawania. Najwięcej przelewów, za to przy każdym wiadomo, za co jest.',
+                tytul: 'Rachunkowy',
+                opis: 'Każdy przelew idzie do osoby, która wyłożyła pieniądze za konkretny rachunek. Przelewów jest więcej, za to przy każdym wiadomo, za co jest, a rachunki mają status „opłacone".',
             },
         ];
         // `tytul`/`opis`, a nie `name`/`desc`: strażnik escapowania (render.safety.test.js)
@@ -1959,15 +1964,16 @@
         // TRYB GRUPY. Brak pola w dokumencie = 'min', czyli zachowanie sprzed etapu 3.
         // Wartość spoza listy też schodzi do 'min': dokument grupy jest zapisywalny przez
         // każdego, kto ma link, więc śmieć w tym polu nie może zepsuć ekranu rozliczeń.
+        //
+        // `'net'` PRZECHODZI NA `'perBill'`. Przez pół dnia istniał trzeci tryb o tej
+        // nazwie („Kto komu") i któryś pokój mógł zdążyć go zapisać. Nie znika bez śladu:
+        // to, co robił, jest dziś WIDOKIEM trybu rachunkowego na ekranie Rozliczeń —
+        // wiersz na osobę z sumą jej rachunków. Przepisanie zachowuje więc intencję,
+        // a nie tylko unika śmiecia w polu.
         const groupSettlementMode = () => {
             const m = groupData && groupData.settlementMode;
+            if (m === 'net') return 'perBill';
             return SETTLEMENT_MODES.some((x) => x.id === m) ? m : 'min';
-        };
-        // Czy oglądam tryb, na który grupa się umówiła. Tylko wtedy ekran daje akcje.
-        const viewingGroupMode = () => settlementMode === groupSettlementMode();
-        const syncSettlementView = () => {
-            if (settlementViewPinned) return;
-            settlementMode = groupSettlementMode();
         };
 
         // Długi rozpisane na rachunki, z naniesionymi wpłatami (src/perbill.js).
@@ -2103,7 +2109,7 @@
             const mode = groupSettlementMode();
             const perBill = mode === 'perBill' ? perBillNow() : null;
             const rachunki = (n) => `${n} ${plural(n, 'rachunek', 'rachunki', 'rachunków')}`;
-            const planRows = mode === 'net' ? myNetRows(ledger, myId) : myPlanRows(ledger, myId);
+            const planRows = myPlanRows(ledger, myId);
             const planCur = (c) => planRows.find((p) => p.currency === c) || { payTotalG: 0, receiveTotalG: 0, pay: [], receive: [] };
             const cur0 = currencies[0];
             let oweTotalG = planCur(cur0).payTotalG;
@@ -2173,12 +2179,12 @@
             </div>`;
         };
 
-        // CO MASZ ZROBIĆ w trybie „Rachunek po rachunku".
+        // CO MASZ ZROBIĆ w trybie rachunkowym — PODSUMOWANIE Z PRZEJŚCIEM, NIE LISTA.
         //
-        // TRZY LINIJKI Z PRZEJŚCIEM, NIE LISTA. Lista rachunków do oddania mieszka
-        // w zakładce „Rachunki" pod filtrem „Do oddania" — tam, gdzie stoją rachunki,
-        // z nazwą, datą i wejściem w szczegóły. Powtórzenie jej tutaj dałoby dwa miejsca
-        // na tę samą czynność i dwa miejsca do poprawiania przy każdej zmianie.
+        // Bilans odpowiada na „gdzie stoję": ile wisi, ilu osobom i za ile rachunków.
+        // Szczegóły — wiersz na osobę, rozwijane „Za co", wybór rachunków przy płaceniu —
+        // mieszkają w zakładce Rozliczenia i tylko tam (decyzja właściciela 2026-08-26).
+        // Dwa miejsca na tę samą czynność rozjeżdżają się przy pierwszej poprawce.
         const renderBalancePlanPerBill = (wrap, list, note, myId) => {
             const per = perBillNow();
             const doOddania = myBillsToPay(per, myId);
@@ -2203,16 +2209,18 @@
                     ? `<p class="text-xs text-ink-3 mt-2">${u.billCount} ${plural(u.billCount, 'rachunek', 'rachunki', 'rachunków')} ${fmtMoney(u.billsG, cur)} · ${
                         bezPrzypisania.length === 1 ? 'wpłata bez przypisania' : 'wpłaty bez przypisania'} −${fmtMoney(u.unassignedG, cur)} · zostaje ${fmtMoney(u.restG, cur)}</p>`
                     : '';
+                // Podpis liczy DWIE rzeczy naraz: rachunki i ludzi. Sama liczba rachunków
+                // nie mówi, ile razy trzeba wejść w bank, a sama liczba osób nie mówi,
+                // z czego to się wzięło.
+                const osoby = new Set(doOddania.filter((r) => r.currency === cur).map((r) => r.payer)).size;
                 html.push(`<div class="card p-4">
                     <div class="flex items-center justify-between gap-3">
                         <span class="font-bold text-lg">Do oddania</span>
                         <span class="amount text-2xl text-owe flex-shrink-0">${fmtMoney(u.restG, cur)}</span>
                     </div>
-                    <p class="text-sm text-ink-2 mt-1">${u.billCount === 1
-                        ? 'Jeden rachunek.'
-                        : `${u.billCount} ${plural(u.billCount, 'rachunek', 'rachunki', 'rachunków')}, każdy osobno.`}</p>
+                    <p class="text-sm text-ink-2 mt-1">${u.billCount} ${plural(u.billCount, 'rachunek', 'rachunki', 'rachunków')} · ${osoby === 1 ? '1 osobie' : `${osoby} osobom`}</p>
                     <div class="mt-3 flex items-center gap-2">
-                        <button class="plan-open-owed-btn btn btn-danger flex-grow">Zobacz rachunki</button>
+                        <button class="plan-open-settle-btn btn btn-danger flex-grow">Zobacz rozliczenia</button>
                     </div>
                     ${uzgodnienie}
                 </div>`);
@@ -2231,9 +2239,10 @@
                 const ludzie = [...new Set(moje.map((r) => r.debtor))];
                 html.push(`<div class="card p-4">
                     <div class="flex items-center justify-between gap-3">
-                        <span class="font-bold text-lg">Czekasz na zwrot za ${moje.length} ${plural(moje.length, 'rachunek', 'rachunki', 'rachunków')}</span>
+                        <span class="font-bold text-lg">Czekasz na zwrot</span>
                         <span class="amount text-2xl text-due flex-shrink-0">${fmtMoney(sumaG, cur)}</span>
                     </div>
+                    <p class="text-sm text-ink-2 mt-1">${moje.length} ${plural(moje.length, 'rachunek', 'rachunki', 'rachunków')} · od ${ludzie.length === 1 ? '1 osoby' : `${ludzie.length} osób`}</p>
                     <div class="mt-3 flex items-center gap-2">
                         <button class="plan-nudge-people-btn btn btn-primary flex-grow" data-currency="${escapeHtml(cur)}">Przypomnij (${ludzie.length})</button>
                         <button class="plan-open-settle-btn btn btn-quiet flex-shrink-0">Zobacz kto</button>
@@ -2247,11 +2256,8 @@
             const zastrzezenie = czekaNaMnie
                 ? ` <b class="text-ink-2">Kwoty mogą się jeszcze zmienić — ${czekaNaMnie} ${plural(czekaNaMnie, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')} na Twój ruch.</b>`
                 : '';
-            note.innerHTML = `Rozliczacie się rachunek po rachunku — za każdy osobno.${zastrzezenie} <button class="plan-open-settle-btn underline" type="button">Kto komu jest winien →</button>`;
+            note.innerHTML = `Każdy przelew idzie do osoby, która wyłożyła pieniądze.${zastrzezenie} <button class="plan-open-settle-btn underline" type="button">Rozliczenia: kto, ile i za co →</button>`;
 
-            list.querySelectorAll('.plan-open-owed-btn').forEach((btn) => {
-                btn.onclick = () => openOwedBills();
-            });
             list.querySelectorAll('.plan-nudge-people-btn').forEach((btn) => {
                 btn.onclick = () => {
                     const cur = btn.dataset.currency;
@@ -2271,15 +2277,6 @@
             });
         };
 
-        // Przejście do listy rachunków ustawionej na filtr „Do oddania". Jedno miejsce,
-        // bo prowadzą tu trzy wejścia: Bilans, ekran rozliczeń i skrzynka.
-        const openOwedBills = () => {
-            currentBillFilter = 'owed';
-            showDeckView(DECK_NAV_VIEWS['nav-bills']);
-            markBillsSeen();
-            renderBillsList();
-        };
-
         const renderBalancePlan = () => {
             const wrap = document.getElementById('balance-plan');
             const list = document.getElementById('balance-plan-list');
@@ -2295,7 +2292,7 @@
             // która rozjeżdża się przy pierwszej poprawce w jednej z nich.
             if (mode === 'perBill') { renderBalancePlanPerBill(wrap, list, note, myId); return; }
 
-            const planRows = myId ? (mode === 'net' ? myNetRows(ledger, myId) : myPlanRows(ledger, myId)) : [];
+            const planRows = myId ? myPlanRows(ledger, myId) : [];
             wrap.classList.toggle('hidden', planRows.length === 0);
             if (planRows.length === 0) { list.innerHTML = ''; note.textContent = ''; return; }
 
@@ -2361,18 +2358,12 @@
             const zastrzezenie = czekaNaMnie
                 ? ` <b class="text-ink-2">Kwoty mogą się jeszcze zmienić — ${czekaNaMnie} ${plural(czekaNaMnie, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')} na Twój ruch.</b>`
                 : '';
-            // ZDANIE MÓWI O TRYBIE, NA KTÓRY GRUPA SIĘ UMÓWIŁA, a nie zawsze o planie
-            // minimalnym. W trybie „Kto komu" obietnica „rozliczamy najkrótszą drogą"
-            // byłaby wprost nieprawdziwa: przelewów jest tam tyle, ile par z długiem.
-            // Mówimy więc, ile ich wychodzi — i przyznajemy, że krócej się dało,
-            // bo to grupa tak postanowiła, a nie aplikacja się pomyliła.
-            const zdanieTrybu = mode === 'net'
-                ? `Rozliczacie się para po parze: <b>${pairwise} ${plural(pairwise, 'przelew', 'przelewy', 'przelewów')}</b>.${
-                    plan < pairwise ? ` Najkrótszą drogą wystarczyłoby ${plan} — tak umówiła się grupa.` : ''}`
-                : (plan < pairwise
-                    ? `Rozliczamy najkrótszą drogą: <b>${plan} ${plural(plan, 'przelew', 'przelewy', 'przelewów')}</b> zamiast ${pairwise}.`
-                    : 'Rozliczamy najkrótszą drogą — krócej się tu nie da.');
-            note.innerHTML = `${zdanieTrybu}${zastrzezenie} <button class="plan-open-settle-btn underline" type="button">Kto komu jest winien →</button>`;
+            // Ta gałąź obsługuje WYŁĄCZNIE plan minimalny — tryb rachunkowy ma własną
+            // (`renderBalancePlanPerBill`) i wychodzi z funkcji wyżej.
+            const zdanieTrybu = plan < pairwise
+                ? `Rozliczamy najkrótszą drogą: <b>${plan} ${plural(plan, 'przelew', 'przelewy', 'przelewów')}</b> zamiast ${pairwise}.`
+                : 'Rozliczamy najkrótszą drogą — krócej się tu nie da.';
+            note.innerHTML = `${zdanieTrybu}${zastrzezenie} <button class="plan-open-settle-btn underline" type="button">Rozliczenia: kto komu ile →</button>`;
 
             list.querySelectorAll('.plan-pay-btn').forEach((btn) => {
                 btn.onclick = () => openSettleModal(btn.dataset.to, Number(btn.dataset.amountG), btn.dataset.currency, 'send');
@@ -2417,70 +2408,85 @@
                 <div class="mt-1 pl-2 border-l border-ink/15">${fwd.map(c => line(c, false)).join('')}${rev.map(c => line(c, true)).join('')}</div></details>`;
         };
 
-        // EKRAN ROZLICZEŃ W TRYBIE „RACHUNEK PO RACHUNKU".
+        // OTWARTE RACHUNKI ZWINIĘTE NA OSOBIE — podstawa ekranu Rozliczeń w trybie
+        // rachunkowym. Zwraca wiersze `{ other, currency, sumaG, rachunki[] }`.
         //
-        // DWIE STRONY, DWA KSZTAŁTY — i to nie jest niekonsekwencja:
+        // To jest jedyne miejsce, w którym tryb rachunkowy sumuje po osobie — i jest to
+        // świadome. Przelew robi się DO CZŁOWIEKA, nie do rachunku, więc ekran, na którym
+        // się płaci, musi być ułożony po ludziach. Rozpisanie na rachunki nie znika:
+        // siedzi pod „Za co" przy każdym wierszu i wraca w pełnej krasie przy wyborze,
+        // co dokładnie pokrywam.
+        const perBillPerPerson = (rows, mojaStrona) => {
+            const map = new Map();
+            rows.forEach((r) => {
+                const other = mojaStrona === 'debtor' ? r.payer : r.debtor;
+                const key = `${other}|${r.currency}`;
+                let g = map.get(key);
+                if (!g) { g = { other, currency: r.currency, sumaG: 0, rachunki: [] }; map.set(key, g); }
+                g.sumaG += r.openG;
+                g.rachunki.push(r);
+            });
+            // Największy dług pierwszy: przy kilkunastu osobach to on jest pytaniem dnia.
+            return [...map.values()].sort((a, b) => b.sumaG - a.sumaG);
+        };
+
+        // Rozpisanie „za co" pod wierszem osoby: nazwa rachunku i kwota, jeden pod drugim.
+        const perBillDetailHtml = (grupa) => `
+            <details class="mt-1.5"><summary class="text-xs text-ink-2 cursor-pointer select-none">Za co</summary>
+                <div class="mt-1 pl-2 border-l border-ink/15">${grupa.rachunki.map((r) => `
+                    <div class="flex justify-between gap-2 text-xs py-0.5">
+                        <span class="truncate text-ink-3">${escapeHtml(r.billName || 'Rachunek')}</span>
+                        <span class="amount flex-shrink-0 text-ink-3">${fmtMoney(r.openG, r.currency)}</span>
+                    </div>`).join('')}</div>
+            </details>`;
+
+        // EKRAN ROZLICZEŃ W TRYBIE RACHUNKOWYM — wiersz na OSOBĘ.
         //
-        //   • DO ODDANIA — trzy linijki z przejściem, NIE lista. Lista rachunków do
-        //     oddania mieszka w zakładce „Rachunki" pod filtrem „Do oddania", razem
-        //     z nazwą, datą, kwotą i wejściem w szczegóły. Powtórzenie jej tutaj dałoby
-        //     dwie listy tego samego, które rozjeżdżają się przy pierwszej poprawce.
-        //   • DOSTAJESZ — wiersz na każdy rachunek. Tu nie ma dokąd odesłać: to jest
-        //     jedyne miejsce, w którym płatnik odbiera wpłaty i przypomina o nich,
-        //     a rachunek po rachunku znaczy, że każdy zwrot odklikuje się osobno.
-        //     Właściciel: „w trybie rachunkowym robimy łopatologicznie bardzo".
-        const perBillSettlementsHtml = (myId, isGroupView) => {
+        // Nie ma tu wiersza na rachunek i to jest zmiana z 2026-08-26: rozpisanie rachunek
+        // po rachunku dublowało zakładkę „Rachunki", a przy jednym przelewie za trzy
+        // kolacje kazało odklikiwać trzy wiersze. Rachunki nie znikają — są pod „Za co"
+        // i w arkuszu wyboru przy regulowaniu, gdzie da się odznaczyć te, których akurat
+        // nie pokrywam.
+        const perBillSettlementsHtml = (myId) => {
             const per = perBillNow();
-            const doOdebrania = (per.rows || []).filter((r) => r.payer === myId && r.openG > 0);
+            const doOddania = perBillPerPerson(myBillsToPay(per, myId), 'debtor');
+            const doOdebrania = perBillPerPerson((per.rows || []).filter((r) => r.payer === myId && r.openG > 0), 'payer');
             const cudze = (per.rows || []).filter((r) => r.payer !== myId && r.debtor !== myId && r.openG > 0);
             const bez = myUnassigned(per, myId).sent;
             let html = '';
 
-            currenciesToPay(per, myId).forEach((cur) => {
-                const u = reconcileToPay(per, myId, cur);
-                if (!u.billCount) return;
-                const uzgodnienie = u.unassignedG > 0
-                    ? `<p class="text-xs text-ink-3 mt-2">${u.billCount} ${plural(u.billCount, 'rachunek', 'rachunki', 'rachunków')} ${fmtMoney(u.billsG, cur)} · ${
-                        bez.length === 1 ? 'wpłata bez przypisania' : 'wpłaty bez przypisania'} −${fmtMoney(u.unassignedG, cur)} · zostaje ${fmtMoney(u.restG, cur)}</p>`
-                    : '';
-                html += `<p class="text-sm font-bold text-owe mb-2">Płacisz</p>
-                    <div class="card p-4 mb-5">
-                        <div class="flex items-center justify-between gap-3">
-                            <span class="font-bold text-lg">${u.billCount} ${plural(u.billCount, 'rachunek', 'rachunki', 'rachunków')} do oddania</span>
-                            <span class="amount text-2xl text-owe flex-shrink-0">${fmtMoney(u.restG, cur)}</span>
-                        </div>
-                        <p class="text-sm text-ink-2 mt-1">Za każdy oddajesz osobno — kwoty i „Ureguluj" stoją przy rachunkach.</p>
-                        ${isGroupView
-                            ? `<div class="mt-3 flex items-center gap-2"><button class="open-owed-btn btn btn-danger flex-grow">Zobacz rachunki</button></div>`
-                            : ''}
-                        ${uzgodnienie}
-                    </div>`;
-            });
+            if (doOddania.length) {
+                html += `<p class="text-sm font-bold text-owe mb-2">Płacisz</p><div class="settle-rows space-y-2 mb-5">`;
+                doOddania.forEach((g) => {
+                    html += settleRowHtml(memberName(g.other), g.other,
+                        `<span class="amount text-2xl text-owe">${fmtMoney(g.sumaG, g.currency)}</span>`,
+                        `<button class="pick-bills-btn btn btn-danger flex-grow" data-other="${escapeHtml(g.other)}" data-currency="${escapeHtml(g.currency)}">Ureguluj</button>`,
+                        `<p class="text-xs text-ink-3 mt-2">${g.rachunki.length} ${plural(g.rachunki.length, 'rachunek', 'rachunki', 'rachunków')}</p>${perBillDetailHtml(g)}`);
+                });
+                html += `</div>`;
+            }
 
             html += bez.length ? `<div class="mb-5">${unassignedBlockHtml(bez)}</div>` : '';
 
             if (doOdebrania.length) {
                 html += `<p class="text-sm font-bold text-due mb-2">Dostajesz</p><div class="settle-rows space-y-2 mb-5">`;
-                doOdebrania.forEach((r) => {
-                    // Nazwa rachunku pod imieniem, bo to ona odróżnia dwa wiersze tej samej
-                    // osoby — a takie wiersze stoją tu obok siebie z założenia.
-                    const zaCo = `<p class="text-xs text-ink-3 mt-2">za „${escapeHtml(r.billName || 'rachunek')}"</p>`;
-                    html += settleRowHtml(memberName(r.debtor), r.debtor,
-                        `<span class="amount text-2xl text-due">${fmtMoney(r.openG, r.currency)}</span>`,
-                        isGroupView
-                            ? `<button class="receive-bill-btn btn btn-primary flex-grow" data-from="${escapeHtml(r.debtor)}" data-amount-g="${r.openG}" data-currency="${escapeHtml(r.currency)}" data-bill-id="${escapeHtml(r.billId)}">Mam wpłatę</button>
-                               <button class="nudge-btn btn btn-quiet flex-shrink-0" data-nudge-to="${escapeHtml(r.debtor)}" data-amount-g="${r.openG}" data-currency="${escapeHtml(r.currency)}" title="Przypomnij o długu"><i class="fas fa-bell"></i></button>`
-                            : '',
-                        zaCo);
+                doOdebrania.forEach((g) => {
+                    // Dzwonek liczy SUMĘ tej osoby, nie kwotę jednego rachunku. Przy wierszu
+                    // na rachunek wysyłał przypomnienie o części długu („przypominam o 45,00",
+                    // choć wisi 120,00) i wpadał w blokadę antyspamową przy drugim stuknięciu.
+                    html += settleRowHtml(memberName(g.other), g.other,
+                        `<span class="amount text-2xl text-due">${fmtMoney(g.sumaG, g.currency)}</span>`,
+                        `<button class="receive-btn btn btn-primary flex-grow" data-from="${escapeHtml(g.other)}" data-amount-g="${g.sumaG}" data-currency="${escapeHtml(g.currency)}">Mam wpłatę</button>
+                         <button class="nudge-btn btn btn-quiet flex-shrink-0" data-nudge-to="${escapeHtml(g.other)}" data-amount-g="${g.sumaG}" data-currency="${escapeHtml(g.currency)}" title="Przypomnij o długu"><i class="fas fa-bell"></i></button>`,
+                        `<p class="text-xs text-ink-3 mt-2">${g.rachunki.length} ${plural(g.rachunki.length, 'rachunek', 'rachunki', 'rachunków')}</p>${perBillDetailHtml(g)}`);
                 });
                 html += `</div>`;
             }
 
             if (cudze.length) {
-                // Cudze długi to informacja dla ciekawskich, więc zwinięte — tak samo
-                // jak w pozostałych dwóch trybach.
+                const grupy = perBillPerPerson(cudze, 'payer');
                 html += `<details class="mt-2"><summary class="settle-others-summary">
-                    <span>Jeszcze ${cudze.length} ${plural(cudze.length, 'zwrot', 'zwroty', 'zwrotów')} w grupie</span>
+                    <span>Jeszcze ${grupy.length} ${plural(grupy.length, 'zwrot', 'zwroty', 'zwrotów')} w grupie</span>
                     <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
                 </summary><div class="settle-rows space-y-2 mt-2">`;
                 cudze.forEach((r) => {
@@ -2502,25 +2508,59 @@
             return html;
         };
 
-        // WYBRANY SEGMENT MUSI BYĆ WIDOCZNY W CAŁOŚCI. Trzy etykiety nie mieszczą się
-        // w jednym rzędzie poniżej 400 px, więc przełącznik trybu przewija się w poziomie
-        // — a „Rachunek po rachunku" jest ostatni i przy wejściu stał ucięty krawędzią
-        // ekranu. Ucięty WYBRANY segment czyta się jak zepsuty układ, a nie jak coś,
-        // co da się przesunąć palcem.
+        // ARKUSZ „ZA CO PŁACISZ". Wybór rachunków, które pokrywa jeden przelew.
         //
-        // `getBoundingClientRect`, nie `offsetLeft`: pigułka nie jest pozycjonowana, więc
-        // `offsetParent` bywa czymś zupełnie innym niż pas przewijania. I nie
-        // `scrollIntoView` — ten przewija także przodków, czyli `#app-scroll`, i skacze
-        // całym ekranem.
-        const pokazWybranySegment = (btn) => {
-            const pas = btn && btn.closest('.seg-scroll');
-            if (!pas) return;
-            const b = btn.getBoundingClientRect();
-            const p = pas.getBoundingClientRect();
-            // Zakładka schowana ma zerowe wymiary — wtedy nie ma czego liczyć i wrócimy
-            // do tego przy jej otwarciu (patrz `showDeckView`).
-            if (!p.width || !b.width) return;
-            pas.scrollLeft = Math.max(0, pas.scrollLeft + (b.left - p.left) - (p.width - b.width) / 2);
+        // Wpłata NIESIE listę wybranych rachunków (`billIds`), a nie jest rozdzielana
+        // regułą „od najstarszego". Reguła zostaje dla wpłat, które takiej listy nie mają
+        // — starych i tych z planu minimalnego — ale tutaj byłaby wprost szkodliwa:
+        // przy odznaczeniu środkowego rachunku zgasiłaby nie te, które człowiek wybrał,
+        // a odbiorca nie miałby skąd wiedzieć, za co dostał pieniądze.
+        let pickBillsState = null;
+
+        const renderPickBills = () => {
+            const list = document.getElementById('pick-bills-list');
+            const lead = document.getElementById('pick-bills-lead');
+            const confirm = document.getElementById('pick-bills-confirm');
+            if (!list || !pickBillsState) return;
+            const { rachunki, wybrane, currency, other } = pickBillsState;
+            lead.textContent = `Przelew do: ${memberName(other)}. Odznacz to, czego teraz nie pokrywasz.`;
+            // Wiersz nosi klasy `person-row`, ale BEZ twarzy: rachunek nie jest osobą,
+            // a kółko ze znakiem obok nazwy kolacji czytałoby się jak czyjś awatar.
+            // Zostaje sam kształt wiersza i znacznik wyboru, który już tam mieszka.
+            list.innerHTML = rachunki.map((r) => `
+                <button type="button" class="person-row" data-id="${escapeHtml(r.billId)}" aria-pressed="${wybrane.has(r.billId) ? 'true' : 'false'}">
+                    <span class="flex-grow min-w-0 truncate font-medium">${escapeHtml(r.billName || 'Rachunek')}</span>
+                    <span class="amount text-ink-2 flex-shrink-0">${fmtMoney(r.openG, r.currency)}</span>
+                    <span class="person-row-check" aria-hidden="true"><i class="fas fa-check"></i></span>
+                </button>`).join('');
+            const sumaG = rachunki.filter((r) => wybrane.has(r.billId)).reduce((s, r) => s + r.openG, 0);
+            confirm.textContent = sumaG > 0 ? `Ureguluj ${fmtMoney(sumaG, currency)}` : 'Zaznacz choć jeden rachunek';
+            confirm.disabled = sumaG <= 0;
+            confirm.classList.toggle('opacity-50', sumaG <= 0);
+            list.querySelectorAll('.person-row').forEach((row) => {
+                row.onclick = () => {
+                    const id = row.dataset.id;
+                    if (wybrane.has(id)) wybrane.delete(id); else wybrane.add(id);
+                    renderPickBills();
+                };
+            });
+        };
+
+        const openPickBills = (otherId, currency) => {
+            const per = perBillNow();
+            const my = myMemberNow();
+            if (!my) { showToast('Najpierw dołącz do grupy.', true); return; }
+            const rachunki = myBillsToPay(per, my.id)
+                .filter((r) => r.payer === otherId && r.currency === currency);
+            if (!rachunki.length) return;
+            pickBillsState = {
+                other: otherId,
+                currency,
+                rachunki,
+                wybrane: new Set(rachunki.map((r) => r.billId)),
+            };
+            renderPickBills();
+            document.getElementById('pick-bills-modal').classList.add('active');
         };
 
         const renderSettlements = () => {
@@ -2529,38 +2569,7 @@
             const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
             const myId = myMember ? myMember.id : null;
 
-            // Stan bieżący niesie `aria-pressed`, nie podmiana klas: przełącznik jest
-            // pigułką, którą maluje arkusz, a czytnik ekranu dostaje informację o stanie.
-            //
-            // `data-group-mode` znakuje tryb, NA KTÓRY UMÓWIŁA SIĘ GRUPA — świeci limonką
-            // marki niezależnie od tego, który tryb akurat oglądam (decyzja właściciela
-            // 2026-08-26). Bez tego znaku przełącznik wyglądałby na wybór osobisty, a jest
-            // ustawieniem całego pokoju.
             const groupMode = groupSettlementMode();
-            const isGroupView = viewingGroupMode();
-            document.querySelectorAll('.settle-mode-btn').forEach(btn => {
-                const wybrany = btn.dataset.mode === settlementMode;
-                btn.setAttribute('aria-pressed', String(wybrany));
-                btn.dataset.groupMode = String(btn.dataset.mode === groupMode);
-                // WYBRANY SEGMENT MUSI BYĆ WIDOCZNY W CAŁOŚCI. Trzy etykiety nie mieszczą
-                // się w jednym rzędzie poniżej 400 px, więc przełącznik przewija się
-                // w poziomie — a „Rachunek po rachunku" jest ostatni i przy pierwszym
-                // wejściu stał ucięty krawędzią ekranu. Ucięty wybrany segment wygląda
-                // na zepsuty układ, a nie na coś, co da się przesunąć palcem.
-                // `scrollLeft` wprost, nie `scrollIntoView`: ten drugi przewija też
-                // przodków, czyli `#app-scroll` — a to skacze całym ekranem.
-                if (wybrany) pokazWybranySegment(btn);
-            });
-            // JEDNA CICHA LINIA, nie ostrzeżenie. Cudzy tryb wolno obejrzeć — nie wolno
-            // go tylko wykonać, bo przelew zrobiony wbrew umowie grupy zaskakuje drugą
-            // stronę. Dlatego niżej w cudzym trybie nie ma ANI JEDNEGO przycisku akcji.
-            const modeNoteEl = document.getElementById('settle-mode-note');
-            if (modeNoteEl) {
-                modeNoteEl.textContent = isGroupView
-                    ? 'Tak rozlicza się ta grupa.'
-                    : `Sam podgląd — grupa umówiła się inaczej („${settlementModeName(groupMode)}").`;
-            }
-
             const bills = latestBills.map(({ id, data }) => ({ ...data, id }));
             const ledger = buildLedger(bills, latestSettlements);
             const currencies = Object.keys(ledger).sort((a, b) => {
@@ -2586,48 +2595,26 @@
             const myOweCount = new Set(
                 Object.keys(ledger).flatMap((c) => ledger[c].net.filter((t) => t.from === myId).map((t) => t.to)),
             ).size;
-            // WYTŁUSZCZONY POCZĄTEK OPISUJE TRYB, A NIE UMOWĘ GRUPY. O umowie mówi jedna
-            // linia nad blokiem (`settle-mode-note`) i tylko ona — do 2026-08-26 zdanie
-            // „Tak rozlicza się ta grupa" stało w obu miejscach naraz, dwa wiersze od
-            // siebie. Powtórzone zdanie czyta się jak usterka renderowania.
-            if (settlementMode === 'min') {
-                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Najkrótsza droga dla całej ekipy.</b> Część długów przechodzi bokiem, za to przelewów jest jak najmniej.${
-                    myOweCount
-                        ? ` Dlatego możesz tu nie mieć nic do zapłaty, choć para po parze jesteś winien ${myOweCount === 1 ? 'jednej osobie' : `${myOweCount} osobom`} — Twój dług spłaca ktoś, kto jest winien Tobie.`
-                        : ''
-                } Plan przelicza się od nowa po każdym nowym rachunku.</p>`;
-            } else if (settlementMode === 'net') {
-                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Para po parze, prosto z rachunków.</b> Wszystko, co jesteś winien jednej osobie, schodzi tu do jednej kwoty — przy każdej rozwiniesz „Za co".</p>`;
-            } else {
-                // Zdanie mówi wprost, CZEGO TU NIE MA i gdzie tego szukać. Bez tego brak
-                // podsumowań po osobie wygląda na niedoróbkę, a jest treścią trybu.
-                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Nic się tu nie zwija.</b> Każdy rachunek to osobna kwota i osobny zwrot, w kolejności dodawania. Ile łącznie idzie do jednej osoby, pokaże „Kto komu".</p>`;
+            if (groupMode === 'perBill') {
+                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Każdy przelew idzie do osoby, która wyłożyła pieniądze.</b> Kwota przy imieniu to suma jej rachunków, których jeszcze nie oddałeś — rozwiniesz „Za co", a przy regulowaniu wybierzesz, które z nich pokrywasz.</p>`;
+                html += perBillSettlementsHtml(myId);
             }
-            if (settlementMode === 'perBill') html += perBillSettlementsHtml(myId, isGroupView);
             else currencies.forEach(cur => {
-                const transfers = settlementMode === 'min' ? simplifyDebts(ledger[cur].directed) : ledger[cur].net;
+                const transfers = simplifyDebts(ledger[cur].directed);
                 if (transfers.length === 0) return;
+                if (cur === currencies[0]) {
+                    html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Najkrótsza droga dla całej ekipy.</b> Część długów przechodzi bokiem, za to przelewów jest jak najmniej.${
+                        myOweCount
+                            ? ` Dlatego możesz tu nie mieć nic do zapłaty, choć para po parze jesteś winien ${myOweCount === 1 ? 'jednej osobie' : `${myOweCount} osobom`} — Twój dług spłaca ktoś, kto jest winien Tobie.`
+                            : ''
+                    } Plan przelicza się od nowa po każdym nowym rachunku.</p>`;
+                }
                 const mineOwe = transfers.filter(t => t.from === myId);
                 const mineGet = transfers.filter(t => t.to === myId);
                 const others = transfers.filter(t => t.from !== myId && t.to !== myId);
-                // Detal (które rachunki) tylko w trybie netto — „min" to zoptymalizowane przelewy bez mapowania 1:1 na rachunki.
-                const detailOf = (t) => settlementMode === 'net' ? debtDetailHtml(ledger[cur].directed, t.from, t.to, cur) : '';
-
-                // WIERSZ, ZA KTÓRYM NIE STOI ŻADEN RACHUNEK, MUSI SIĘ PRZYZNAĆ.
-                //
-                // Usterka odtworzona na żywym kodzie 2026-08-25: Kuba winien Markowi 50,
-                // Marek Oli 50. Plan minimalny każe Kubie zapłacić Oli i Kuba to robi.
-                // Salda wszystkich trzech schodzą do zera, plan minimalny jest pusty — a
-                // „Kto komu" pokazuje TRZY otwarte długi po 50 z przyciskiem „Ureguluj"
-                // przy każdym, bo `netDirected` zwija długi wyłącznie wewnątrz pary
-                // i cyklu nie widzi. Marek mógł w dobrej wierze upomnieć się o pieniądze,
-                // których nikt mu nie jest winien.
-                //
-                // NICZEGO NIE UKRYWAMY — kółko długów potrafi powstać z samych rachunków
-                // i wtedy są prawdziwe. Nazywamy tylko pochodzenie wiersza i wyciszamy
-                // przy nim akcję, żeby nikt nie wysłał pieniędzy drugi raz.
-                const widmo = (t) => settlementMode === 'net' && netRowOrigin(ledger[cur].directed, t.from, t.to) === 'payment';
-                const widmoNote = `<p class="text-xs text-ink-3 mt-2">Ten wiersz nie pochodzi z rachunku — powstał z wpłaty poprowadzonej najkrótszą drogą. Nie wysyłaj nic na jego podstawie.</p>`;
+                // Plan minimalny to zoptymalizowane przelewy bez odwzorowania 1:1 na rachunki,
+                // więc nie ma czego rozwijać pod kwotą — „za co" mieszka w trybie rachunkowym.
+                const detailOf = () => '';
 
                 html += `<div>`;
                 if (currencies.length > 1) html += `<p class="chip mb-2">${cur}</p>`;
@@ -2635,36 +2622,21 @@
                 if (mineOwe.length) {
                     html += `<p class="text-sm font-bold text-owe mb-2">Płacisz</p><div class="settle-rows space-y-2 mb-5">`;
                     mineOwe.forEach(t => {
-                        // W CUDZYM TRYBIE NIE MA PRZYCISKÓW AKCJI (etap 3, decyzja
-                        // właściciela). Wiersze wolno obejrzeć — wykonanie planu, na który
-                        // grupa się nie umówiła, kończy się przelewem, którego druga strona
-                        // się nie spodziewa, i wpłatą, której nie ma jak przypisać.
                         html += settleRowHtml(memberName(t.to), t.to,
                             `<span class="amount text-2xl text-owe">${fmtMoney(t.amountG, cur)}</span>`,
-                            !isGroupView
-                                ? ''
-                                : widmo(t)
-                                    ? `<button class="btn btn-quiet flex-grow opacity-60" type="button" disabled>Nic do wysłania</button>`
-                                    : `<button class="settle-btn btn btn-danger flex-grow" data-to="${t.to}" data-amount-g="${t.amountG}" data-currency="${cur}">Ureguluj</button>`,
-                            (widmo(t) ? widmoNote : '') + detailOf(t));
+                            `<button class="settle-btn btn btn-danger flex-grow" data-to="${t.to}" data-amount-g="${t.amountG}" data-currency="${cur}">Ureguluj</button>`,
+                            detailOf(t));
                     });
                     html += `</div>`;
                 }
                 if (mineGet.length) {
                     html += `<p class="text-sm font-bold text-due mb-2">Dostajesz</p><div class="settle-rows space-y-2 mb-5">`;
                     mineGet.forEach(t => {
-                        // Przy wierszu widmo znika też DZWONEK. Przypomnienie o długu, który
-                        // powstał z cudzej wpłaty, jest najgorszą możliwą wiadomością:
-                        // upomina się o pieniądze, które już przyszły.
                         html += settleRowHtml(memberName(t.from), t.from,
                             `<span class="amount text-2xl text-due">${fmtMoney(t.amountG, cur)}</span>`,
-                            !isGroupView
-                                ? ''
-                                : widmo(t)
-                                    ? `<button class="btn btn-quiet flex-grow opacity-60" type="button" disabled>Nic do odebrania</button>`
-                                    : `<button class="receive-btn btn btn-primary flex-grow" data-from="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}">Mam wpłatę</button>
+                            `<button class="receive-btn btn btn-primary flex-grow" data-from="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}">Mam wpłatę</button>
                              <button class="nudge-btn btn btn-quiet flex-shrink-0" data-nudge-to="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}" title="Przypomnij o długu"><i class="fas fa-bell"></i></button>`,
-                            (widmo(t) ? widmoNote : '') + detailOf(t));
+                            detailOf(t));
                     });
                     html += `</div>`;
                 }
@@ -2690,7 +2662,6 @@
                                 </span>
                                 <span class="amount text-ink-2 flex-shrink-0">${fmtMoney(t.amountG, cur)}</span>
                             </div>
-                            ${widmo(t) ? widmoNote : ''}
                             ${detailOf(t)}
                         </div>`;
                     });
@@ -2771,7 +2742,9 @@
                     <span class="min-w-0 flex-grow">
                         <span class="block text-sm truncate"><b>${escapeHtml(memberName(s.from))}</b> dla <b>${escapeHtml(memberName(s.to))}</b></span>
                         <span class="amount block text-lg">${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}</span>
-                        ${s.billId && billNameById(s.billId) ? `<span class="block text-xs text-ink-3 truncate">za „${escapeHtml(billNameById(s.billId))}"</span>` : ''}
+                        ${billNamesOfSettlement(s).length
+                            ? `<span class="block text-xs text-ink-3">${billNamesOfSettlement(s).map((n) => escapeHtml(n)).join(' · ')}</span>`
+                            : ''}
                         <span class="mt-1 flex items-center gap-2 flex-wrap">
                             ${badge}
                             ${time ? `<span class="text-xs text-ink-3">${escapeHtml(time)}</span>` : ''}
@@ -2792,12 +2765,13 @@
         };
 
         // mode: 'send' = ja płacę (Ureguluj, do potwierdzenia) | 'receive' = ja otrzymałem (od razu potwierdzone)
-        // `billId` jest OPCJONALNY i zapisuje się na wpłacie tylko wtedy, gdy wpłata
-        // faktycznie dotyczy jednego rachunku (tryb rachunkowy, przycisk na rachunku).
-        // Wpłaty bez niego działają bez żadnej migracji — a takich w istniejących pokojach
-        // są wszystkie dotychczasowe.
-        const openSettleModal = (otherId, amountG, currency, mode = 'send', billId = null) => {
-            settleContext = { mode, other: otherId, currency, billId: billId || null };
+        // `bills` — identyfikatory rachunków, które ta wpłata pokrywa. Pojedynczy napis
+        // (przycisk na rachunku) albo tablica (arkusz „Za co płacisz"). Pole jest
+        // OPCJONALNE: wpłaty bez niego działają bez żadnej migracji, a takich są
+        // w istniejących pokojach wszystkie dotychczasowe.
+        const openSettleModal = (otherId, amountG, currency, mode = 'send', bills = null) => {
+            const billIds = (Array.isArray(bills) ? bills : [bills]).filter(Boolean);
+            settleContext = { mode, other: otherId, currency, billIds };
             const amountStr = fromGrosze(Number(amountG) || 0).toFixed(2);
             const input = document.getElementById('settle-amount-input');
             input.value = amountStr.replace('.', ',');
@@ -2813,11 +2787,16 @@
             // Nazwa rachunku w zdaniu pod przyciskiem, gdy wpłata dotyczy jednego rachunku.
             // Bez niej „Zapisz wpłatę" wygląda tak samo przy wpłacie ogólnej i przy zwrocie
             // za konkretną kolację — a to jest dokładnie ta różnica, po którą ktoś tu wszedł.
-            const zaRachunek = settleContext.billId ? billNameById(settleContext.billId) : '';
+            const nazwy = settleContext.billIds.map(billNameById).filter(Boolean);
+            const zaCo = nazwy.length === 1
+                ? ` Wpłata dotyczy rachunku „${nazwy[0]}".`
+                : nazwy.length > 1
+                    ? ` Wpłata pokrywa ${nazwy.length} ${plural(nazwy.length, 'rachunek', 'rachunki', 'rachunków')}: ${nazwy.map((n) => `„${n}"`).join(', ')}.`
+                    : '';
             document.getElementById('settle-record-note').textContent = (mode === 'receive'
                 ? 'Potwierdzasz, że otrzymałeś tę kwotę.'
                 : 'Zapisuje, że przelałeś tę kwotę. Odbiorca ją potwierdzi.')
-                + (zaRachunek ? ` Wpłata dotyczy rachunku „${zaRachunek}".` : '');
+                + zaCo;
             // Metody płatności pokazujemy tylko gdy JA płacę (send).
             const methodsWrap = document.getElementById('settle-methods-wrap');
             if (mode === 'receive') {
@@ -3091,18 +3070,21 @@
                             <button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Oznacz przeczytane</button>`,
                     });
                 }
-                // ZA CO — bez tego pięć wpłat od jednej osoby (tryb rachunkowy: pięć
-                // rachunków odklikniętych naraz) to pięć identycznych wierszy z tym samym
-                // imieniem i podobną kwotą. Wierszy nie zwijamy, więc odróżnić je musi
-                // nazwa rachunku. Wpłaty sprzed etapu 3 nie mają `billId` i wtedy nie
-                // dokładamy nic — pusty cudzysłów byłby gorszy niż milczenie.
-                const zaCo = x.billId && billNameById(x.billId)
-                    ? ` za „${escapeHtml(billNameById(x.billId))}"`
+                // ZA CO — bez tego wiersz mówi tylko „Bartek zgłosił wpłatę 120,00",
+                // a odbiorca ma zgadywać, które kolacje właśnie zostały zamknięte.
+                // Wpłaty spoza trybu rachunkowego nie niosą tej informacji i wtedy nie
+                // dokładamy nic: pusty cudzysłów byłby gorszy niż milczenie.
+                const zaCo = settlementForWhat(x);
+                // Przy kilku rachunkach wypisujemy je pod spodem, bo to jest właśnie ta
+                // chwila, w której płatnik sprawdza, czy zgadza się z jego rachunkami.
+                const nazwyRachunkow = billNamesOfSettlement(x);
+                const listaRachunkow = nazwyRachunkow.length > 1
+                    ? `<span class="block mt-1">${nazwyRachunkow.map((n) => `• ${escapeHtml(n)}`).join('<br>')}</span>`
                     : '';
                 if (x.kind === 'confirm-payment') {
                     return inboxRowHtml({
                         icon: 'fa-hand-holding-dollar', tone: 'is-due',
-                        title: `<b>${escapeHtml(memberName(x.from))}</b> zgłosił/a wpłatę${amount ? ` <b>${amount}</b>` : ''}${zaCo}.`,
+                        title: `<b>${escapeHtml(memberName(x.from))}</b> zgłosił/a wpłatę${amount ? ` <b>${amount}</b>` : ''}${zaCo}.${listaRachunkow}`,
                         subtitle: 'Czeka na Twoje potwierdzenie. Bez niego dług zostaje otwarty.',
                         actionsHtml: `<button class="inbox-confirm-btn btn btn-primary" data-id="${escapeHtml(x.id)}">Potwierdzam</button>`,
                     });
@@ -3110,7 +3092,7 @@
                 if (x.kind === 'payment-confirmed') {
                     return inboxRowHtml({
                         icon: 'fa-circle-check', tone: 'is-due',
-                        title: `<b>${escapeHtml(memberName(x.from))}</b> potwierdził/a Twoją wpłatę${amount ? ` <b>${amount}</b>` : ''}${zaCo}.`,
+                        title: `<b>${escapeHtml(memberName(x.from))}</b> potwierdził/a Twoją wpłatę${amount ? ` <b>${amount}</b>` : ''}${zaCo}.${listaRachunkow}`,
                         subtitle: 'Sprawa zamknięta.',
                     });
                 }
@@ -3164,7 +3146,7 @@
                     // „0,00". Przypomnienia mają `amountG` i stąd wzięła się ta pomyłka:
                     // dwa sąsiednie wiersze, dwa różne kształty danych.
                     title: `<b>${escapeHtml(memberName(s.from))}</b> → <b>${escapeHtml(memberName(s.to))}</b>: ${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}${
-                        s.billId && billNameById(s.billId) ? ` za „${escapeHtml(billNameById(s.billId))}"` : ''}${s.confirmed ? ' · potwierdzone' : ' · czeka na potwierdzenie'}`,
+                        settlementForWhat(s)}${s.confirmed ? ' · potwierdzone' : ' · czeka na potwierdzenie'}`,
                 })),
                 // Dziennik aktywności: kto zmienił kwotę, kto co odkliknął, kto dopisał
                 // osobę. Zero sygnału (poziom 3), ale ślad zostaje.
@@ -3647,9 +3629,6 @@
                 btn.onclick = async () => {
                     const value = btn.dataset.mode;
                     if (value === groupSettlementMode()) return;
-                    // Widok idzie za nową umową grupy — także wtedy, gdy przed chwilą
-                    // oglądałem inny tryb. Kto sam zmienia ustawienie, chce je zobaczyć.
-                    settlementViewPinned = false;
                     fireWrite(
                         updateDoc(groupDocRefById(currentGroupId), { settlementMode: value }),
                         'Nie udało się zmienić sposobu rozliczania.',
@@ -4312,6 +4291,16 @@
                 doMnieZRachunku.set(r.billId, (doMnieZRachunku.get(r.billId) || 0) + r.openG);
             });
             const perBillActive = groupSettlementMode() === 'perBill';
+
+            // FILTR „DO ODDANIA" ISTNIEJE TYLKO W TRYBIE RACHUNKOWYM (decyzja właściciela
+            // 2026-08-26). W planie minimalnym wpłaty idą trasami, których żaden rachunek
+            // nie stworzył, więc nie da się uczciwie powiedzieć, czy TEN rachunek został
+            // opłacony — filtr obiecywałby odpowiedź, której nie ma skąd wziąć.
+            // Zdejmujemy go PRZED filtrowaniem, inaczej po zmianie trybu lista raz
+            // narysowałaby się przez filtr, którego już nie ma.
+            const owedBtn = document.querySelector('.bill-filter-btn[data-filter="owed"]');
+            if (owedBtn) owedBtn.classList.toggle('hidden', !perBillActive);
+            if (!perBillActive && currentBillFilter === 'owed') currentBillFilter = 'all';
 
             // Pięć wymiarów, jeden na raz. „Czekają na Ciebie" to dokładnie te rachunki,
             // które `billStatus` oznacza tonem `action` — czyli jedno źródło prawdy dla
@@ -7058,39 +7047,29 @@
                 showToast('Usunięto metodę.');
             });
 
-            // Rozliczenia: przełącznik trybu, „Ureguluj", modal.
-            // Zwijanie zniknęło razem z sekcją: rozliczenia są własnym miejscem w pasku,
-            // a miejsca się nie zwija — wchodzi się do niego albo nie.
-            document.querySelectorAll('.settle-mode-btn').forEach(btn => {
-                btn.onclick = () => {
-                    settlementMode = btn.dataset.mode;
-                    // Ręczne przestawienie ZATRZASKUJE widok do końca wizyty: od tej chwili
-                    // nie wracamy do trybu grupy przy każdym przyjściu nowego rachunku.
-                    settlementViewPinned = true;
-                    renderSettlements();
-                };
-            });
+            // ARKUSZ „ZA CO PŁACISZ" — wybór rachunków pokrywanych jednym przelewem.
+            const pickBillsModal = document.getElementById('pick-bills-modal');
+            document.getElementById('close-pick-bills').onclick = () => pickBillsModal.classList.remove('active');
+            document.getElementById('pick-bills-confirm').onclick = () => {
+                if (!pickBillsState) return;
+                const wybrane = pickBillsState.rachunki.filter((r) => pickBillsState.wybrane.has(r.billId));
+                if (!wybrane.length) return;
+                const sumaG = wybrane.reduce((s, r) => s + r.openG, 0);
+                pickBillsModal.classList.remove('active');
+                openSettleModal(pickBillsState.other, sumaG, pickBillsState.currency, 'send', wybrane.map((r) => r.billId));
+            };
+
             document.getElementById('settlements-list').addEventListener('click', async (e) => {
                 const settleRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
 
                 const nb = e.target.closest('.nudge-btn');
                 if (nb) { openNudgeCompose(nb.dataset.nudgeTo, Number(nb.dataset.amountG), nb.dataset.currency); return; }
 
-                const ob = e.target.closest('.open-owed-btn');
-                if (ob) { openOwedBills(); return; }
+                const pb = e.target.closest('.pick-bills-btn');
+                if (pb) { openPickBills(pb.dataset.other, pb.dataset.currency); return; }
 
                 const b = e.target.closest('.settle-btn');
                 if (b) { openSettleModal(b.dataset.to, Number(b.dataset.amountG), b.dataset.currency, 'send'); return; }
-
-                // ODBIÓR WPŁATY ZA KONKRETNY RACHUNEK (tryb rachunkowy). Osobna ścieżka od
-                // `.receive-btn`, bo tamta hurtem potwierdza WSZYSTKIE niepotwierdzone
-                // wpłaty od tej osoby — a tu odbieram zwrot za jeden rachunek i chcę,
-                // żeby wpłata niosła jego `billId`.
-                const rbb = e.target.closest('.receive-bill-btn');
-                if (rbb) {
-                    openSettleModal(rbb.dataset.from, Number(rbb.dataset.amountG), rbb.dataset.currency, 'receive', rbb.dataset.billId);
-                    return;
-                }
 
                 const rb = e.target.closest('.receive-btn');
                 if (rb) {
@@ -7350,10 +7329,10 @@
                     confirmed: receive, // otrzymana przeze mnie = od razu potwierdzona; wysłana = do potwierdzenia
                 };
                 if (receive) { rec.confirmedBy = currentUser.uid; rec.confirmedAt = serverTimestamp(); }
-                // Pole DOKŁADAMY TYLKO WTEDY, GDY JEST. `billId: null` na każdej wpłacie
-                // udawałoby, że pytanie „za co" zostało zadane i odpowiedź brzmi „za nic",
+                // Pole DOKŁADAMY TYLKO WTEDY, GDY JEST. Pusta tablica na każdej wpłacie
+                // udawałaby, że pytanie „za co" zostało zadane i odpowiedź brzmi „za nic",
                 // a brak pola znaczy coś innego: wpłata powstała poza trybem rachunkowym.
-                if (settleContext.billId) rec.billId = settleContext.billId;
+                if (settleContext.billIds && settleContext.billIds.length) rec.billIds = settleContext.billIds;
                 // Arkusz zamyka się OD RAZU, nie po odpowiedzi serwera. Wpłata jest już
                 // zapisana lokalnie i widać ją w rejestrze; czekanie na potwierdzenie
                 // z sieci trzymało otwarty arkusz w nieskończoność przy słabym zasięgu —

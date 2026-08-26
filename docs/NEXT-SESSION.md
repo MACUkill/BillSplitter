@@ -58,12 +58,12 @@
 ## Jak sprawdzić, że wszystko stoi
 
 ```
-npm test                         # 293 testy jednostkowe
+npm test                         # 298 testów jednostkowych
 npm run emulators                # w osobnym oknie
 npm run test:rules               # 34 testy reguł — WYMAGA CZYSTEGO EMULATORA
 npx vite --port 5199 --strictPort
 BILLIADA_URL=http://localhost:5199/ node tools/audit-offline.mjs   # 13 sprawdzeń
-BILLIADA_URL=http://localhost:5199/ node tools/audit-etap3.mjs     # 34 sprawdzenia
+BILLIADA_URL=http://localhost:5199/ node tools/audit-etap3.mjs     # 41 sprawdzeń
 
 VITE_USE_EMULATOR=true npx vite build
 npx vite preview --port 5197 --strictPort
@@ -83,20 +83,29 @@ kończy się „Could not start emulator hub, port taken".
 
 ## CO ZROBIŁ ETAP 3 (pełny opis: `docs/UI-UX.md` §22)
 
-- **Tryb rozliczania jest ustawieniem GRUPY** (`settlementMode` w dokumencie grupy:
-  `'min' | 'net' | 'perBill'`). **Brak pola = `'min'`**, więc żaden istniejący pokój nie
-  zmienia się sam z siebie. Wybór w ustawieniach pokoju, trzy wiersze z wyjaśnieniem.
-- **Trzeci tryb: „Rachunek po rachunku"** — nie zwija nic, wiersz na rachunek, w kolejności
-  dodawania. Cała matematyka w nowym module `src/perbill.js` (30 testów).
-- **Cudzy tryb wolno obejrzeć, ale bez ani jednego przycisku akcji** — jedna cicha linia
-  „grupa umówiła się inaczej". Tryb grupy świeci limonką na przełączniku.
-- **Wpłata ma opcjonalne `billId`**, przypisanie TYLKO W OBRĘBIE PARY, od najstarszego
-  rachunku. Czego nie da się przypisać, ląduje w bloku „Wpłaty bez przypisania" z linią
-  uzgadniającą.
-- **„Kto już oddał" na ekranie rachunku — w KAŻDYM trybie.** Filtry „Do oddania (N)"
-  i „Ukryte (N)" na liście rachunków.
-- **Niezmiennik pod testem:** saldo na czysto każdej osoby jest identyczne we wszystkich
-  trzech trybach (także na stu losowych pokojach i na kółku długów).
+**DWA TRYBY GLOBALNE, ZERO SEGMENTÓW** (`settlementMode` w dokumencie grupy:
+`'min' | 'perBill'`; brak pola = `'min'`, `'net'` przechodzi na `'perBill'`). Wybór
+mieszka w ustawieniach pokoju i tylko tam — przełącznika na ekranie Rozliczeń NIE MA.
+
+Powód jest w danych: tryb rachunkowy trzyma przelewy przy rachunkach, a plan minimalny
+prowadzi je trasami, których żaden rachunek nie stworzył. To dwa różne sposoby wydawania
+pieniędzy, a nie dwa powiększenia tego samego — więc każdy potrzebuje innych informacji
+na wszystkich trzech ekranach. Pełny wywód: **§22.10**.
+
+| | Najmniej przelewów | Rachunkowy |
+|---|---|---|
+| **Bilans** | plan minimalny, „Ureguluj" do osoby z planu | podsumowanie + przejście do Rozliczeń |
+| **Rozliczenia** | plan minimalny | wiersz na OSOBĘ, „Za co", „Ureguluj" |
+| **Rachunki** | udział poglądowo, bez statusu i filtra | status, filtr „Do oddania (N)", „Ureguluj" w rachunku |
+
+- **Arkusz „Za co płacisz"** — jeden przelew pokrywa kilka rachunków, domyślnie wszystkie
+  zaznaczone, można odznaczyć. Wpłata NIESIE listę (`billIds`), więc gasi dokładnie
+  wybrane; reguła „od najstarszego" zostaje dla wpłat bez tej listy.
+- **Jeden przelew = jedna wpłata** (odwraca wcześniejsze „5 rachunków = 5 wpłat").
+  Odbiorca dostaje jeden wiersz do potwierdzenia, z wypisanymi rachunkami.
+- **„Kto już oddał" na ekranie rachunku — w KAŻDYM trybie.**
+- **Niezmiennik pod testem:** saldo na czysto każdej osoby jest identyczne w obu trybach
+  (także na stu losowych pokojach i na kółku długów).
 
 ### Poprawki po pierwszym obejrzeniu na telefonie (opis: §22.9)
 
@@ -128,8 +137,11 @@ Wszystkie uwagi właściciela dotyczyły jednego: zakładka „Rachunki" niosła
   nienaruszalnego przelewu, wiersze planu jako dokumenty, migracja — wszystko czeka.
   Dopóki tego nie ma, plan minimalny nadal przelicza się przy każdym rachunku i przy
   każdej cudzej wpłacie. To jest znane i zaakceptowane.
-- **Reguły „żaden tryb nie dowozi tego, co robi sąsiedni".** W trybie rachunkowym NIE MA
-  podsumowań po osobie. Była łamana trzy razy w rozmowie z właścicielem — patrz §22.1.
+- **Przełącznika trybu na ekranie Rozliczeń.** Był, wypadł tego samego dnia — powód
+  w §22.10 i nie jest to powód estetyczny: dwa tryby potrzebują innych informacji na
+  każdym z trzech ekranów, więc jeden ekran nie obsłuży obu.
+- **Rozpisywania rachunek po rachunku na ekranie Rozliczeń.** Wiersz jest NA OSOBIE,
+  bo przelew robi się do człowieka. Rachunki są pod „Za co" i w arkuszu wyboru.
 - **Osobnego odświeżania na żądanie** (przycisk, gest pociągnięcia). Właściciel dopytuje
   kolegę, co ten miał na myśli. Pasek „Nowa wersja gotowa" to co innego — on już jest.
 - **`firebase/storage` jako importu statycznego.** Dziesięć miejsc wywołań za 31 kB,

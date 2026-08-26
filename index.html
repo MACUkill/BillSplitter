@@ -418,29 +418,16 @@ the verdict, and DESIGN.md
                 <!-- Nagłówek i przełącznik trybu STOJĄ W DWÓCH RZĘDACH na telefonie.
                      Obok siebie tytuł zakładki i „Najmniej przelewów" nie mieszczą się
                      poniżej 400 px i zaczynają się zawijać jedno na drugie. -->
+                <!-- BEZ PRZEŁĄCZNIKA TRYBU (usunięty 2026-08-26, decyzja właściciela).
+                     Przez pół dnia stały tu trzy segmenty, którymi dało się obejrzeć cudzy
+                     sposób rozliczania bez przycisków akcji. Wypadły, bo tryby nie są
+                     powiększeniami tych samych pieniędzy: „Najmniej przelewów" prowadzi
+                     przelewy trasami, których żaden rachunek nie stworzył, a tryb
+                     rachunkowy trzyma je przy rachunkach. To dwa różne sposoby wydawania
+                     pieniędzy, więc ekran pokazuje TEN, na który umówiła się grupa —
+                     a wybiera się go raz, w ustawieniach pokoju. -->
                 <div class="mb-3">
                     <h3 class="view-title">Rozliczenia</h3>
-                    <!-- TRZY TRYBY TO JEDNA DRABINA ZWIJANIA tego samego długu:
-                         „Najmniej przelewów" zwija MIĘDZY OSOBAMI (optymalizuje trasę),
-                         „Kto komu" zwija NA OSOBIE (sumuje należności wobec jednej),
-                         „Rachunek po rachunku" NIE ZWIJA NIC.
-
-                         Segmenty jadą w poziomie, a nie zawijają się do dwóch rzędów:
-                         trzy etykiety nie mieszczą się w jednym rzędzie poniżej 400 px,
-                         a zawinięta pigułka przestaje wyglądać na jeden przełącznik.
-                         Ten sam wzorzec co filtry rachunków. -->
-                    <div class="seg-scroll mt-2">
-                        <div class="seg">
-                            <button data-mode="min" class="settle-mode-btn seg-btn" aria-pressed="true">Najmniej przelewów</button>
-                            <button data-mode="net" class="settle-mode-btn seg-btn" aria-pressed="false">Kto komu</button>
-                            <button data-mode="perBill" class="settle-mode-btn seg-btn" aria-pressed="false">Rachunek po rachunku</button>
-                        </div>
-                    </div>
-                    <!-- Zdanie o trybie grupy. Tryb, na który grupa się umówiła, świeci
-                         limonką marki i niesie „Tak rozlicza się ta grupa"; pozostałe dwa
-                         wolno otworzyć i obejrzeć, ale bez przycisków akcji — z jedną
-                         cichą linią, że grupa umówiła się inaczej. -->
-                    <p id="settle-mode-note" class="text-sm text-ink-2 mt-2"></p>
                 </div>
                 <div id="settlements-content">
                     <div id="settlements-list" class="space-y-2"></div>
@@ -957,6 +944,32 @@ the verdict, and DESIGN.md
                     <input type="text" class="person-search-input field min-h-tap" placeholder="Szukaj" autocomplete="off" spellcheck="false" aria-label="Szukaj">
                 </div>
                 <div id="choice-options" class="space-y-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ZA CO PŁACISZ — arkusz wyboru rachunków przy regulowaniu w trybie rachunkowym.
+         Jeden przelew w banku bywa zapłatą za kilka rachunków naraz, więc wpłata musi
+         wiedzieć, KTÓRE rachunki pokrywa. Bez tego trzeba by ją rozdzielać regułą
+         „od najstarszego" i przy odznaczeniu środkowego rachunku gasiłaby nie te,
+         które człowiek wybrał — a odbiorca nie miałby skąd wiedzieć, za co dostał
+         pieniądze. Domyślnie zaznaczone są wszystkie (decyzja właściciela).
+         Treść wstawia `openPickBills`. -->
+    <div id="pick-bills-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Za co płacisz</h3>
+                    <button id="close-pick-bills" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+            </div>
+            <div class="sheet-body">
+                <p id="pick-bills-lead" class="text-sm text-ink-2 mb-3"></p>
+                <div id="pick-bills-list" class="space-y-1"></div>
+            </div>
+            <div class="sheet-foot">
+                <button id="pick-bills-confirm" class="btn btn-danger w-full">Ureguluj</button>
             </div>
         </div>
     </div>

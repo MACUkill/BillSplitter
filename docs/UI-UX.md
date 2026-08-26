@@ -1930,7 +1930,12 @@ przełącznik na ekranie rozliczeń był ustawieniem widoku jednej osoby (zwykł
 w `main.js`, ginąca przy przeładowaniu), a plan minimalny był jedyną odpowiedzią na
 pytanie „co mam zrobić".
 
-### 22.1 Trzy tryby to JEDNA DRABINA ZWIJANIA
+> ⚠️ **§22.1–22.3 opisują pierwszą wersję etapu 3 — TRZY tryby z przełącznikiem widoku.**
+> Model został uproszczony do DWÓCH tego samego dnia, po obejrzeniu na telefonie:
+> patrz **§22.10**, które jest wersją obowiązującą. Zostawione, bo tłumaczy, skąd wzięła
+> się reguła zwijania i dlaczego jeden z trybów wypadł.
+
+### 22.1 Trzy tryby to JEDNA DRABINA ZWIJANIA (wersja pierwsza)
 
 | Tryb | Co zwija | Gdzie liczy |
 |---|---|---|
@@ -2066,7 +2071,7 @@ npx vite --port 5199 --strictPort
 BILLIADA_URL=http://localhost:5199/ node tools/audit-etap3.mjs
 ```
 
-34 sprawdzenia. Uwaga na dwie pułapki pisania takich przebiegów, obie zapisane w kodzie:
+41 sprawdzeń. Uwaga na dwie pułapki pisania takich przebiegów, obie zapisane w kodzie:
 ekran rachunku pokazuje się ZANIM `renderBillScreen` dopnie nasłuchy (stąd `klikAzOtworzy`),
 a pole kwoty zapisuje się przy utracie ogniska i potrafi trafić w moment przerysowania
 (stąd `wpiszKwote` z powtórzeniem).
@@ -2122,10 +2127,85 @@ pierwszym wyraźnym ruchu (próg 8 px). Bez tego lista albo nie chce się przewi
 wiersze uciekają w bok przy każdym przewinięciu — ten sam palec, ten sam ruch, inna
 intencja.
 
-### 22.10 Stan testów po etapie
 
-**293 testy jednostkowe** (30 nowych w `src/perbill.test.js`), 34 testy reguł, 13 sprawdzeń
-przebiegu offline, 9 sprawdzeń service workera, 34 sprawdzenia przebiegu etapu 3. Wszystko
+### 22.10 DWA TRYBY, ZERO SEGMENTÓW — model obowiązujący (2026-08-26, wieczór)
+
+Właściciel obejrzał trzy tryby na telefonie i postawił pytanie, które okazało się
+rozstrzygające: **czy aplikacja jest w stanie obsłużyć dowolny tryb rozliczeń — czy
+raczej trzeba wybrać jeden i trzymać się go?**
+
+Odpowiedź siedzi w danych, nie w wygodzie interfejsu:
+
+- **„Kto komu" i „Rachunek po rachunku" to ta sama trasa pieniędzy, tylko w innym
+  powiększeniu.** Każdy przelew idzie od dłużnika do płatnika rachunku, na którym obaj
+  byli. Wpłatę zrobioną w jednym da się więc opisać w drugim — i już się dało, bez ani
+  jednej linijki dodatkowego kodu.
+- **„Najmniej przelewów" wymyśla trasy, których żaden rachunek nie stworzył.** Kuba płaci
+  Oli za dług wobec Marka. Nie da się tego oznaczyć na żadnym rachunku nie dlatego, że
+  brakuje interfejsu, tylko dlatego, że pieniądze poszły tam, gdzie nie wskazuje żaden
+  rachunek.
+
+Asymetria jest JEDNOSTRONNA: zapłata za konkretny rachunek w pokoju grającym planem
+minimalnym niczego nie psuje — wychodzi tylko więcej przelewów, niż musiało. Odwrotnie
+już nie.
+
+Stąd model obowiązujący:
+
+| | Najmniej przelewów (`min`) | Rachunkowy (`perBill`) |
+|---|---|---|
+| **Bilans** | plan minimalny, „Ureguluj" do osoby z planu | podsumowanie: ile, za ile rachunków, ilu osobom + przejście do Rozliczeń |
+| **Rozliczenia** | plan minimalny | wiersz na OSOBĘ, suma jej rachunków, rozwijane „Za co", „Ureguluj" |
+| **Rachunki** | udział poglądowo, bez statusu i bez filtra „Do oddania" | status Opłacone/Nieopłacone, filtr „Do oddania (N)", „Ureguluj" w rachunku |
+
+**PRZEŁĄCZNIK TRYBU ZNIKA Z EKRANU ROZLICZEŃ.** Tryby nie są powiększeniami tych samych
+pieniędzy, tylko dwoma sposobami ich wydawania — a każdy z nich potrzebuje INNYCH
+informacji na wszystkich trzech ekranach. Wybór jest jeden, należy do grupy i mieszka
+w ustawieniach pokoju.
+
+Wartość `'net'` w dokumencie grupy **przechodzi na `'perBill'`**. Trzeci tryb istniał
+przez pół dnia i któryś pokój mógł zdążyć go zapisać; to, co robił, jest dziś WIDOKIEM
+trybu rachunkowego na ekranie Rozliczeń, więc przepisanie zachowuje intencję, a nie
+tylko unika śmiecia w polu.
+
+#### Rozliczenia w trybie rachunkowym: wiersz na osobę
+
+Rozpisanie rachunek po rachunku dublowało zakładkę „Rachunki", a przy jednym przelewie
+za trzy kolacje kazało odklikiwać trzy wiersze. Przelew robi się DO CZŁOWIEKA, nie do
+rachunku, więc ekran, na którym się płaci, jest ułożony po ludziach.
+
+Rachunki nie znikają — są pod „Za co" przy każdym wierszu i w arkuszu wyboru przy
+regulowaniu. To jedyne miejsce, w którym tryb rachunkowy sumuje po osobie, i jest to
+świadome odstępstwo od reguły z §22.1.
+
+Przy okazji rozwiązuje się usterka przypomnień: dzwonek stał wcześniej przy wierszu
+rachunku i wysyłał przypomnienie o kwocie JEDNEGO rachunku („przypominam o 45,00", choć
+wisi 120,00), a drugie stuknięcie wpadało w blokadę antyspamową. Wiersz na osobę liczy
+sumę z definicji.
+
+#### Arkusz „Za co płacisz" i pole `billIds`
+
+Jeden przelew w banku bywa zapłatą za kilka rachunków, więc wpłata **niesie listę
+rachunków**, które pokrywa (`billIds`), a nie jest rozdzielana regułą „od najstarszego".
+Domyślnie zaznaczone są wszystkie; odznaczenie przelicza sumę na przycisku.
+
+Reguła „od najstarszego" zostaje dla wpłat, które takiej listy nie mają — starych i tych
+z planu minimalnego — ale przy jawnym wyborze byłaby wprost szkodliwa: przy odznaczeniu
+środkowego rachunku zgasiłaby nie te, które człowiek wybrał, a odbiorca nie miałby skąd
+wiedzieć, za co dostał pieniądze.
+
+Nadwyżka ponad wybrane rachunki schodzi na resztę tej samej pary, zanim uzna się ją za
+nieprzypisaną: przelew większy niż suma zaznaczonych to najczęściej dopłata do
+pozostałych, a nie pomyłka.
+
+**JEDEN PRZELEW = JEDNA WPŁATA** (decyzja właściciela, odwraca wcześniejsze „5 rachunków
+= 5 wpłat"). Odbiorca dostaje jeden wiersz do potwierdzenia, a lista rachunków stoi przy
+nim wypisana — w skrzynce, na Bilansie i w rejestrze. Stare pole `billId` (jeden napis)
+jest nadal czytane, dla wpłat zapisanych, zanim wybór wielu rachunków istniał.
+
+### 22.11 Stan testów po etapie
+
+**298 testów jednostkowych** (35 w `src/perbill.test.js`), 34 testy reguł, 13 sprawdzeń
+przebiegu offline, 9 sprawdzeń service workera, 41 sprawdzeń przebiegu etapu 3. Wszystko
 zielone. Reguły Firestore **nie wymagały zmiany**: `settlementMode` na dokumencie grupy
 i `billId` na wpłacie mieszczą się w istniejących regułach, a pola podsumowań nadal są
 zamrożone.

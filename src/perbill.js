@@ -101,12 +101,22 @@ export function billLedger(bills, settlements) {
     let leftG = amountG;
 
     const list = byPair.get(pairKey(s.from, s.to, currency)) || [];
-    // Wskazany rachunek idzie PIERWSZY, reszta pary po nim od najstarszego. Nadwyżka
-    // ponad wskazany rachunek nie przepada i nie robi się z niej wpłata bez przypisania,
-    // dopóki w tej samej parze jest co gasić: przelew „za kolację" na 100 zł przy udziale
-    // 60 zł to najczęściej dopłata do wcześniejszego rachunku tej samej osoby.
-    const targets = s.billId
-      ? [...list.filter((r) => r.billId === s.billId), ...list.filter((r) => r.billId !== s.billId)]
+    // WSKAZANE RACHUNKI GASZĄ SIĘ PIERWSZE I TYLKO ONE, gdy człowiek wybrał je wprost.
+    //
+    // `billIds` powstaje w arkuszu „Za co płacisz": jeden przelew w banku bywa zapłatą
+    // za kilka rachunków i wtedy wiadomo dokładnie, za które. Reguła „od najstarszego"
+    // byłaby tu wprost szkodliwa — przy odznaczeniu środkowego rachunku zgasiłaby nie te,
+    // które człowiek wybrał, a odbiorca nie miałby skąd wiedzieć, za co dostał pieniądze.
+    //
+    // Reszta pary WCHODZI DALEJ jako zapas na nadwyżkę: przelew większy niż suma
+    // wybranych rachunków to najczęściej dopłata do pozostałych, a nie pomyłka.
+    // `billId` (jeden napis) obsługujemy dla zgodności ze wpłatami zapisanymi, zanim
+    // pojawił się wybór wielu rachunków.
+    const wskazane = Array.isArray(s.billIds) && s.billIds.length
+      ? s.billIds
+      : (s.billId ? [s.billId] : []);
+    const targets = wskazane.length
+      ? [...list.filter((r) => wskazane.includes(r.billId)), ...list.filter((r) => !wskazane.includes(r.billId))]
       : list;
 
     targets.forEach((r) => {

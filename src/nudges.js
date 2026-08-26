@@ -50,13 +50,13 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
     //
     // Ktoś zgłosił wpłatę DO MNIE i czeka na potwierdzenie — blokuje domknięcie długu.
     if (s.to === myId && s.from !== myId && !s.confirmed) {
-      items.push({ level: 1, kind: 'confirm-payment', id: s.id, from: s.from, amountG: s.amountG, currency: s.currency, billId: s.billId || null, at: s.createdAtMs });
+      items.push({ level: 1, kind: 'confirm-payment', id: s.id, from: s.from, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.createdAtMs });
       return;
     }
     // Odbiorca potwierdził MOJĄ wpłatę — zamyka pętlę. Bez tego użytkownik nie wie,
     // że skończył. Znika po obejrzeniu (lista `seenConfirmations`).
     if (s.from === myId && s.confirmed && s.confirmedBy !== myUid && !seenConfirmations.includes(s.id)) {
-      items.push({ level: 1, kind: 'payment-confirmed', id: s.id, from: s.to, amountG: s.amountG, currency: s.currency, billId: s.billId || null, at: s.confirmedAtMs });
+      items.push({ level: 1, kind: 'payment-confirmed', id: s.id, from: s.to, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.confirmedAtMs });
     }
   });
 
