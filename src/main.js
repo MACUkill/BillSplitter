@@ -1469,6 +1469,13 @@
                 updateNudgeBadge();
                 const modal = document.getElementById('nudges-modal');
                 if (modal && modal.classList.contains('active')) renderNudges();
+                // TE SAME SPRAWY STOJĄ W DWÓCH MIEJSCACH, więc muszą się odświeżać w obu
+                // (zgłoszenie właściciela 2026-08-26: „na Bilansie nie działa Oznacz
+                // przeczytane"). Zapis szedł poprawnie i odznaka na dzwonku gasła, ale ten
+                // nasłuch przerysowywał WYŁĄCZNIE skrzynkę spod dzwonka — więc wiersz na
+                // Bilansie zostawał na ekranie do następnej zmiany rachunku albo wpłaty.
+                // Z zewnątrz wygląda to dokładnie jak przycisk, który nic nie robi.
+                renderBalanceWaiting();
             });
 
             // Dziennik aktywności. Limit 200 wpisów: to jest ślad ostatnich dni pokoju,
@@ -7936,7 +7943,12 @@
                     }
                     const r = e.target.closest('.nudge-read-btn');
                     if (r) {
-                        await updateDoc(nudgeRef(r.dataset.id), { readBy: arrayUnion(currentUser.uid) });
+                        // `fireWrite`, nie `await`: przy braku sieci obietnica z `updateDoc`
+                        // nie rozwiązuje się nigdy, a kopia w pamięci wie swoje od razu.
+                        fireWrite(
+                            updateDoc(nudgeRef(r.dataset.id), { readBy: arrayUnion(currentUser.uid) }),
+                            'Nie udało się oznaczyć jako przeczytane.',
+                        );
                         return;
                     }
                     // Potwierdzenie cudzej wpłaty prosto z wiersza — bez wędrówki na
