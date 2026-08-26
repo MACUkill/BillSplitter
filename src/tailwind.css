@@ -667,7 +667,13 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
      więc schowany pod kartą przycisk „Ukryj" prześwitywał przez nią bez żadnego gestu —
      i to wyłącznie na kafelkach z zadaniem, przez co usterka wyglądała na zależną
      od statusu rachunku. */
-  /* SIŁA BARWY JEST INNA W KAŻDYM MOTYWIE — i to nie jest ozdoba, tylko warunek, żeby
+  /* JEDNA BARWA NA JEDNO ZNACZENIE, W KAŻDYM MIEJSCU APLIKACJI.
+     Klasa nazywa się `tile-action`, a nie `bill-tile-action`, bo nosi ją teraz i kafelek
+     rachunku na liście, i blok „czeka na Twój ruch" na Bilansie. Ta sama rzecz („to czeka
+     na Ciebie") musi wyglądać tak samo w obu miejscach — inaczej człowiek uczy się dwóch
+     kolorów na jedno znaczenie i przestaje ufać obu.
+
+     SIŁA BARWY JEST INNA W KAŻDYM MOTYWIE — i to nie jest ozdoba, tylko warunek, żeby
      kafelek dało się w ogóle zobaczyć.
 
      Sześć procent błękitu na BIAŁEJ karcie dawało `rgb(242,244,254)`, a podłoże aplikacji
@@ -679,15 +685,15 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
 
      W ciemnym motywie sześć procent działa: `rgb(30,33,45)` przy podłożu `rgb(12,13,17)`
      jest wyraźnie jaśniejsze, więc tam zostaje bez zmian. */
-  .bill-tile-action {
+  .tile-action {
     background-color: rgb(var(--surface));
     background-image: linear-gradient(rgb(var(--info) / 0.12), rgb(var(--info) / 0.12));
   }
 
   /* Oba selektory ciemnego motywu, tak samo jak przy `.card` i `.card-mine` — motyw
      bywa ustawiony atrybutem albo klasą i pominięcie jednego zostawia połowę przypadków. */
-  :root[data-theme='dark'] .bill-tile-action,
-  :root.dark .bill-tile-action {
+  :root[data-theme='dark'] .tile-action,
+  :root.dark .tile-action {
     background-image: linear-gradient(rgb(var(--info) / 0.06), rgb(var(--info) / 0.06));
   }
 

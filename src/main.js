@@ -3752,6 +3752,8 @@
                 // Sama informacja, bez drogi donikąd: na Rozliczeniach nie ma czego otwierać,
                 // a przycisk „Pokaż rachunki" byłby czwartym przejściem do zakładki, która
                 // stoi w pasku na dole ekranu.
+                //
+                // I bez barwy: nic tu nie czeka na ruch tej osoby, więc `block-quiet`.
                 return `<div class="block-quiet p-4">${otwarteHtml}</div>`;
             }
 
@@ -3760,7 +3762,11 @@
             // bo inaczej człowiek ląduje wśród dwudziestu i sam szuka tych dwóch.
             const jedyny = zadania.length === 1 ? zadania[0].id : '';
             const etykieta = zadania.length === 1 ? 'Otwórz rachunek' : 'Pokaż rachunki';
-            return `<div class="block-quiet p-4">
+            // BŁĘKIT STANU, TEN SAM CO NA KAFELKU RACHUNKU (`tile-action`).
+            // Blok mówi „to czeka na Ciebie" — czyli dokładnie to, co kafelek na liście —
+            // więc musi mieć ten sam kolor. Szary `block-quiet` znaczy w tym systemie
+            // „informacja, nic do zrobienia" i na tym bloku po prostu kłamał.
+            return `<div class="card tile-action p-4">
                 ${otwarteHtml}
                 ${zadaniaHtml}
                 <button class="bills-aside-btn btn btn-dark w-full mt-3" data-bill="${escapeHtml(jedyny)}" data-tasks="${zadania.length}">${etykieta}</button>
@@ -5192,7 +5198,7 @@
                 // kafelkach z tonem `action` („Wskaż, kto płacił", „Stuknij, co Twoje",
                 // „Zamknij rachunek") i stąd wrażenie, że usterka zależy od statusu.
                 // Klasa nakłada barwę WARSTWĄ na nieprzezroczystym tle — patrz src/tailwind.css.
-                if (status.tone === 'action') billEl.classList.add('bill-tile-action');
+                if (status.tone === 'action') billEl.classList.add('tile-action');
                 // PEŁNA NAZWA RACHUNKU, BEZ UCINANIA (zgłoszenie właściciela 2026-08-26:
                 // „Pizzeria u Wujka Stacha" schodziła do „Pizzeria u W…"). Nazwa jest
                 // tożsamością wiersza — po niej odróżnia się dwie kolacje z tego samego
