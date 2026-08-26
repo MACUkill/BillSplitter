@@ -667,8 +667,27 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
      więc schowany pod kartą przycisk „Ukryj" prześwitywał przez nią bez żadnego gestu —
      i to wyłącznie na kafelkach z zadaniem, przez co usterka wyglądała na zależną
      od statusu rachunku. */
+  /* SIŁA BARWY JEST INNA W KAŻDYM MOTYWIE — i to nie jest ozdoba, tylko warunek, żeby
+     kafelek dało się w ogóle zobaczyć.
+
+     Sześć procent błękitu na BIAŁEJ karcie dawało `rgb(242,244,254)`, a podłoże aplikacji
+     w jasnym motywie to `rgb(245,246,248)`. Kafelek z zadaniem miał więc jasność podłoża:
+     zlewał się ze stroną, podczas gdy wszystkie inne karty (czysta biel) odcinały się od
+     niej wyraźnie. Ton, który miał ściągać oko, ściągał je najsłabiej ze wszystkich.
+     Ta sama pułapka co przy `receipt-line-mine`: jasna barwa zmieszana z jasnym tłem gubi
+     się, a z ciemnym — gubi nasycenie. Stąd dwie wartości, nie jedna.
+
+     W ciemnym motywie sześć procent działa: `rgb(30,33,45)` przy podłożu `rgb(12,13,17)`
+     jest wyraźnie jaśniejsze, więc tam zostaje bez zmian. */
   .bill-tile-action {
     background-color: rgb(var(--surface));
+    background-image: linear-gradient(rgb(var(--info) / 0.12), rgb(var(--info) / 0.12));
+  }
+
+  /* Oba selektory ciemnego motywu, tak samo jak przy `.card` i `.card-mine` — motyw
+     bywa ustawiony atrybutem albo klasą i pominięcie jednego zostawia połowę przypadków. */
+  :root[data-theme='dark'] .bill-tile-action,
+  :root.dark .bill-tile-action {
     background-image: linear-gradient(rgb(var(--info) / 0.06), rgb(var(--info) / 0.06));
   }
 
@@ -1240,12 +1259,20 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
   /* FILTRY PIGUŁKAMI — zawsze widoczne, przewijalne w poziomie, gdy nie mieszczą
      się w rzędzie. Aktywny filtr niesie wypełnienie, nie samą ramkę: na telefonie
      trzymanym pod kątem cienka ramka znika. */
+  /* PASEK, PO KTÓRYM WIDAĆ, ŻE JEST CO PRZEWIJAĆ.
+     Suwak jest schowany (na telefonie i tak go nie ma), więc nic nie mówiło, że za prawą
+     krawędzią stoją kolejne pigułki — rząd wyglądał na kompletny i część filtrów była
+     nie do znalezienia. Wygaszona krawędź to ten sam znak, co ucięty kafelek w karuzeli:
+     treść jest przycięta, więc coś za nią jest.
+     Maska nie robi nic, gdy pigułki mieszczą się w całości — wygasza wtedy puste tło. */
   .filter-pills {
     display: flex;
     gap: 0.375rem;
     overflow-x: auto;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent 100%);
+    mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent 100%);
   }
   .filter-pills::-webkit-scrollbar { display: none; }
 
