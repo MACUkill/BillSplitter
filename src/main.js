@@ -3073,7 +3073,7 @@
             // Rachunki w uzupełnianiu nie wchodzą do księgi, więc bez tego warunku pokój
             // pełen niezamkniętych rachunków ogłaszałby, że nikt nikomu nic nie jest winien
             // — czyli aplikacja mówiłaby nieprawdę o cudzych pieniądzach.
-            const wUzupelnianiuHtml = billsAsideHtml();
+            const wUzupelnianiuHtml = billsAsideHtml({ zZadaniami: false });
             if (currencies.length === 0) {
                 container.innerHTML = wUzupelnianiuHtml
                     ? `${wUzupelnianiuHtml}<div class="mt-3">${nothing}</div>`
@@ -3735,14 +3735,27 @@
         // się wtedy jak wyśrodkowany tekst, a nie jak coś do naciśnięcia (ta sama pułapka
         // co przy `control-fix-total`). Żadnej czerwieni ani zieleni: te dwa kolory znaczą
         // w tej aplikacji wyłącznie kierunek pieniędzy.
-        const billsAsideHtml = () => {
+        // ZADANIA MÓWIMY WYŁĄCZNIE NA BILANSIE (decyzja właściciela 2026-08-26).
+        //
+        // Rozliczenia mają nieść tylko to, co dotyczy przelewów i potwierdzeń. Kwota, która
+        // jeszcze nie weszła do salda, ZOSTAJE tam mimo to — i to nie jest wyjątek od tej
+        // reguły, tylko jej konsekwencja: bez tego zdania pokój pełen niezamkniętych
+        // rachunków ogłaszałby „Wszystko rozliczone. Nikt nikomu nic nie jest winien",
+        // czyli aplikacja mówiłaby nieprawdę o cudzych pieniądzach. Wołanie „stuknij swoje
+        // pozycje" i przejście na listę rachunków odpadają — od tego jest Bilans.
+        const billsAsideHtml = ({ zZadaniami = true } = {}) => {
             const otwarteHtml = fillingBillsHtml();
-            const zadania = currentInbox().filter((x) => x.level === 2);
+            const zadania = zZadaniami ? currentInbox().filter((x) => x.level === 2) : [];
             if (!otwarteHtml && !zadania.length) return '';
 
-            const zadaniaHtml = zadania.length
-                ? `<p class="text-sm text-ink-2 ${otwarteHtml ? 'mt-2' : ''}"><b class="text-ink">${zadania.length} ${plural(zadania.length, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')} na Twój ruch.</b></p>`
-                : '';
+            if (!zadania.length) {
+                // Sama informacja, bez drogi donikąd: na Rozliczeniach nie ma czego otwierać,
+                // a przycisk „Pokaż rachunki" byłby czwartym przejściem do zakładki, która
+                // stoi w pasku na dole ekranu.
+                return `<div class="block-quiet p-4">${otwarteHtml}</div>`;
+            }
+
+            const zadaniaHtml = `<p class="text-sm text-ink-2 ${otwarteHtml ? 'mt-2' : ''}"><b class="text-ink">${zadania.length} ${plural(zadania.length, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')} na Twój ruch.</b></p>`;
             // Jeden rachunek — wchodzimy wprost w niego. Kilka — na listę z nałożonym filtrem,
             // bo inaczej człowiek ląduje wśród dwudziestu i sam szuka tych dwóch.
             const jedyny = zadania.length === 1 ? zadania[0].id : '';
