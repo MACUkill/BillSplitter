@@ -1838,3 +1838,85 @@ na gałęzi bazowej.
 
 Kolejność bezpieczna: **testy reguł najpierw, przebiegi przeglądarkowe potem** — albo
 restart emulatorów pomiędzy. Po restarcie 34 testy reguł przechodzą komplet.
+
+## 21. ETAP 2 — POWŁOKA Z PAMIĘCI I ŚCIEŻKA AKTUALIZACJI (2026-08-26)
+
+Partia świadomie WĘŻSZA niż plan: osobne odświeżanie na żądanie (przycisk, gest
+pociągnięcia) **nie wchodzi**, dopóki właściciel nie ustali z kolegą, co ten miał na myśli,
+mówiąc „nie da się odświeżać tej apki" — patrz pamięć projektu.
+
+### 21.1 Powłoka idzie z pamięci natychmiast
+
+Nawigacja dawała sieci **trzy sekundy**, zanim pokazała kopię z pamięci. Przy „net jest,
+ale nie działa" to były trzy sekundy pustego ekranu, zanim przeglądarka dostała choćby
+HTML — czyli zgłoszony „ciemny ekran".
+
+Czekanie nie miało czego kupić: powłoka to jeden plik, identyczny dla każdego pokoju,
+a dane idą z Firestore osobnym kanałem na żywo. Zmierzone na buildzie produkcyjnym przy
+całkowicie odciętym serwerze: **18–20 ms**.
+
+### 21.2 Cena tej zmiany i jej spłata
+
+Po wdrożeniu człowiek pracuje na poprzedniej wersji aż do odświeżenia. Bez sygnału
+zamienilibyśmy trzy sekundy czekania na **cichą starą wersję** — problem gorszy, bo
+niewidoczny. Stąd pasek „Nowa wersja aplikacji jest gotowa" z przyciskiem.
+
+`skipWaiting()` **wypada** z instalacji i to nie jest przeoczenie. Nowy worker wchodził
+dotąd natychmiast, w środku życia otwartej strony; przy pamięci pierwszej znaczyłoby to,
+że nowy worker podaje nowe pliki stronie działającej na starym kodzie. Nazwy zasobów niosą
+skrót zawartości, więc kawałek doładowywany leniwie (`heic2any`) może w nowym wydaniu nie
+istnieć — i funkcja przestaje działać w połowie sesji, bez słowa.
+
+### 21.3 Pieczęć wydania — bez niej cała ścieżka jest martwa
+
+**Przeglądarka rozpoznaje nowego service workera WYŁĄCZNIE po zmianie bajtów `sw.js`.**
+Vite kopiuje ten plik z `public/` bez zmian, więc wdrożenie nowego kodu aplikacji przy
+nietkniętym `sw.js` nie wywołuje żadnego `updatefound`. Pasek nigdy by się nie pokazał.
+
+Wtyczka `billiada-sw-stamp` w `vite.config.js` dopisuje skrót zbudowanego `index.html` —
+ten niesie nazwy zasobów ze skrótami zawartości, więc pieczęć zmienia się dokładnie wtedy,
+gdy zmienia się aplikacja, i ani razu więcej. Znalezione przy pisaniu testu tej ścieżki,
+nie po zgłoszeniu.
+
+### 21.4 Waga paczki — czego NIE da się zrobić
+
+Zmierzone rozmiary: **firestore 538 kB, auth 114 kB, kod aplikacji 171 kB**, storage 31 kB,
+messaging 25 kB, qrcode 21 kB, functions 8 kB.
+
+Firestore to sześćdziesiąt procent paczki i **jest potrzebny do pierwszego rysowania**, bo
+bez niego nie ma danych. Cel „poniżej 250 kB do pierwszego malowania" z planu etapu 2 jest
+więc **nieosiągalny** bez wymiany SDK na wywołania REST — a to przebudowa, nie optymalizacja.
+Zapisane wprost, żeby nikt nie ścigał tej liczby.
+
+Co zrobione zamiast tego:
+
+- **Podział na paczki dostawcy.** Nie po to, żeby było lżej, tylko żeby aktualizacja była
+  tania: `vendor-firestore` i `vendor-auth` mają swoje skróty zawartości, więc wdrożenie
+  samego kodu aplikacji każe pobrać **206 kB zamiast 892 kB**. Sprawdzone — przy zmianie
+  napisu w `main.js` skróty obu paczek dostawcy nie drgnęły.
+- **Leniwe `qrcode-generator` i `firebase/messaging`** (46 kB): kod QR dogrywa się przy
+  rozwinięciu, powiadomienia po rejestracji service workera, która i tak czeka na `load`.
+- **`firebase/storage` ZOSTAJE statyczny, świadomie.** Dziesięć miejsc wywołań, w tym jedno
+  poza kontekstem asynchronicznym, a zysk to 31 kB. Nie warto ruszać ścieżek zdjęć, których
+  nie da się w pełni przetestować bez klucza do modelu AI.
+
+### 21.5 Nowy przebieg audytowy: `tools/audit-sw.mjs`
+
+Service worker rejestruje się **wyłącznie w buildzie produkcyjnym**, więc `audit-offline.mjs`
+(chodzi po serwerze deweloperskim) nie dotyka go w ogóle.
+
+```
+npm run emulators
+VITE_USE_EMULATOR=true npx vite build
+npx vite preview --port 5197 --strictPort
+BILLIADA_URL=http://localhost:5197/ node tools/audit-sw.mjs
+```
+
+Build MUSI iść na emulatory, żeby test nie dotknął żywych danych. Dziewięć sprawdzeń:
+instalacja, powłoka przy odciętym serwerze, pojawienie się paska po podmianie pieczęci,
+przejęcie sterów po stuknięciu.
+
+### 21.6 Stan testów po etapie
+
+263 testy jednostkowe, 34 testy reguł, 13 sprawdzeń przebiegu offline, 9 sprawdzeń
+przebiegu service workera. Wszystko zielone.

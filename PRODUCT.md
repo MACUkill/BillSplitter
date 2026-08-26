@@ -67,6 +67,12 @@ Wspierające, nieflagowe: brak kont (link do pokoju = dostęp) i uczciwość co 
   podręcznej**, nie do sieci: zmierzone 136 ms przy milczącym backendzie
   (`tools/audit-offline.mjs`).
 
+  **Powłoka aplikacji idzie z pamięci natychmiast (2026-08-26).** Zmierzone 18 ms przy
+  całkowicie odciętym serwerze. Ceną jest to, że po wdrożeniu człowiek pracuje na
+  poprzedniej wersji aż do odświeżenia — dlatego nowe wydanie zgłasza się paskiem
+  „Nowa wersja aplikacji jest gotowa", a sterowanie przejmuje dopiero na stuknięcie.
+  Bez tego paska zamienilibyśmy czekanie na cichą starą wersję.
+
   **Pokój wolno zapomnieć wyłącznie na słowo serwera.** `forgetRoom` kasuje wpis
   z `localStorage`, czyli jedyny ślad po pokoju na urządzeniu — a odczyt Firestore potrafi
   rozwiązać się z pamięci, gdy SDK wie, że jest offline. Bez tego warunku aplikacja

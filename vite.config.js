@@ -42,6 +42,31 @@ export default defineConfig({
     // `:has()`, na którym stoi chowanie paska przy otwartym arkuszu i odsunięcie treści
     // spod paska offline. Starszy iPhone i tak nie dostałby poprawnego układu, więc
     // udawanie, że go obsługujemy, byłoby gorsze niż jasna granica.
+    // PODZIAŁ NA PACZKI — NIE PO TO, ŻEBY BYŁO LŻEJ, TYLKO ŻEBY AKTUALIZACJA BYŁA TANIA.
+    //
+    // Zmierzone rozmiary (2026-08-26): firestore 538 kB, auth 114 kB, kod aplikacji 171 kB.
+    // Firestore to sześćdziesiąt procent paczki i JEST POTRZEBNY do pierwszego rysowania,
+    // bo bez niego nie ma danych — żadne leniwe ładowanie tego nie obejdzie. Cel „poniżej
+    // 250 kB do pierwszego malowania" jest więc nieosiągalny bez wymiany SDK na wywołania
+    // REST, co jest przebudową, a nie optymalizacją. Nie udajemy, że da się inaczej.
+    //
+    // Za to podział daje coś innego i przy pamięci pierwszej (patrz `public/sw.js`)
+    // ważniejszego: nazwy plików niosą skrót ZAWARTOŚCI, więc dopóki nie ruszamy Firebase,
+    // paczka dostawcy ma po wdrożeniu ten sam skrót i zostaje w pamięci przeglądarki oraz
+    // service workera. Zmiana kodu aplikacji każe wtedy pobrać ~171 kB zamiast ~890 kB.
+    // Przy zasięgu na jedną kreskę to jest różnica między aktualizacją a rezygnacją z niej.
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // Warunek na `@firebase/` (paczki wewnętrzne), nie na `firebase/` — narzędzie
+          // rozwiązuje publiczne wejścia do tych pierwszych, więc dopasowanie po nazwie
+          // publicznej łapałoby pustkę.
+          if (id.includes('@firebase/firestore')) return 'vendor-firestore';
+          if (id.includes('@firebase/auth')) return 'vendor-auth';
+          return undefined;
+        },
+      },
+    },
     target: ['safari15.4', 'chrome107', 'firefox115'],
   },
   test: {

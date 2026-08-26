@@ -11,12 +11,15 @@
         } from './identity.js';
         // Kod QR rysowany lokalnie, w buildzie. Biblioteka bez zależności i bez sieci:
         // aplikacja pracuje offline, więc obrazek z cudzego serwera nie wchodzi w grę.
-        import qrcode from 'qrcode-generator';
+        // Pakiet NIE wchodzi do paczki startowej — dogrywa się dopiero przy rozwinięciu
+        // kodu QR (patrz `loadQrcode`). Przy stole nikt go nie potrzebuje.
         import { initializeApp } from "firebase/app";
         import { getAuth, signInAnonymously, onAuthStateChanged, connectAuthEmulator } from "firebase/auth";
         import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, connectFirestoreEmulator, doc, getDoc, getDocFromCache, setDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove, collection, addDoc, query, orderBy, serverTimestamp, deleteDoc, deleteField, getDocs, runTransaction, increment, limit } from "firebase/firestore";
         import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject, connectStorageEmulator } from "firebase/storage";
-        import { getMessaging, getToken, onMessage, isSupported as isMessagingSupported } from "firebase/messaging";
+        // `firebase/messaging` (25 kB) NIE wchodzi do paczki startowej. Powiadomienia
+        // uruchamiają się dopiero po rejestracji service workera, a ta i tak czeka na
+        // zdarzenie `load` — więc leniwe dogranie nie opóźnia niczego, co widać na ekranie.
         import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
         import { normalizeReceipt, receiptItemsToSharedCosts, receiptModifiersToGlobalCosts, receiptItemFlags, receiptCheck } from './receipt.js';
 
@@ -3146,11 +3149,20 @@
             document.getElementById('room-settings-modal').classList.add('active');
         };
 
-        const renderRoomQr = () => {
+        // Kod QR dogrywa się dopiero przy rozwinięciu — 21 kB, których ekipa przy stole
+        // nie potrzebuje do niczego innego. Ta sama zasada, co przy `heic2any`.
+        let qrcodePromise = null;
+        const loadQrcode = () => {
+            if (!qrcodePromise) qrcodePromise = import('qrcode-generator').then((m) => m.default || m);
+            return qrcodePromise;
+        };
+
+        const renderRoomQr = async () => {
             const box = document.getElementById('room-qr');
             if (!box) return;
             const link = document.getElementById('group-share-link').value;
             if (!link) { box.innerHTML = ''; return; }
+            const qrcode = await loadQrcode();
             // Typ 0 = automatyczny dobór wersji, korekcja „M": czytelny nawet gdy ktoś
             // skanuje z ekranu pod kątem, w słabym świetle lokalu.
             const qr = qrcode(0, 'M');
@@ -5597,7 +5609,14 @@
             new Promise((_, reject) => setTimeout(() => reject(new Error(`${label}: przekroczono ${ms} ms`)), ms)),
         ]);
 
+        let messagingPromise = null;
+        const loadMessaging = () => {
+            if (!messagingPromise) messagingPromise = import('firebase/messaging');
+            return messagingPromise;
+        };
+
         const acquirePushToken = async () => {
+            const { getMessaging, getToken } = await loadMessaging();
             const messaging = getMessaging(app);
             pushToken = await withTimeout(getToken(messaging, {
                 vapidKey: VAPID_KEY,
@@ -5683,6 +5702,7 @@
         const setupPush = async () => {
             try {
                 if (!pushSupported()) { renderPushToggle(); return; }
+                const { getMessaging, onMessage, isSupported: isMessagingSupported } = await loadMessaging();
                 if (!(await isMessagingSupported())) { renderPushToggle(); return; }
                 const messaging = getMessaging(app);
                 // Wiadomość przy otwartej apce: przeglądarka nie pokaże systemowego dymka — pokazujemy toast.
