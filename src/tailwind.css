@@ -661,6 +661,17 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
     background-color: rgb(var(--surface));
   }
 
+  /* KAFELEK Z ZADANIEM DO WYKONANIA. Barwa idzie WARSTWĄ (`background-image`) na
+     nieprzezroczystym tle, a nie półprzezroczystym kolorem tła.
+     Powód jest konkretny: półprzezroczyste tło nadpisywało krycie `.bill-swipe-card`,
+     więc schowany pod kartą przycisk „Ukryj" prześwitywał przez nią bez żadnego gestu —
+     i to wyłącznie na kafelkach z zadaniem, przez co usterka wyglądała na zależną
+     od statusu rachunku. */
+  .bill-tile-action {
+    background-color: rgb(var(--surface));
+    background-image: linear-gradient(rgb(var(--info) / 0.06), rgb(var(--info) / 0.06));
+  }
+
   /* Przeciąganie w toku: przesunięcie ustawia JavaScript co klatkę, więc przejście
      musi zejść z drogi — inaczej karta wlecze się za palcem z opóźnieniem. */
   .bill-swipe.is-dragging .bill-swipe-card { transition: none; }

@@ -883,12 +883,19 @@
             }
         };
 
+        // Jedno okno informacyjne na całą aplikację. Pomoc spod „?" i wyjaśnienia typu
+        // „czemu nie mogę tego uregulować" to ta sama rzecz: tekst do przeczytania i wyjście.
+        // Osobne okno na każde z nich znaczyłoby dwa wyglądy tej samej czynności.
+        const showInfo = (title, html) => {
+            document.getElementById('help-modal-title').textContent = title;
+            document.getElementById('help-modal-body').innerHTML = html;
+            document.getElementById('help-modal').classList.add('active');
+        };
+
         const showHelp = () => {
             const content = HELP_CONTENT[currentScreenName];
             if (!content) return;
-            document.getElementById('help-modal-title').textContent = content.title;
-            document.getElementById('help-modal-body').innerHTML = content.html;
-            document.getElementById('help-modal').classList.add('active');
+            showInfo(content.title, content.html);
         };
 
         // --- DOLNA NAWIGACJA — kciuk pracuje w dolnej trzeciej ekranu ---
@@ -1635,17 +1642,39 @@
         // Powód blokady — ludzkim językiem, do postawienia PRZY wyłączonym przycisku.
         // Martwy szary guzik bez zdania obok czyta się jak usterka aplikacji, a nie jak
         // świadoma ochrona; to jest różnica między „apka nie działa" a „jeszcze nie czas".
+        // Powód blokady — ludzkim językiem. NAZWY RACHUNKU tu nie ma (decyzja właściciela
+        // 2026-08-26): zdanie stoi zawsze przy tym rachunku albo w jego oknie, więc nazwa
+        // powtarzała to, co człowiek ma przed oczami, i zjadała pół wiersza.
         const settleBlockReason = (bill) => {
             const gate = billSettleGate(bill);
             if (gate.open) return '';
-            const nazwa = (bill && bill.billName) || 'Rachunek';
             if (gate.reason === 'over') {
-                return `„${nazwa}": pozycje przekraczają kwotę rachunku. Ktoś musi to poprawić, zanim ruszą przelewy.`;
+                return 'Pozycje przekraczają kwotę rachunku. Ktoś musi to poprawić, zanim ruszą przelewy.';
             }
             const kwota = fmtMoney(gate.unallocatedG || 0, (bill && bill.currency) || 'PLN');
             return gate.reason === 'changed'
-                ? `„${nazwa}": doszło ${kwota}, których nikt nie wziął. Rachunek czeka na ponowne zamknięcie.`
-                : `„${nazwa}" jeszcze się uzupełnia — ${kwota} nikt nie wziął.`;
+                ? `Po zamknięciu doszło ${kwota}, których nikt nie wziął. Rachunek czeka na ponowne zamknięcie.`
+                : `Rachunek jeszcze się uzupełnia — ${kwota} nikt nie wziął.`;
+        };
+
+        // OKNO ZAMIAST ZDANIA POD PRZYCISKIEM (decyzja właściciela 2026-08-26).
+        //
+        // Wyjaśnienie stało na stałe pod wyszarzonym „Ureguluj" i zajmowało miejsce przy
+        // każdym wejściu, choć jest odpowiedzią na pytanie, które pada RAZ: „czemu nie mogę
+        // tego oddać?". Teraz przycisk zostaje na widoku (nie znika — znikający czyta się
+        // jak usterka), ale wygląda na wyłączony, a powód pokazuje się dopiero po stuknięciu.
+        const showSettleBlockedInfo = (bill) => {
+            const gate = billSettleGate(bill);
+            if (gate.open) return;
+            const kroki = gate.reason === 'over'
+                ? '<li>Popraw kwotę rachunku albo pozycje, żeby suma się zgadzała.</li>'
+                : `<li>Stuknij na paragonie pozycje, które są Twoje.</li>
+                   <li>Gdy nic już nie wisi bez właściciela, rachunek odblokuje się sam.</li>
+                   <li>Jeśli coś zostaje, płatnik zamyka rachunek i decyduje, co z tą kwotą.</li>`;
+            showInfo('Jeszcze nie teraz', `
+                <p>${escapeHtml(settleBlockReason(bill))}</p>
+                <p>Dopóki tak jest, przelew z tego rachunku byłby przelewem za cudze pozycje.</p>
+                <ul class="list-disc pl-5 space-y-1">${kroki}</ul>`);
         };
 
         // Z CZEGO SKŁADA SIĘ KWOTA WISZĄCA BEZ WŁAŚCICIELA.
@@ -1684,20 +1713,23 @@
         // piętnastu ludzi zjadały cały arkusz i spychały przyciski poza ekran. Lista jest więc
         // ZWINIĘTA i przewijana we własnym pudełku: kto chce wiedzieć, kogo to dotyczy,
         // rozwija — a kto nie, widzi samą liczbę i decyzję.
-        const peopleListHtml = (osoby, tytul) => {
+        const peopleListHtml = (osoby) => {
             if (!osoby || !osoby.length) return '';
-            const wierszeHtml = osoby.map((p) => `
-                <span class="flex items-center gap-2 py-1 min-w-0">
-                    ${avatarHtml(p.name || memberName(p.id), p.id, 'w-7 h-7 text-xs')}
-                    <span class="truncate text-sm">${escapeHtml(p.name || memberName(p.id))}</span>
-                </span>`).join('');
-            return `<details class="mt-2">
-                <summary class="settle-others-summary">
-                    <span>${escapeHtml(tytul)} (${osoby.length})</span>
-                    <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
-                </summary>
-                <div class="mt-2 max-h-56 overflow-y-auto rounded-block bg-surface-2 px-3 py-1">${wierszeHtml}</div>
-            </details>`;
+            // TWARZE, NIE ROZWIJANA LISTA. Rozwijanie rosło w dół i spychało przyciski poza
+            // ekran — a arkusz, w którym po rozwinięciu nie widać już opcji, przestaje być
+            // wyborem. Stos twarzy mieści się w jednym wierszu, od razu POKAZUJE, że osób
+            // jest dużo, i niczego nie przesuwa. Imiona idą pod spodem jedną linią.
+            const widoczne = osoby.slice(0, 8);
+            const imiona = osoby.map((p) => p.name || memberName(p.id));
+            const podpis = imiona.length > 3
+                ? `${imiona.slice(0, 3).join(', ')} i ${imiona.length - 3} ${plural(imiona.length - 3, 'inna osoba', 'inne osoby', 'innych osób')}`
+                : imiona.join(', ');
+            return `<div class="mt-2 flex items-center gap-2">
+                    <span class="flex -space-x-2 flex-shrink-0">${
+                        widoczne.map((p) => avatarHtml(p.name || memberName(p.id), p.id, 'w-8 h-8 text-xs')).join('')
+                    }${osoby.length > widoczne.length ? `<span class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-surface-2 text-ink-2">+${osoby.length - widoczne.length}</span>` : ''}</span>
+                </div>
+                <p class="text-xs text-ink-3 mt-1.5 truncate">${escapeHtml(podpis)}</p>`;
         };
 
         // BANER STANU RACHUNKU. Mówi trzy rzeczy i ani jednej więcej: ile wisi, czemu to
@@ -1826,7 +1858,7 @@
                     </div>
                     <button class="close-bill-opt btn btn-dark w-full" data-rest="late">Wrzuć spóźnialskim</button>
                     <p class="text-sm text-ink-2 -mt-1">Po <b class="text-ink">${fmtMoney(perSpozG, cur)}</b> dla ${spozniacy.length} ${plural(spozniacy.length, 'osoby', 'osób', 'osób')}, które nie stuknęły ani jednej pozycji. Tak robimy, gdy to było czyjeś jedzenie.</p>
-                    ${peopleListHtml(spozniacy, 'Kogo to dotyczy')}`);
+                    ${peopleListHtml(spozniacy)}`);
             }
 
             opcje.push(`<button id="close-bill-later" class="btn btn-quiet w-full">Jeszcze poczekam</button>`);
@@ -1888,12 +1920,43 @@
             if (ok) showToast(`Prośba poszła do: ${memberName(doKogo)}.`);
         };
 
+        // OTWARCIE COFA DECYZJĘ O RESZCIE, nie tylko zdejmuje blokadę.
+        //
+        // Wracamy DOKŁADNIE do stanu sprzed zamknięcia: kwota, której nikt nie wziął, znów
+        // jest niczyja, a przypisanie spóźnialskim znika. Zostawienie `restTo` przy otwartym
+        // rachunku byłoby najgorszym z możliwych stanów — ludzie klikaliby swoje pozycje,
+        // mając w tle cudzą decyzję sprzed poprawki, o której nikt już nie pamięta.
+        //
+        // `everOpened` zostaje na true: rachunek raz otwarty nie wypada z księgi długów,
+        // bo mogły już za niego pójść wpłaty (patrz functions/calc.js).
         const reopenBill = (billId) => {
             const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, billId);
-            // `everOpened` zostaje na true — rachunek raz otwarty nie wypada z księgi długów,
-            // bo mogły już za niego pójść wpłaty. Wraca tylko `settleOpen`.
-            fireWrite(updateDoc(billDocRef, { settleOpen: false }), 'Nie udało się otworzyć rachunku.');
+            fireWrite(
+                updateDoc(billDocRef, {
+                    settleOpen: false,
+                    restTo: null,
+                    restSettledG: 0,
+                    closedBy: null,
+                }),
+                'Nie udało się otworzyć rachunku.',
+            );
             showToast('Rachunek otwarty — ekipa może poprawić swoje pozycje.');
+        };
+
+        // Otwarcie z ekranu rachunku, ręką płatnika albo admina. Osobno od `reopenBill`,
+        // bo tu trzeba ostrzec: kwoty się przeliczą, a ktoś mógł już zapłacić.
+        const reopenBillWithConfirm = () => {
+            if (!currentBillId || !billData) return;
+            const zaplacili = billSettledBy(perBillNow(), currentBillId).filter((x) => x.paidG > 0).length;
+            openConfirm({
+                title: 'Otworzyć rachunek z powrotem?',
+                body: zaplacili > 0
+                    ? `Podział kwoty nierozpisanej zostanie cofnięty, a ekipa znów będzie mogła klikać pozycje. ${zaplacili} ${plural(zaplacili, 'osoba już zapłaciła', 'osoby już zapłaciły', 'osób już zapłaciło')} — ich kwoty się przeliczą, a różnica pojawi się w rozliczeniach.`
+                    : 'Podział kwoty nierozpisanej zostanie cofnięty, a ekipa znów będzie mogła klikać pozycje. Przelewy z tego rachunku znów będą zablokowane.',
+                confirmLabel: 'Otwórz',
+                tone: 'brand',
+                onConfirm: () => reopenBill(currentBillId),
+            });
         };
 
         const getBillSummaryHtml = (bill, myMember, myParticipant) => {
@@ -3704,6 +3767,9 @@
                     note: isPayer ? '(płatnik)' : '',
                 });
             }).join('');
+            // Licznik i pasek „Wszyscy / Nikt" — ta sama pomoc, co przy tworzeniu rachunku.
+            // Wisiały tam bez użytku, bo zapalał je wyłącznie licznik nowego rachunku.
+            syncPersonSearchCount(list.closest('.sheet-body') || list.parentElement);
         };
         const openBillMembersModal = () => {
             if (!billData || !groupData) return;
@@ -4965,7 +5031,17 @@
                 billEl.className = "card tap p-4 cursor-pointer";
                 // Tło barwi się tylko przy zadaniu do wykonania — reszta listy zostaje biała,
                 // więc oko trafia w to jedno miejsce bez szukania.
-                if (status.tone === 'action') billEl.style.backgroundColor = 'rgb(var(--info) / 0.06)';
+                //
+                // KLASA, NIE STYL W ATRYBUCIE (poprawione 2026-08-26 po zgłoszeniu „przycisk
+                // Ukryj widać na wierzchu, i to tylko przy niektórych statusach").
+                // Stało tu `backgroundColor = 'rgb(var(--info) / 0.06)'`, czyli tło o SZEŚCIU
+                // PROCENTACH KRYCIA — i nadpisywało nieprzezroczyste tło `.bill-swipe-card`.
+                // Karta stawała się przezroczysta w 94%, więc schowany pod nią przycisk
+                // „Ukryj" prześwitywał bez żadnego gestu. Objaw pojawiał się WYŁĄCZNIE na
+                // kafelkach z tonem `action` („Wskaż, kto płacił", „Stuknij, co Twoje",
+                // „Zamknij rachunek") i stąd wrażenie, że usterka zależy od statusu.
+                // Klasa nakłada barwę WARSTWĄ na nieprzezroczystym tle — patrz src/tailwind.css.
+                if (status.tone === 'action') billEl.classList.add('bill-tile-action');
                 // PEŁNA NAZWA RACHUNKU, BEZ UCINANIA (zgłoszenie właściciela 2026-08-26:
                 // „Pizzeria u Wujka Stacha" schodziła do „Pizzeria u W…"). Nazwa jest
                 // tożsamością wiersza — po niej odróżnia się dwie kolacje z tego samego
@@ -5674,11 +5750,19 @@
                 .filter(p => p.status !== 'not_applicable')
                 .map(p => personRowHtml({ id: p.id, name: p.name, selected: picked.includes(p.id) }))
                 .join('');
+            // PASEK „WSZYSCY / NIKT" TAKŻE TUTAJ (zgłoszenie właściciela 2026-08-26).
+            // Mechanizm istniał od 2026-08-18, ale zapalał go WYŁĄCZNIE licznik przy
+            // wyszukiwarce nowego rachunku — więc przy dodawaniu pozycji dwudziestoosobowa
+            // ekipa znaczyła dwadzieścia stuknięć, choć kod na to gotowy już był.
+            // Domyślnie nikt nie jest zaznaczony i to zostaje: pozycję bierze ten, kto ją zjadł.
+            const itemPeopleWrap = wrap.closest('.sheet-body') || wrap.parentElement;
             wrap.onclick = (e) => {
                 const row = e.target.closest('.person-row');
                 if (!row) return;
                 row.setAttribute('aria-pressed', row.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+                syncPersonSearchCount(itemPeopleWrap);
             };
+            syncPersonSearchCount(itemPeopleWrap);
 
             // Rozbicie na sztuki ma sens tylko dla istniejącej pozycji o ilości > 1.
             const splitBtn = document.getElementById('item-split-btn');
@@ -5790,21 +5874,20 @@
             // wybrał ani jednej pozycji, widział przy swoim imieniu kilkaset złotych i nie
             // wiedział, czy to jego dług, czy przypuszczenie aplikacji.
             //
-            // Teraz mówimy wprost: dopóki nikt o tej kwocie nie zdecydował, nie należy do
-            // nikogo, a Twój udział to dokładnie to, co stuknąłeś.
-            if (!calc.restDecided && (calc.restToIds || []).length === 0) {
-                return {
-                    caption: 'Nierozpisane (niczyje)',
-                    note: `${fmtMoney(toGrosze(calc.restUndecided || 0), cur)} nikt jeszcze nie wziął — ta kwota NIE dolicza się nikomu. Płacisz wyłącznie za to, co stuknąłeś, dopóki płatnik nie zamknie rachunku.`,
-                };
-            }
+            // Teraz przy własnym udziale NIE MA ŻADNEGO ZDANIA, dopóki nic się do niego nie
+            // dolicza (decyzja właściciela 2026-08-26). Kwota jest po prostu prawdziwa:
+            // płacisz za to, co stuknąłeś. Tłumaczenie należy się WYŁĄCZNIE wtedy, gdy do
+            // udziału faktycznie coś doszło — i wtedy mówi, skąd to się wzięło.
+            if (!calc.restDecided && (calc.restToIds || []).length === 0) return null;
 
             // Decyzja płatnika już zapadła — podpis ma to mówić, bo od niej wzięła się liczba.
             if (billData && billData.settleOpen === true) {
-                return {
-                    caption: calc.restToEveryone ? 'Po równo (decyzja płatnika)' : 'Przypisane Tobie',
-                    note: '',
-                };
+                return calc.restToEveryone
+                    ? {
+                        caption: 'Po równo (decyzja płatnika)',
+                        note: `W tej kwocie jest ${fmtMoney(toGrosze(calc.perPersonUnallocated || 0), cur)} z pozycji, których nikt nie wziął — płatnik podzielił je po równo na całą ekipę.`,
+                    }
+                    : { caption: 'Przypisane Tobie', note: '' };
             }
 
             const sierot = calc.orphanCount || 0;
@@ -5884,13 +5967,13 @@
             // a człowiek patrzy NA kwotę. Liczba wygląda przez to na ostateczną, choć jest
             // stanem przejściowym. Sama matematyka jest poprawna i celowa: kwota nierozpisana
             // dzieli się po równo, żeby reszta nie spadła po cichu na płatnika.
-            // „MOŻE WZROSNĄĆ", NIE „WSTĘPNIE" (2026-08-26). Od chwili, gdy kwota niczyja
-            // przestała doliczać się do udziałów, ta liczba jest DOKŁADNA dla tego, co
-            // stuknąłeś — a „wstępnie" sugerowało, że i ona jest zgadywana. Ostrzec trzeba
-            // o czym innym: że po decyzji płatnika może dojść reszta.
-            const wstepnie = rest && rest.note
-                ? `<span class="chip flex-shrink-0">${(billData && billData.settleOpen === true) ? 'wstępnie' : 'może wzrosnąć'}</span>`
-                : '';
+            // ZNACZNIK PRZY KWOCIE ZNIKNĄŁ (decyzja właściciela 2026-08-26).
+            //
+            // „Wstępnie" miało sens, gdy reszta doliczała się do udziału od pierwszej sekundy
+            // — liczba była wtedy zgadywana. Od chwili, gdy kwota niczyja nie dolicza się
+            // nikomu, ta liczba jest PRAWDZIWA: płacisz za to, co stuknąłeś. Ostrzeżenie przy
+            // prawdziwej kwocie tylko siało niepokój u kogoś, kto zrobił wszystko dobrze.
+            const wstepnie = '';
             return `<div class="mt-4 pt-3 border-t border-ink/10">
                 <div class="flex items-baseline justify-between gap-3">
                     <span class="font-bold flex items-baseline gap-2 min-w-0">Twój udział ${wstepnie}</span>
@@ -5929,9 +6012,11 @@
             // milczałby: ani kwoty, ani przycisku, ani powodu. Cisza w miejscu, gdzie
             // przed chwilą był przycisk, czyta się jak usterka.
             if (billData && !canSettleBill(billData) && billData.payerId !== (myMemberNow() || {}).id) {
+                // Przycisk NIE jest `disabled`: wyłączony nie przyjmuje stuknięcia, więc nie
+                // miałby jak powiedzieć, czemu nie działa. Wygląda na wyłączony, a stuknięcie
+                // otwiera okno z powodem.
                 return `<div class="mt-4 pt-3 border-t border-ink/10">
-                    <p class="text-sm text-ink-2">${escapeHtml(settleBlockReason(billData))}</p>
-                    <button class="btn btn-danger w-full mt-3" disabled>Ureguluj</button>
+                    <button id="settle-locked-btn" class="btn btn-danger w-full opacity-50">Ureguluj</button>
                 </div>`;
             }
             if (!mine) return '';
@@ -6060,6 +6145,8 @@
             payerSelect.disabled = isPayerConfirmed;
 
             const confirmationBanner = document.getElementById('payer-confirmation-banner-advanced');
+            // Wyjście awaryjne płatnika, doklejane do banera „Można się rozliczać" (niżej).
+            let cofnijZamkniecieHtml = '';
             // BANER MÓWI, CO BLOKUJE ROZLICZENIE — także wtedy, gdy piłka jest po cudzej
             // stronie (poprawka 2026-08-17 po uwadze właściciela o nowym użytkowniku).
             //
@@ -6098,12 +6185,24 @@
                 const bannerText = isCurrentUserThePayer
                     ? `Wyłożyłeś/aś pieniądze za ten rachunek. Kwotę wciąż możesz poprawić.${otwarteHtml}`
                     : `Główne pola rachunku zablokował/a <strong>${escapeHtml(payerName)}</strong>.${otwarteHtml}`;
+                // DROGA POWROTNA DLA PŁATNIKA. Bez niej jedynym sposobem na otwarcie
+                // zamkniętego rachunku była cudza prośba „To nie moje" — czyli człowiek,
+                // który sam się przed chwilą pomylił, nie miał czym tego naprawić.
+                // Cicho i bez koloru: to jest wyjście awaryjne, nie zaproszenie.
+                cofnijZamkniecieHtml = (gate.reason === 'closed' && canCloseBill(billData, myGroupMember && myGroupMember.id))
+                    ? `<button id="reopen-bill-btn" class="tap min-h-tap w-full mt-2 text-sm font-bold text-ink-3">Otwórz rachunek z powrotem</button>`
+                    : '';
                 // Stempel foliowy znaczy „potwierdzone" — tu potwierdzone jest, kto wyłożył pieniądze.
                 confirmationBanner.innerHTML = `
-                    <div class="card p-4 flex items-center gap-3">
-                        <span class="chip text-due text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Płatnik</span>
-                        <span class="text-sm text-ink-2">${bannerText}</span>
+                    <div class="card p-4">
+                        <div class="flex items-center gap-3">
+                            <span class="chip text-due text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Płatnik</span>
+                            <span class="text-sm text-ink-2">${bannerText}</span>
+                        </div>
+                        ${cofnijZamkniecieHtml}
                     </div>`;
+                const reopenBtn = document.getElementById('reopen-bill-btn');
+                if (reopenBtn) reopenBtn.onclick = () => reopenBillWithConfirm();
             } else if (billData.payerId) {
                 // Płatnik wskazany, ale to nie ja i jeszcze nie potwierdził.
                 const payerName = (billData.participants[billData.payerId] || {}).name || 'Płatnik';
@@ -6497,6 +6596,8 @@
             }
             const disputeBtn = document.getElementById('rest-dispute-btn');
             if (disputeBtn) disputeBtn.onclick = () => requestBillReopen();
+            const lockedBtn = document.getElementById('settle-locked-btn');
+            if (lockedBtn) lockedBtn.onclick = () => showSettleBlockedInfo(billData);
             renderItemTiles();
             renderBillHistory();
 
@@ -6723,7 +6824,9 @@
                     // tym rodzajem zmiany, której nikt nie zauważy, dopóki nie zabraknie pieniędzy.
                     // Droga jest jedna i jawna: prośba o otwarcie do tego, kto zamykał.
                     if (billData.settleOpen === true && billSettleGate(billData).open) {
-                        showToast('Rachunek jest zamknięty. Poproś o otwarcie, żeby poprawić pozycje.');
+                        showToast(canCloseBill(billData, my.id)
+                            ? 'Rachunek zamknięty. Otwórz go z powrotem u góry, żeby ekipa mogła poprawić pozycje.'
+                            : 'Rachunek jest zamknięty. Poproś o otwarcie, żeby poprawić pozycje.');
                         return;
                     }
                     const before = (billData.sharedCosts || []).find(x => x.id === tile.dataset.itemId);
