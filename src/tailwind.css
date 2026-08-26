@@ -682,8 +682,12 @@ body:has(#offline-banner:not(.hidden)) #app-container {
      musi zejść z drogi — inaczej karta wlecze się za palcem z opóźnieniem. */
   .bill-swipe.is-dragging .bill-swipe-card { transition: none; }
 
-  .bill-swipe.is-open .bill-swipe-card,
-  .bill-swipe:focus-within .bill-swipe-card {
+  /* JEDNO ŹRÓDŁO STANU: klasa `is-open`. Stało tu jeszcze `:focus-within`, który odsuwał
+     kartę bez ustawienia klasy — i wtedy wygląd mówił co innego niż stan, z którego liczy
+     gest. Objaw: wiersz stoi odsunięty, choć nikt go nie ruszał, i da się go przesunąć
+     jeszcze bardziej w lewo. Ognisko dopisuje teraz tę samą klasę (patrz `attachSwipeToHide`),
+     więc dojście klawiaturą działa tak samo, a stan pozostaje jeden. */
+  .bill-swipe.is-open .bill-swipe-card {
     transform: translateX(-6rem);
   }
 

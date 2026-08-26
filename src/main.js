@@ -995,6 +995,10 @@
             // do dolnej krawędzi. Jedno zbędne przewinięcie kosztowało skok paska
             // nawigacji przy każdej zmianie zakładki.
             if (appScrollTop() > 0) appScrollTo(0);
+            // Odsunięty wiersz rachunku nie może przeżyć wyjścia z zakładki. Zmiana widoku
+            // tylko ukrywa węzły, więc bez tego wiersz zastawał odsunięty i po powrocie
+            // wyglądał na zepsuty — „jest przesunięty, choć go nie ruszałem".
+            zamknijWiersz();
             // Przełącznik trybu liczy swoje przewinięcie z wymiarów, a te są zerowe,
             // dopóki zakładka jest schowana. Dociągamy je w chwili jej otwarcia.
             if (viewId === 'view-settle') {
@@ -4164,6 +4168,7 @@
             let x0 = 0, y0 = 0;
             // null = jeszcze nie wiadomo, w którą stronę idzie palec.
             let poziomo = null;
+            let start = 0; // przesunięcie karty w chwili dotknięcia
             let dx = 0;
             let bylGest = false;
 
@@ -4172,12 +4177,37 @@
                 return akcja ? akcja.offsetWidth : 96;
             };
 
+            // PRZESUNIĘCIE CZYTAMY Z ELEMENTU, NIE ZGADUJEMY Z KLASY (poprawione
+            // 2026-08-26 po zgłoszeniu „jeden rachunek jest przesunięty, choć go nie
+            // ruszałem, i da się go przesunąć jeszcze bardziej w lewo").
+            //
+            // Poprzednia wersja pytała o klasę `is-open` i z niej wyliczała punkt wyjścia
+            // gestu. Wystarczyło, żeby karta była odsunięta z INNEGO powodu niż ta klasa
+            // — bo `:focus-within` też ją odsuwał — a wyliczenie startowało od zera przy
+            // karcie stojącej już w lewo. Wynik: skok i przesunięcie poza granicę.
+            // Teraz stan jest jeden i czytany wprost z macierzy przekształcenia, więc
+            // nie da się go rozjechać z niczym.
+            const przesuniecie = () => {
+                // Bez przekształcenia przeglądarka zwraca napis „none", na którym
+                // konstruktor macierzy wywala się wyjątkiem — a to jest stan DOMYŚLNY,
+                // czyli ten najczęstszy.
+                const t = getComputedStyle(card).transform;
+                if (!t || t === 'none') return 0;
+                try {
+                    const m = new DOMMatrixReadOnly(t);
+                    return Number.isFinite(m.m41) ? m.m41 : 0;
+                } catch (_) {
+                    return 0;
+                }
+            };
+
             card.addEventListener('touchstart', (e) => {
                 if (e.touches.length !== 1) return;
                 x0 = e.touches[0].clientX;
                 y0 = e.touches[0].clientY;
                 poziomo = null;
-                dx = 0;
+                start = przesuniecie();
+                dx = start;
                 bylGest = false;
             }, { passive: true });
 
@@ -4200,9 +4230,9 @@
                 if (!poziomo) return;
 
                 // Tylko w lewo, i nie dalej niż szerokość przycisku. Ciągnięcie w prawo
-                // z pozycji zamkniętej nie ma czego odsłonić.
-                const otwarty = swipe.classList.contains('is-open');
-                dx = Math.max(-szerokosc(), Math.min(0, rx - (otwarty ? szerokosc() : 0)));
+                // z pozycji zamkniętej nie ma czego odsłonić. Punkt wyjścia to FAKTYCZNE
+                // przesunięcie karty zmierzone przy dotknięciu — patrz `przesuniecie`.
+                dx = Math.max(-szerokosc(), Math.min(0, start + rx));
                 card.style.transform = `translateX(${dx}px)`;
                 bylGest = true;
                 // Przewijanie w pionie musi zejść z drogi, gdy palec idzie w bok.
@@ -4234,6 +4264,22 @@
                     bylGest = false;
                 }
             }, true);
+
+            // DOJŚCIE KLAWIATURĄ I CZYTNIKIEM EKRANU. Ognisko na przycisku otwiera wiersz
+            // TĄ SAMĄ klasą, co palec — inaczej wygląd i stan gestu rozjeżdżają się
+            // (patrz uwaga przy `przesuniecie`). Zamknięcie przy zejściu ogniska, chyba że
+            // ktoś w międzyczasie otworzył wiersz palcem.
+            const akcja = swipe.querySelector('.bill-swipe-action');
+            if (akcja) {
+                akcja.addEventListener('focus', () => {
+                    zamknijWiersz();
+                    swipe.classList.add('is-open');
+                    otwartyWiersz = swipe;
+                });
+                akcja.addEventListener('blur', () => {
+                    if (otwartyWiersz === swipe) zamknijWiersz();
+                });
+            }
         };
 
         const renderBillsList = () => {
