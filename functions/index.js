@@ -2,7 +2,7 @@
 // Nazwa eksportu zachowana historycznie (deploy = aktualizacja w miejscu), ale logika
 // NIE jest już przyrostowa — czytamy wszystkie rachunki i liczymy świeżo. To eliminuje
 // dryf delt i problemy z at-least-once/retry, oraz używa TEJ SAMEJ matmy co front (calc.js).
-import { onDocumentWritten, onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentWritten, onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { logger } from "firebase-functions";
@@ -141,6 +141,125 @@ export const sendNudgePush = onDocumentCreated(
     }
 
     logger.info(`Push do ${nudge.to}: ${res.successCount}/${tokens.length} dostarczone, usunięto ${dead.length} martwych tokenów.`);
+  },
+);
+
+// ===================================================================
+// Etap 3: push przy WPŁACIE — zgłoszonej i potwierdzonej
+// ===================================================================
+//
+// DLACZEGO TO POWSTAŁO. Do 2026-08-26 push wychodził WYŁĄCZNIE przy przypomnieniu
+// o zaległości. Cudza wpłata czekająca na moje potwierdzenie zapalała odznakę i wiersz
+// w skrzynce, ale telefon milczał — a to jest sygnał poziomu 1 (blokuje domknięcie długu)
+// i w trybie rachunkowym zdarza się dużo częściej niż przypomnienie.
+//
+// TREŚĆ JEST KRÓTKA, SZCZEGÓŁY SĄ W APLIKACJI (decyzja właściciela). Push mówi kto i ile;
+// za które rachunki — widać na ekranie potwierdzenia, gdzie i tak trzeba wejść, żeby
+// cokolwiek zrobić. Wypisywanie pięciu nazw rachunków w powiadomieniu systemowym i tak
+// nie zmieściłoby się na ekranie blokady.
+//
+// Payload DATA-ONLY, tak samo jak przy przypomnieniu: notyfikację buduje `public/sw.js`,
+// więc treść i zachowanie kliknięcia są w jednym miejscu.
+const wyslijPush = async (db, groupDoc, groupId, doOsoby, title, body, tag) => {
+  const members = groupDoc.data().members || {};
+  const tokens = (members[doOsoby] && members[doOsoby].fcmTokens) || [];
+  if (tokens.length === 0) {
+    logger.info(`Osoba ${doOsoby} nie ma zarejestrowanych urządzeń — pomijam push.`);
+    return;
+  }
+  const res = await admin.messaging().sendEachForMulticast({
+    tokens,
+    data: { title, body, url: `/?group=${groupId}`, tag },
+    webpush: { headers: { Urgency: "high", TTL: "3600" } },
+  });
+  // Tokeny wygasają (odinstalowana apka, wyczyszczone dane) — sprzątamy, żeby nie rosły.
+  const dead = [];
+  res.responses.forEach((r, i) => {
+    const code = r.error && r.error.code;
+    if (code === "messaging/registration-token-not-registered" || code === "messaging/invalid-argument") {
+      dead.push(tokens[i]);
+    }
+  });
+  if (dead.length) {
+    await groupDoc.ref.update({
+      [`members.${doOsoby}.fcmTokens`]: admin.firestore.FieldValue.arrayRemove(...dead),
+    });
+  }
+  logger.info(`Push do ${doOsoby}: ${res.successCount}/${tokens.length} dostarczone, usunięto ${dead.length} martwych tokenów.`);
+};
+
+const kwotaTekstem = (amount, currency) => {
+  const a = Number(amount || 0);
+  return a > 0 ? `${a.toFixed(2).replace(".", ",")} ${currency || "PLN"}` : "";
+};
+
+// WPŁATA ZGŁOSZONA → push do ODBIORCY („czeka na Twoje potwierdzenie").
+//
+// Wpłata zapisana przez odbiorcę u siebie („Mam wpłatę") jest potwierdzona od razu
+// i nie ma komu wysyłać powiadomienia — stąd warunek na `confirmed`.
+export const sendSettlementPush = onDocumentCreated(
+  {
+    document: `artifacts/${APP_ID}/public/data/groups/{groupId}/settlements/{settlementId}`,
+    region: "europe-central2",
+  },
+  async (event) => {
+    const { groupId } = event.params;
+    const s = event.data && event.data.data();
+    if (!s || !s.from || !s.to || s.confirmed) return;
+
+    const db = admin.firestore();
+    const groupDoc = await db.doc(`artifacts/${APP_ID}/public/data/groups/${groupId}`).get();
+    if (!groupDoc.exists) return;
+
+    const members = groupDoc.data().members || {};
+    const fromName = (members[s.from] && members[s.from].name) || "Ktoś";
+    const kwota = kwotaTekstem(s.amount, s.currency);
+
+    await wyslijPush(
+      db, groupDoc, groupId, s.to,
+      "Wpłata do potwierdzenia",
+      kwota
+        ? `${fromName} zgłosił/a wpłatę ${kwota}. Potwierdź, żeby domknąć dług.`
+        : `${fromName} zgłosił/a wpłatę. Potwierdź, żeby domknąć dług.`,
+      `settlement-${groupId}`,
+    );
+  },
+);
+
+// WPŁATA POTWIERDZONA → push do WPŁACAJĄCEGO („sprawa zamknięta").
+//
+// Domyka pętlę: bez tego człowiek, który przelał pieniądze, nie wie, czy druga strona
+// to odnotowała, i pyta o to poza aplikacją. Reagujemy WYŁĄCZNIE na przejście
+// z niepotwierdzonej na potwierdzoną — reguły Firestore i tak nie pozwalają ruszyć
+// niczego innego, ale zapis może przyjść ponownie (at-least-once).
+export const sendSettlementConfirmedPush = onDocumentUpdated(
+  {
+    document: `artifacts/${APP_ID}/public/data/groups/{groupId}/settlements/{settlementId}`,
+    region: "europe-central2",
+  },
+  async (event) => {
+    const { groupId } = event.params;
+    const przed = event.data && event.data.before && event.data.before.data();
+    const po = event.data && event.data.after && event.data.after.data();
+    if (!przed || !po || !po.from || !po.to) return;
+    if (przed.confirmed === true || po.confirmed !== true) return;
+
+    const db = admin.firestore();
+    const groupDoc = await db.doc(`artifacts/${APP_ID}/public/data/groups/${groupId}`).get();
+    if (!groupDoc.exists) return;
+
+    const members = groupDoc.data().members || {};
+    const toName = (members[po.to] && members[po.to].name) || "Odbiorca";
+    const kwota = kwotaTekstem(po.amount, po.currency);
+
+    await wyslijPush(
+      db, groupDoc, groupId, po.from,
+      "Wpłata potwierdzona",
+      kwota
+        ? `${toName} potwierdził/a Twoją wpłatę ${kwota}. Sprawa zamknięta.`
+        : `${toName} potwierdził/a Twoją wpłatę. Sprawa zamknięta.`,
+      `settlement-ok-${groupId}`,
+    );
   },
 );
 

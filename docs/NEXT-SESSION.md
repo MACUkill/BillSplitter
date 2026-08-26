@@ -153,11 +153,23 @@ Wszystkie uwagi właściciela dotyczyły jednego: zakładka „Rachunki" niosła
 - **Około czterdziestu czekanych zapisów** w `src/main.js` (`await updateDoc` / `addDoc`).
   Offline te obietnice nie rozwiązują się nigdy. Przerobione są dołączanie do pokoju, zapis
   wpłaty i wszystkie trzy ścieżki potwierdzania wpłat — wzorzec to `fireWrite`.
-- **Powiadomienie push o wpłacie NIE ISTNIEJE.** Brief etapu 3 zakładał, że `billId`
-  naprawi też „treść push", ale `functions/index.js` wysyła push wyłącznie przy
-  przypomnieniu (`Przypomnienie o zaległości`). Cudza wpłata czekająca na potwierdzenie
-  zapala odznakę i wiersz w skrzynce, ale nie wychodzi na telefon. Do decyzji właściciela,
-  czy ma wychodzić.
+- **PUSH PRZY WPŁACIE CZEKA NA WDROŻENIE FUNKCJI.** `functions/index.js` ma od 2026-08-26
+  dwie nowe funkcje: `sendSettlementPush` (wpłata zgłoszona → push do odbiorcy)
+  i `sendSettlementConfirmedPush` (potwierdzona → push do wpłacającego). Treść jest
+  krótka, szczegóły „za co" są w aplikacji. **Kod jest na gałęzi, ale funkcje NIE SĄ
+  wdrożone** — dopóki właściciel tego nie zrobi, telefon przy wpłacie milczy:
+
+  ```
+  firebase deploy --only functions:sendSettlementPush,functions:sendSettlementConfirmedPush --project billsplitter-push-test
+  ```
+
+  **Wyzwalaczy funkcji NIE DA SIĘ sprawdzić lokalnie w tym repozytorium.** Emulator
+  funkcji startuje pod projektem `billsplitter-push-test`, a przeglądarka w trybie
+  deweloperskim łączy się z emulatorem Firestore pod hardkodowanym `billsplitter-2fdfa`
+  (bo lokalnie nie ma zmiennych `VITE_*`) — to dwie różne przestrzenie nazw, więc
+  wyzwalacze nie widzą zapisów. Dotyczy to TAK SAMO istniejącego `sendNudgePush`, który
+  nigdy nie był lokalnie odpalony. Sprawdzone jest to, co się da: składnia, rejestracja
+  obu wyzwalaczy przy starcie emulatora i przebieg audytowy, który tworzy wpłaty.
 
 ## Dwie rzeczy nieobejrzane na oczy
 
@@ -179,8 +191,8 @@ nie przez scalanie do V2 — o scaleniu decyduje właściciel, po sprawdzeniu na
 
 ## Pytania otwarte dla właściciela
 
-1. **Czy push ma wychodzić przy cudzej wpłacie do potwierdzenia?** Dziś nie wychodzi
-   (patrz „Długi" wyżej). W trybie rachunkowym takich wpłat jest więcej niż wcześniej.
+1. **Wdrożenie dwóch funkcji push** — komenda wyżej, w „Długach". Bez tego telefon przy
+   wpłacie milczy, choć odznaka i skrzynka działają.
 2. Punkty etapu 4 (algorytm planu minimalnego, P1/P2/P7 z artifactu) i pytanie
    o odświeżanie, o które właściciel dopytuje kolegę.
 
