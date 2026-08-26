@@ -48,6 +48,35 @@ const restRecipients = (bill, activeParticipants) => {
   return narrowed.length > 0 ? narrowed : activeParticipants;
 };
 
+// CZY KWOTA NIEROZPISANA MA JUŻ WŁAŚCICIELI.
+//
+// Do 2026-08-26 dzieliła się po równo ZAWSZE, także zanim ktokolwiek zdążył cokolwiek
+// stuknąć. Ekran mówił wtedy „na razie po równo" i pokazywał udział, który nie miał
+// pokrycia w niczyjej decyzji: człowiek, który nie wybrał ani jednej pozycji, widział
+// przy swoim imieniu kilkaset złotych. To myliło, bo wyglądało na rachunek, a było
+// zgadywaniem aplikacji.
+//
+// Teraz reszta jest NICZYJA, dopóki ktoś o niej nie zdecyduje — i jest to dokładnie ta
+// sama chwila, w której otwiera się brama rozliczeń. Jedna reguła zamiast dwóch:
+//   stare rachunki (bez `gated`)  — dzielimy jak dawniej, nic im się nie zmienia,
+//   „po równo"                    — cała kwota jest wspólna Z ZAŁOŻENIA, więc zawsze,
+//   „ze swoimi kosztami"          — dopiero gdy płatnik zamknie rachunek.
+//
+// Bez tego udział rósł ludziom o cudze pozycje, zanim ktokolwiek się do nich przyznał.
+//
+// Zwraca, ILE GROSZY z kwoty nierozpisanej ma już właścicieli — nie „tak/nie".
+// Powód jest konkretny: gdy po zamknięciu rachunku dojdzie nowa pozycja, decyzja sprzed
+// chwili NIE MOŻE SIĘ COFNĄĆ. Cofnięcie zabrałoby udziały ludziom, którzy na ich podstawie
+// zrobili już przelew, i zrobiłoby z tego dług płatnika wobec nich — czyli fałszywy dług
+// w drugą stronę. Stara decyzja zostaje w mocy, a niczyja jest wyłącznie NADWYŻKA.
+const decidedRestGrosze = (bill, unallocatedG) => {
+  if (!bill || bill.gated !== true) return unallocatedG;
+  if (billSplitMode(bill) === 'even') return unallocatedG;
+  if (bill.settleOpen !== true) return 0;
+  const objeteG = Math.max(0, Math.round(Number(bill.restSettledG) || 0));
+  return Math.min(unallocatedG, objeteG);
+};
+
 // --- Rachunek ZAAWANSOWANY: dokładne udziały (w groszach, mogą być ułamkowe) ---
 function advancedExactSharesGrosze(bill) {
   const participants = Object.values(bill.participants || {});
@@ -167,9 +196,18 @@ export const calculateAll = (bill) => {
   // Nadwyżka pozycji ponad kwotę rachunku NIE staje się ujemną resztą — to błąd wpisu,
   // który zgłasza kontrola, a nie powód, żeby komukolwiek odejmować od udziału.
   const unallocatedG = Math.max(0, effectiveTotalG - allocatedG);
-  const restTakers = restRecipients(bill, shares.filter((s) => isActive(s.participant)).map((s) => s.participant));
+  const aktywni = shares.filter((s) => isActive(s.participant)).map((s) => s.participant);
+  const objeteDecyzjaG = Math.min(unallocatedG, Math.max(0, decidedRestGrosze(bill, unallocatedG)));
+  // Grosz różnicy nie tworzy „kwoty niczyjej": procentowy koszt ogólny potrafi przesunąć
+  // wynik o tyle bez żadnej zmiany w treści rachunku, a jeden nieprzypisany grosz
+  // trzymałby bramę zamkniętą i pokazywał na ekranie „0,01 nikt nie wziął".
+  const wCalosci = (unallocatedG - objeteDecyzjaG) <= TOLERANCE_GROSZE;
+  const rozdzielonaG = wCalosci ? unallocatedG : objeteDecyzjaG;
+  const niczyjaG = Math.max(0, unallocatedG - rozdzielonaG);
+  const decyzjaZapadla = niczyjaG <= 0;
+  const restTakers = rozdzielonaG > 0 ? restRecipients(bill, aktywni) : [];
   const restTakerIds = restTakers.map((p) => p.id);
-  const perPersonUnallocatedG = restTakers.length > 0 ? unallocatedG / restTakers.length : 0;
+  const perPersonUnallocatedG = restTakers.length > 0 ? rozdzielonaG / restTakers.length : 0;
 
   const participantTotals = shares.map((s) => {
     const restG = restTakerIds.includes(s.participant.id) ? perPersonUnallocatedG : 0;
@@ -209,7 +247,13 @@ export const calculateAll = (bill) => {
     // pozycje należą do tych, którzy ich nie odklikali. Kto dostał taki przydział, ma
     // prawo wiedzieć, skąd wzięła się jego kwota — i mieć czym się odwołać.
     restToIds: restTakerIds,
-    restToEveryone: restTakerIds.length === shares.filter((s) => isActive(s.participant)).length,
+    restToEveryone: restTakerIds.length > 0 && restTakerIds.length === aktywni.length,
+    // Czy CAŁA reszta ma już właścicieli.
+    restDecided: decyzjaZapadla,
+    // Ile z niej NIE MA WŁAŚCICIELA. To jest liczba, o której mówi ekran („nikt tego nie
+    // wziął") i którą pilnuje brama rozliczeń — a nie `unallocated`, bo po zamknięciu
+    // rachunku część nierozpisanej kwoty ma już przypisanych ludzi.
+    restUndecided: fromGrosze(niczyjaG),
     // SKĄD bierze się kwota nierozpisana. Ekran musi to rozróżnić, bo dla czytającego
     // to dwie różne historie. Pozycja bez chętnego („nikt tego nie wziął") naprawia się
     // jednym stuknięciem. Różnica między kwotą rachunku a sumą pozycji („reszta
@@ -309,7 +353,10 @@ export function billSettleGate(bill) {
   if (billSplitMode(bill) === 'even') return { open: true, reason: 'even', needsDecision: false };
 
   const wynik = calculateAll(bill);
-  const unallocatedG = toGrosze(wynik.unallocated);
+  // KWOTA NICZYJA, nie „nierozpisana". Po zamknięciu rachunku część nierozpisanej kwoty ma
+  // już właścicieli (decyzja płatnika), więc pilnowanie `unallocated` trzymałoby bramę
+  // zamkniętą na rachunku, na którym wszystko jest już rozstrzygnięte.
+  const unallocatedG = toGrosze(wynik.restUndecided);
 
   // NADWYŻKA BLOKUJE ZAMKNIĘCIE. Pozycje ponad kwotę rachunku to jedyny prawdziwy błąd
   // wpisu (`computeControl`), a przy nim `unallocated` wynosi zero — więc bez tego warunku
@@ -318,23 +365,27 @@ export function billSettleGate(bill) {
     return { open: false, reason: 'over', needsDecision: false, unallocatedG, diff: wynik.control.diff };
   }
 
-  // Nic nie wisi bez właściciela — udziały są dokładne, nikt nie może stracić, więc brama
-  // stoi otworem sama i NIKT niczego nie zatwierdza. To jest ścieżka, którą przejdzie
-  // większość rachunków rozpisanych do końca.
-  if (unallocatedG <= 0) return { open: true, reason: 'exact', needsDecision: false, unallocatedG: 0 };
-
-  if (bill.settleOpen === true) {
-    const objeteG = Math.max(0, Math.round(Number(bill.restSettledG) || 0));
-    // Doszło coś, czego decyzja o reszcie nie obejmowała — brama wraca na miejsce.
-    // TOLERANCE_GROSZE, nie zero: kwoty ułamkowe z procentowych kosztów ogólnych potrafią
-    // przesunąć wynik o grosz bez żadnej zmiany w treści rachunku.
-    if (unallocatedG > objeteG + TOLERANCE_GROSZE) {
-      return { open: false, reason: 'changed', needsDecision: true, unallocatedG, settledG: objeteG };
-    }
-    return { open: true, reason: 'closed', needsDecision: false, unallocatedG };
+  // Nic nie wisi bez właściciela — nikt nie może stracić, więc brama stoi otworem.
+  // Dwie drogi do tego stanu i obie są prawidłowe: rachunek rozpisany co do grosza
+  // (`exact`, nikt niczego nie zatwierdzał) albo decyzja płatnika (`closed`).
+  if (unallocatedG <= 0) {
+    return {
+      open: true,
+      reason: bill.settleOpen === true ? 'closed' : 'exact',
+      needsDecision: false,
+      unallocatedG: 0,
+    };
   }
 
-  return { open: false, reason: 'rest', needsDecision: true, unallocatedG };
+  // Coś jest niczyje. Na rachunku jeszcze niezamykanym to zwykły stan uzupełniania;
+  // na zamkniętym znaczy, że po decyzji DOSZŁO coś, czego ona nie obejmowała — i to jest
+  // ten sam błąd, przed którym brama chroni, tyle że tylnymi drzwiami.
+  return {
+    open: false,
+    reason: bill.settleOpen === true ? 'changed' : 'rest',
+    needsDecision: true,
+    unallocatedG,
+  };
 }
 
 // Czy rachunek wchodzi do księgi długów (Bilans, Rozliczenia).

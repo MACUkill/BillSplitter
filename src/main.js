@@ -1653,15 +1653,21 @@
         // To jest cała treść decyzji, którą podejmuje płatnik — i dlatego mówimy o POZYCJACH,
         // nie o ludziach. „Wino 40,00" widać od razu, że było wspólne; „Danie 40,00 · Danie
         // 40,00" widać, że to czyjeś jedzenie. Lista imion nie niesie tej wiedzy, a paragon tak.
+        // WYPISYWANIE POZYCJI PO NAZWIE BYŁO BŁĘDEM (zgłoszenie właściciela 2026-08-26).
+        // Paragon z japońskiej restauracji ma nazwy po sześćdziesiąt znaków, a osiem takich
+        // pozycji zamieniało baner w ścianę tekstu, przez którą nie było widać ani kwoty,
+        // ani przycisku. Do tego lista niczego nie dodawała: te same pozycje stoją niżej
+        // na wydruku, wyszarzone, i tam widać je lepiej niż w akapicie.
+        //
+        // Zostają dwie liczby, bo jedna nie wystarcza: „4 z 15 pozycji" nie mówi, czy chodzi
+        // o grosze, czy o połowę rachunku, a sama kwota nie mówi, ilu pozycji szukać.
         const restBreakdownHtml = (bill, calculations) => {
             const cur = (bill && bill.currency) || 'PLN';
             const czesci = [];
-            const sieroty = unassignedItems(bill);
-            if (sieroty.length) {
-                const pozycjeHtml = sieroty
-                    .map((it) => `${escapeHtml(it.description || 'Pozycja')} ${fmtMoney(toGrosze(it.amount || 0), cur)}`)
-                    .join(' · ');
-                czesci.push(`<p class="text-sm text-ink-2 mt-2"><b class="text-ink">Nikt nie wziął:</b> ${pozycjeHtml}</p>`);
+            const sierot = calculations.orphanCount || 0;
+            const wszystkich = calculations.itemCount || 0;
+            if (sierot > 0) {
+                czesci.push(`<p class="text-sm text-ink-2 mt-2"><b class="text-ink">${sierot} z ${wszystkich} pozycji nikt nie wziął</b> · ${fmtMoney(toGrosze(calculations.orphanAmount || 0), cur)}. Na wydruku niżej są wyszarzone.</p>`);
             }
             // Różnica między kwotą rachunku a sumą pozycji. Na rachunku bez ani jednej pozycji
             // jest całą jego treścią, nie usterką — więc nazywamy ją spokojnie.
@@ -1670,6 +1676,28 @@
                 czesci.push(`<p class="text-sm text-ink-2 mt-2"><b class="text-ink">Nierozpisane z kwoty rachunku:</b> ${fmtMoney(resztaG, cur)}</p>`);
             }
             return czesci.join('');
+        };
+
+        // LISTA OSÓB, KTÓRA NIE ROZLAZŁA SIĘ NA PÓŁ EKRANU.
+        //
+        // Aplikacja ma obsłużyć ekipy 12–25 osób (PRODUCT.md), a wypisane w akapicie imiona
+        // piętnastu ludzi zjadały cały arkusz i spychały przyciski poza ekran. Lista jest więc
+        // ZWINIĘTA i przewijana we własnym pudełku: kto chce wiedzieć, kogo to dotyczy,
+        // rozwija — a kto nie, widzi samą liczbę i decyzję.
+        const peopleListHtml = (osoby, tytul) => {
+            if (!osoby || !osoby.length) return '';
+            const wierszeHtml = osoby.map((p) => `
+                <span class="flex items-center gap-2 py-1 min-w-0">
+                    ${avatarHtml(p.name || memberName(p.id), p.id, 'w-7 h-7 text-xs')}
+                    <span class="truncate text-sm">${escapeHtml(p.name || memberName(p.id))}</span>
+                </span>`).join('');
+            return `<details class="mt-2">
+                <summary class="settle-others-summary">
+                    <span>${escapeHtml(tytul)} (${osoby.length})</span>
+                    <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
+                </summary>
+                <div class="mt-2 max-h-56 overflow-y-auto rounded-block bg-surface-2 px-3 py-1">${wierszeHtml}</div>
+            </details>`;
         };
 
         // BANER STANU RACHUNKU. Mówi trzy rzeczy i ani jednej więcej: ile wisi, czemu to
@@ -1709,8 +1737,11 @@
 
             const ilu = Object.values(bill.participants || {})
                 .filter((p) => p.status !== PARTICIPANT_OUT && !participantReady(bill, p.id)).length;
+            // PRZYCISKI JEDEN POD DRUGIM, NIE OBOK SIEBIE. W rzędzie „Zamknij rachunek"
+            // łamało się na dwa wiersze na wąskim telefonie, a złamana etykieta na przycisku
+            // wygląda na usterkę układu. Pod spodem obie mieszczą się w całości.
             const przypomnijHtml = ilu > 0
-                ? `<button id="remind-fill-btn" class="btn btn-quiet flex-shrink-0">Przypomnij (${ilu})</button>`
+                ? `<button id="remind-fill-btn" class="btn btn-quiet w-full mt-2">Przypomnij ${ilu} ${plural(ilu, 'osobie', 'osobom', 'osobom')}</button>`
                 : '';
             return `<div class="card p-4">
                 <div class="flex items-start gap-3">
@@ -1718,10 +1749,8 @@
                     <span class="text-sm text-ink-2">${wstepHtml}</span>
                 </div>
                 ${restBreakdownHtml(bill, calculations)}
-                <div class="flex items-center gap-2 mt-3">
-                    <button id="close-bill-btn" class="btn btn-dark flex-grow">Zamknij rachunek</button>
-                    ${przypomnijHtml}
-                </div>
+                <button id="close-bill-btn" class="btn btn-dark w-full mt-3">Zamknij rachunek</button>
+                ${przypomnijHtml}
             </div>`;
         };
 
@@ -1736,26 +1765,23 @@
         // Automat po iluś godzinach byłby wygodny, ale reguła progu sygnału (docs/UI-UX.md
         // §10.2) mówi wprost: sygnał kosztuje i dostaje go to, co dotyczy moich pieniędzy.
         // Push „ktoś czeka, aż klikniesz" wysłany przez zegar uczy ignorować powiadomienia.
-        const sendFillReminders = async () => {
+        // Otwiera TEN SAM arkusz, co przypomnienie o zwrocie: szablony, własna treść,
+        // potwierdzenie przy wysyłce do kilkunastu osób. Wysyłka jednym stuknięciem, bez okna,
+        // była tu wcześniej wyjątkiem od reguły — a przypomnienie budzi cudzy telefon
+        // niezależnie od tego, czy prosi o pieniądze, czy o kliknięcie.
+        const sendFillReminders = () => {
             const my = myMemberNow();
             if (!my || !billData) return;
             const spozniacy = Object.values(billData.participants || {})
                 .filter((p) => p.status !== PARTICIPANT_OUT && p.id !== my.id && !participantReady(billData, p.id));
             if (!spozniacy.length) { showToast('Wszyscy już coś stuknęli.'); return; }
-            let poszlo = 0;
-            for (const p of spozniacy) {
-                // Kwota zero: to nie jest upomnienie o pieniądze, tylko prośba o ruch.
-                const ok = await sendNudge(p.id, 0, billData.currency || 'PLN', FILL_NUDGE_MESSAGE, {
-                    cicho: true,
-                    kind: 'fill',
-                    billId: currentBillId,
-                    billName: billData.billName || '',
-                });
-                if (ok) poszlo += 1;
-            }
-            showToast(poszlo === spozniacy.length
-                ? `Poszło do ${poszlo} ${plural(poszlo, 'osoby', 'osób', 'osób')}.`
-                : `Poszło do ${poszlo} z ${spozniacy.length} — reszta dostała przypomnienie przed chwilą.`);
+            // Kwota zero: to nie jest upomnienie o pieniądze, tylko prośba o ruch.
+            openNudgeCompose(
+                spozniacy.map((p) => ({ toId: p.id, amountG: 0 })),
+                billData.currency || 'PLN',
+                null,
+                { kind: 'fill', billId: currentBillId, billName: billData.billName || '' },
+            );
         };
 
         // ARKUSZ ZAMKNIĘCIA. Dwie drogi, żadna nie zaznaczona z góry.
@@ -1781,27 +1807,26 @@
 
             const perWszyscyG = aktywni.length ? Math.ceil(wiszaceG / aktywni.length) : 0;
             const opcje = [`
-                <button class="close-bill-opt btn btn-dark w-full" data-rest="all">
-                    <span class="block">Podziel po równo na ${aktywni.length} ${plural(aktywni.length, 'osobę', 'osoby', 'osób')}</span>
-                </button>
-                <p class="text-sm text-ink-2 -mt-1">Po ${fmtMoney(perWszyscyG, cur)} na osobę. Tak robimy, gdy to była wspólna rzecz — wino, przystawka, napiwek.</p>`];
+                <button class="close-bill-opt btn btn-dark w-full" data-rest="all">Podziel po równo</button>
+                <p class="text-sm text-ink-2 -mt-1">Po <b class="text-ink">${fmtMoney(perWszyscyG, cur)}</b> na każdą z ${aktywni.length} ${plural(aktywni.length, 'osoby', 'osób', 'osób')}. Tak robimy, gdy to była wspólna rzecz — wino, przystawka, napiwek.</p>`];
 
             // Druga droga pokazuje się TYLKO wtedy, gdy jest komu przypisać. Przy rachunku,
             // na którym wszyscy coś stuknęli, nie ma „spóźnialskich" i pytanie nie ma adresata.
             if (spozniacy.length > 0 && spozniacy.length < aktywni.length) {
                 const perSpozG = Math.ceil(wiszaceG / spozniacy.length);
-                // Osoby, które nigdy nie otworzyły linku, nie mają jak się odwołać — płatnik
-                // musi wiedzieć, że bierze na siebie powiedzenie im o tym.
-                const imionaHtml = spozniacy.map((p) => {
-                    const czlonek = (groupData && groupData.members && groupData.members[p.id]) || {};
-                    const pozaApka = !czlonek.claimedBy;
-                    return `${escapeHtml(p.name || memberName(p.id))}${pozaApka ? ' <span class="text-ink-3">(nie ma apki)</span>' : ''}`;
-                }).join(' · ');
+                // „LUB" MIĘDZY DROGAMI. Dwa przyciski jeden pod drugim czyta się jak listę
+                // kroków do wykonania po kolei, a to są DWIE WYKLUCZAJĄCE SIĘ odpowiedzi na
+                // jedno pytanie. Żadna nie jest zaznaczona z góry, więc rozdzielenie ich
+                // słowem jest jedyną rzeczą, która mówi „wybierz jedną".
                 opcje.push(`
-                    <button class="close-bill-opt btn btn-dark w-full" data-rest="late">
-                        <span class="block">Wrzuć tym, którzy nie stuknęli swoich pozycji</span>
-                    </button>
-                    <p class="text-sm text-ink-2 -mt-1">Po ${fmtMoney(perSpozG, cur)} dla: ${imionaHtml}. Tak robimy, gdy to było czyjeś jedzenie. Każdy z nich zobaczy, skąd wzięła się jego kwota, i może się odwołać.</p>`);
+                    <div class="flex items-center gap-3 py-1">
+                        <span class="h-px flex-grow bg-ink/10"></span>
+                        <span class="text-xs font-bold text-ink-3 tracking-wide">LUB</span>
+                        <span class="h-px flex-grow bg-ink/10"></span>
+                    </div>
+                    <button class="close-bill-opt btn btn-dark w-full" data-rest="late">Wrzuć spóźnialskim</button>
+                    <p class="text-sm text-ink-2 -mt-1">Po <b class="text-ink">${fmtMoney(perSpozG, cur)}</b> dla ${spozniacy.length} ${plural(spozniacy.length, 'osoby', 'osób', 'osób')}, które nie stuknęły ani jednej pozycji. Tak robimy, gdy to było czyjeś jedzenie.</p>
+                    ${peopleListHtml(spozniacy, 'Kogo to dotyczy')}`);
             }
 
             opcje.push(`<button id="close-bill-later" class="btn btn-quiet w-full">Jeszcze poczekam</button>`);
@@ -3260,23 +3285,30 @@
         // kto nie jest nic winien, a to jest najkrótsza droga do wyłączenia powiadomień.
         const FILL_NUDGE_MESSAGE = 'Stuknij swoje pozycje na rachunku — czekamy, żeby się rozliczyć.';
         const REOPEN_NUDGE_MESSAGE = 'To nie moje — proszę o otwarcie rachunku, chcę poprawić swoje pozycje.';
-        const nudgeTemplatesKey = () => 'billsplitter_nudge_templates';
-        const readNudgeTemplates = () => {
-            try { return JSON.parse(localStorage.getItem(nudgeTemplatesKey()) || '[]'); }
+        // SZABLONY OSOBNO DLA KAŻDEGO RODZAJU PRZYPOMNIENIA.
+        // Wspólna szuflada znaczyłaby, że pod prośbą „stuknij swoje pozycje" wyskakują
+        // gotowce o oddawaniu pieniędzy — czyli podpowiedzi do zupełnie innej rozmowy.
+        const nudgeTemplatesKey = (kind = 'debt') =>
+            kind === 'fill' ? 'billsplitter_fill_templates' : 'billsplitter_nudge_templates';
+        const readNudgeTemplates = (kind = 'debt') => {
+            try { return JSON.parse(localStorage.getItem(nudgeTemplatesKey(kind)) || '[]'); }
             catch { return []; }
         };
-        const writeNudgeTemplates = (list) => {
+        const writeNudgeTemplates = (list, kind = 'debt') => {
             // Pięć szablonów wystarczy: dłuższa lista przestaje być wyborem, a staje się
             // kolejną rzeczą do przewijania w chwili, gdy chce się po prostu wysłać.
-            try { localStorage.setItem(nudgeTemplatesKey(), JSON.stringify(list.slice(0, 5))); } catch (_) {}
+            try { localStorage.setItem(nudgeTemplatesKey(kind), JSON.stringify(list.slice(0, 5))); } catch (_) {}
         };
 
-        let nudgeDraft = null; // { toId, amountG, currency }
+        let nudgeDraft = null; // { lista, currency, kind, billId, billName }
+
+        const nudgeDefaultMessage = (kind) => (kind === 'fill' ? FILL_NUDGE_MESSAGE : DEFAULT_NUDGE_MESSAGE);
 
         const renderNudgeTemplates = () => {
             const wrap = document.getElementById('nudge-templates');
             if (!wrap) return;
-            const templates = [DEFAULT_NUDGE_MESSAGE, ...readNudgeTemplates()];
+            const kind = (nudgeDraft && nudgeDraft.kind) || 'debt';
+            const templates = [nudgeDefaultMessage(kind), ...readNudgeTemplates(kind)];
             wrap.innerHTML = templates.map((t, i) => `
                 <button class="nudge-template-btn filter-pill" data-index="${i}" title="${escapeHtml(t)}">
                     ${escapeHtml(i === 0 ? 'Klasyczna' : t.slice(0, 24) + (t.length > 24 ? '…' : ''))}
@@ -3299,7 +3331,13 @@
         // Treść jest WSPÓLNA dla całej listy — świadomie. Osobna wiadomość do każdego brzmi
         // ładniej, ale w praktyce to piętnaście formularzy do wypełnienia, więc nikt by tego
         // nie użył. Szablony działają bez zmian.
-        const openNudgeCompose = (adresaci, amountGlubCurrency, currency) => {
+        //
+        // OD 2026-08-26 KOMPOZYTOR OBSŁUGUJE DWA RODZAJE PROŚB. Prośba o uzupełnienie pozycji
+        // szła wcześniej jednym stuknięciem, bez okna — czyli ten sam ruch, co przypomnienie
+        // o pieniądzach, wyglądał na dwa różne mechanizmy i nie dawało się dopisać ani słowa.
+        // Teraz obie drogi mają ten sam arkusz, te same szablony i to samo potwierdzenie przy
+        // wysyłce do kilkunastu osób.
+        const openNudgeCompose = (adresaci, amountGlubCurrency, currency, opcje = {}) => {
             const my = myMemberNow();
             if (!my) { showToast('Najpierw dołącz do grupy.', true); return; }
             const lista = (Array.isArray(adresaci)
@@ -3308,16 +3346,42 @@
             ).filter((a) => a.toId && a.toId !== my.id);
             if (lista.length === 0) return;
             const waluta = (Array.isArray(adresaci) ? amountGlubCurrency : currency) || 'PLN';
-            nudgeDraft = { lista, currency: waluta };
+            const kind = opcje.kind === 'fill' ? 'fill' : 'debt';
+            nudgeDraft = {
+                lista, currency: waluta, kind,
+                billId: opcje.billId || null,
+                billName: opcje.billName || '',
+            };
+
+            const tytul = document.querySelector('#nudge-compose-modal .sheet-title');
+            if (tytul) tytul.textContent = kind === 'fill' ? 'Przypomnij o uzupełnieniu' : 'Przypomnij o zwrocie';
+            const podpowiedz = document.getElementById('nudge-message-hint');
+            if (podpowiedz) {
+                podpowiedz.textContent = kind === 'fill'
+                    ? 'Zobaczy ją tylko adresat. Powiadomienie prowadzi prosto do tego rachunku, więc nie musisz tłumaczyć, gdzie kliknąć.'
+                    : 'Zobaczy ją tylko adresat. Kwota jedzie osobno, więc w treści nie musisz jej powtarzać.';
+            }
 
             const nameEl = document.getElementById('nudge-compose-name');
             const avatarEl = document.getElementById('nudge-compose-avatar');
             const amountEl = document.getElementById('nudge-compose-amount');
             const razemG = lista.reduce((s, a) => s + a.amountG, 0);
+            // Przy prośbie o uzupełnienie kwota nie ma sensu — nikt nikomu nic nie jest winien.
+            // W to miejsce idzie nazwa rachunku, bo to ona mówi, o co chodzi.
+            const podpis = kind === 'fill'
+                ? (nudgeDraft.billName ? `rachunek „${nudgeDraft.billName}"` : 'ten rachunek')
+                : (razemG > 0 ? `zaległość ${fmtMoney(razemG, waluta)}` : '');
             if (lista.length === 1) {
                 nameEl.textContent = memberName(lista[0].toId);
                 avatarEl.innerHTML = avatarHtml(memberName(lista[0].toId), lista[0].toId, 'w-12 h-12 text-lg');
-                amountEl.textContent = razemG > 0 ? `zaległość ${fmtMoney(razemG, waluta)}` : '';
+                amountEl.textContent = podpis;
+            } else if (kind === 'fill') {
+                nameEl.textContent = `${lista.length} ${plural(lista.length, 'osoby', 'osób', 'osób')}`;
+                const widoczne = lista.slice(0, 5);
+                avatarEl.innerHTML = `<span class="flex -space-x-2">${
+                    widoczne.map((a) => avatarHtml(memberName(a.toId), a.toId, 'w-9 h-9 text-sm')).join('')
+                }${lista.length > widoczne.length ? `<span class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold bg-surface-2 text-ink-2">+${lista.length - widoczne.length}</span>` : ''}</span>`;
+                amountEl.textContent = podpis;
             } else {
                 nameEl.textContent = `${lista.length} ${plural(lista.length, 'osoby', 'osób', 'osób')}`;
                 // Stos twarzy zamiast jednej: od razu widać, do kogo to leci. Pięć mieści się
@@ -3329,7 +3393,7 @@
                 }${lista.length > widoczne.length ? `<span class="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold bg-surface-2 text-ink-2">+${lista.length - widoczne.length}</span>` : ''}</span>`;
                 amountEl.textContent = razemG > 0 ? `razem ${fmtMoney(razemG, waluta)}` : '';
             }
-            document.getElementById('nudge-message').value = DEFAULT_NUDGE_MESSAGE;
+            document.getElementById('nudge-message').value = nudgeDefaultMessage(kind);
             renderNudgeTemplates();
             document.getElementById('nudge-compose-modal').classList.add('active');
         };
@@ -4692,6 +4756,19 @@
             const akcja = swipe.querySelector('.bill-swipe-action');
             if (akcja) {
                 akcja.addEventListener('focus', () => {
+                    // TYLKO OGNISKO OD KLAWIATURY (poprawione 2026-08-26 po zgłoszeniu
+                    // „przycisk Ukryj jest widoczny na wierzchu od razu po wejściu").
+                    //
+                    // Ten nasłuch jest JEDYNĄ drogą, którą wiersz otwiera się bez gestu palca,
+                    // a reagował na KAŻDE ognisko — także nadane dotknięciem, przywrócone przez
+                    // przeglądarkę po powrocie na widok albo ustawione programowo. Wtedy pierwszy
+                    // wiersz listy witał człowieka odsunięty, choć nikt go nie ruszał.
+                    // `:focus-visible` jest prawdziwe wyłącznie przy nawigacji klawiaturą
+                    // i czytnikiem ekranu — czyli dokładnie w przypadku, dla którego ten
+                    // nasłuch powstał. Safari zna je od 15.4, czyli od naszej dolnej granicy.
+                    let odKlawiatury = true;
+                    try { odKlawiatury = akcja.matches(':focus-visible'); } catch (_) { odKlawiatury = true; }
+                    if (!odKlawiatury) return;
                     zamknijWiersz();
                     swipe.classList.add('is-open');
                     otwartyWiersz = swipe;
@@ -4705,6 +4782,11 @@
         const renderBillsList = () => {
             const billsList = document.getElementById('bills-history-list');
             if (!billsList || !groupData) return;
+            // KAŻDE RYSOWANIE LISTY ZACZYNA SIĘ OD WIERSZY ZAMKNIĘTYCH. Wiersze powstają
+            // od nowa, więc klasa `is-open` nie ma jak ich przeżyć — ale zmienna `otwartyWiersz`
+            // wskazywałaby na element wyrzucony już z drzewa, a wtedy zamknięcie następnego
+            // wiersza nie miałoby czego zamknąć. Jedna linia kasuje całą tę księgowość.
+            zamknijWiersz();
             const myMember = Object.values(groupData.members || {}).find(m => m.claimedBy === currentUser.uid);
             if (!myMember) return;
 
@@ -5699,13 +5781,32 @@
         const restInfo = (calc) => {
             const kwota = calc.unallocated || 0;
             if (kwota <= 0.004) return null;
-            // RESZTA PRZYPISANA WSKAZANYM OSOBOM nie jest już „po równo" i nie jest stanem
-            // przejściowym — to zapadła decyzja płatnika. Zdanie „na razie po równo" mówiłoby
-            // wtedy nieprawdę o cudzych pieniądzach, a wyjaśnienie i tak niesie blok „To nie
-            // moje" pod kwotą.
-            if (calc.restToEveryone === false) {
-                return { caption: 'Nierozpisane z rachunku', note: '' };
+            const cur = (billData && billData.currency) || 'PLN';
+
+            // KWOTA NICZYJA NIE JEST NICZYIM UDZIAŁEM (zgłoszenie właściciela 2026-08-26).
+            //
+            // Stało tu „na razie po równo" — pozostałość po założeniu, że reszta dzieli się
+            // od pierwszej sekundy. Zdanie było mylące przy pieniądzach: człowiek, który nie
+            // wybrał ani jednej pozycji, widział przy swoim imieniu kilkaset złotych i nie
+            // wiedział, czy to jego dług, czy przypuszczenie aplikacji.
+            //
+            // Teraz mówimy wprost: dopóki nikt o tej kwocie nie zdecydował, nie należy do
+            // nikogo, a Twój udział to dokładnie to, co stuknąłeś.
+            if (!calc.restDecided && (calc.restToIds || []).length === 0) {
+                return {
+                    caption: 'Nierozpisane (niczyje)',
+                    note: `${fmtMoney(toGrosze(calc.restUndecided || 0), cur)} nikt jeszcze nie wziął — ta kwota NIE dolicza się nikomu. Płacisz wyłącznie za to, co stuknąłeś, dopóki płatnik nie zamknie rachunku.`,
+                };
             }
+
+            // Decyzja płatnika już zapadła — podpis ma to mówić, bo od niej wzięła się liczba.
+            if (billData && billData.settleOpen === true) {
+                return {
+                    caption: calc.restToEveryone ? 'Po równo (decyzja płatnika)' : 'Przypisane Tobie',
+                    note: '',
+                };
+            }
+
             const sierot = calc.orphanCount || 0;
             // Pół grosza tolerancji: obie liczby idą przez złotówki, więc porównanie na
             // sztywną równość potrafiłoby pęknąć na groszu z kosztu procentowego.
@@ -5783,8 +5884,12 @@
             // a człowiek patrzy NA kwotę. Liczba wygląda przez to na ostateczną, choć jest
             // stanem przejściowym. Sama matematyka jest poprawna i celowa: kwota nierozpisana
             // dzieli się po równo, żeby reszta nie spadła po cichu na płatnika.
+            // „MOŻE WZROSNĄĆ", NIE „WSTĘPNIE" (2026-08-26). Od chwili, gdy kwota niczyja
+            // przestała doliczać się do udziałów, ta liczba jest DOKŁADNA dla tego, co
+            // stuknąłeś — a „wstępnie" sugerowało, że i ona jest zgadywana. Ostrzec trzeba
+            // o czym innym: że po decyzji płatnika może dojść reszta.
             const wstepnie = rest && rest.note
-                ? `<span class="chip flex-shrink-0">wstępnie</span>`
+                ? `<span class="chip flex-shrink-0">${(billData && billData.settleOpen === true) ? 'wstępnie' : 'może wzrosnąć'}</span>`
                 : '';
             return `<div class="mt-4 pt-3 border-t border-ink/10">
                 <div class="flex items-baseline justify-between gap-3">
@@ -6192,9 +6297,17 @@
                 }
             } else if (calculations.unallocated > 0) {
                 if (controlStatusEl) {
-                    controlStatusEl.textContent = calculations.perPersonUnallocated > 0
-                        ? `Nierozpisane ${diffText(calculations.unallocated)}, czyli po ${diffText(calculations.perPersonUnallocated)} na osobę.`
-                        : `Nierozpisane ${diffText(calculations.unallocated)}.`;
+                    // „Po X na osobę" wolno powiedzieć WYŁĄCZNIE wtedy, gdy ta kwota naprawdę
+                    // komuś się dolicza. Dopóki nikt o niej nie zdecydował, jest niczyja —
+                    // a zdanie o podziale sugerowałoby dług, którego nie ma.
+                    const niczyjaG = toGrosze(calculations.restUndecided || 0);
+                    if (niczyjaG > 0) {
+                        controlStatusEl.textContent = `Nierozpisane ${diffText(fromGrosze(niczyjaG))} — nikt tego jeszcze nie wziął.`;
+                    } else {
+                        controlStatusEl.textContent = calculations.perPersonUnallocated > 0
+                            ? `Nierozpisane ${diffText(calculations.unallocated)}, czyli po ${diffText(calculations.perPersonUnallocated)} na osobę.`
+                            : `Nierozpisane ${diffText(calculations.unallocated)}.`;
+                    }
                 }
             } else if (control.status === 'ok') {
                 controlSumEl.classList.add('control-sum-ok');
@@ -7708,12 +7821,13 @@
             if (nudgeSend) nudgeSend.onclick = async () => {
                 if (!nudgeDraft) return;
                 const message = document.getElementById('nudge-message').value;
-                const { lista, currency } = nudgeDraft;
+                const { lista, currency, kind, billId, billName } = nudgeDraft;
+                const dodatki = { kind, billId, billName };
 
                 const wyslij = async () => {
                     nudgeComposeModal.classList.remove('active');
                     if (lista.length === 1) {
-                        await sendNudge(lista[0].toId, lista[0].amountG, currency, message);
+                        await sendNudge(lista[0].toId, lista[0].amountG, currency, message, dodatki);
                     } else {
                         // Bramka anty-spamowa działa PER OSOBA, więc ktoś, kto dostał
                         // przypomnienie przed chwilą, po prostu wypada z tej wysyłki.
@@ -7721,7 +7835,7 @@
                         // pominięciu połowy listy byłoby nieprawdą.
                         let poszlo = 0;
                         for (const a of lista) {
-                            if (await sendNudge(a.toId, a.amountG, currency, message, { cicho: true })) poszlo += 1;
+                            if (await sendNudge(a.toId, a.amountG, currency, message, { ...dodatki, cicho: true })) poszlo += 1;
                         }
                         const pominieto = lista.length - poszlo;
                         showToast(pominieto === 0
@@ -7737,7 +7851,9 @@
                 const imiona = lista.map((a) => memberName(a.toId)).join(', ');
                 openConfirm({
                     title: `Przypomnieć ${lista.length} ${plural(lista.length, 'osobie', 'osobom', 'osobom')}?`,
-                    body: `Każda dostanie tę samą wiadomość i kwotę swojej zaległości: ${imiona}.`,
+                    body: kind === 'fill'
+                        ? `Każda dostanie tę samą wiadomość i odnośnik prosto do rachunku: ${imiona}.`
+                        : `Każda dostanie tę samą wiadomość i kwotę swojej zaległości: ${imiona}.`,
                     confirmLabel: 'Wyślij',
                     tone: 'brand',
                     onConfirm: wyslij,
@@ -7745,10 +7861,11 @@
             };
             const nudgeSaveTpl = document.getElementById('nudge-save-template');
             if (nudgeSaveTpl) nudgeSaveTpl.onclick = () => {
+                const kind = (nudgeDraft && nudgeDraft.kind) || 'debt';
                 const text = document.getElementById('nudge-message').value.trim();
-                if (!text || text === DEFAULT_NUDGE_MESSAGE) { showToast('Wpisz własną treść, żeby ją zapisać.', true); return; }
-                const list = readNudgeTemplates().filter((t) => t !== text);
-                writeNudgeTemplates([text, ...list]);
+                if (!text || text === nudgeDefaultMessage(kind)) { showToast('Wpisz własną treść, żeby ją zapisać.', true); return; }
+                const list = readNudgeTemplates(kind).filter((t) => t !== text);
+                writeNudgeTemplates([text, ...list], kind);
                 renderNudgeTemplates();
                 showToast('Szablon zapisany na tym urządzeniu.');
             };

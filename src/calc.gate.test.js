@@ -98,9 +98,50 @@ describe('billSettleGate — kiedy wolno się rozliczać', () => {
   });
 });
 
-describe('restTo — komu przypada kwota nierozpisana', () => {
-  it('bez `restTo` reszta idzie po równo na wszystkich aktywnych', () => {
+// Rachunek zamknięty ręcznie: decyzja o reszcie zapadła i dopiero teraz reszta wchodzi
+// do udziałów. Do 2026-08-26 wchodziła od pierwszej sekundy („na razie po równo").
+const zamkniety = (extra = {}) => rachunek({
+  settleOpen: true, everOpened: true, restSettledG: 12000, ...extra,
+});
+
+describe('reszta jest NICZYJA, dopóki nikt o niej nie zdecyduje', () => {
+  it('kto nic nie stuknął, ma udział 0 — nie „na razie po równo"', () => {
     const w = calculateAll(rachunek());
+    // Kuba nie wziął ani jednej pozycji. Zostaje mu sam koszt ogólny (serwis 20/6).
+    expect(udzial(w, 'kuba')).toBeCloseTo(3.34, 2);
+    expect(w.restDecided).toBe(false);
+  });
+
+  it('kto stuknął swoje, płaci DOKŁADNIE swoje — bez dopłaty za spóźnialskich', () => {
+    const w = calculateAll(rachunek());
+    expect(udzial(w, 'ania')).toBeCloseTo(43.34, 2); // danie 40 + serwis 3,34
+  });
+
+  it('nierozpisana kwota jest widoczna, choć nie należy do nikogo', () => {
+    const w = calculateAll(rachunek());
+    expect(w.unallocated).toBeCloseTo(120, 2);
+    expect(w.perPersonUnallocated).toBe(0);
+    expect(w.restToIds).toEqual([]);
+  });
+
+  it('stary rachunek dzieli resztę jak dawniej — aktualizacja nie rusza mu kwot', () => {
+    const b = rachunek();
+    delete b.gated;
+    const w = calculateAll(b);
+    expect(udzial(w, 'ania')).toBeCloseTo(63.34, 2);
+    expect(w.restDecided).toBe(true);
+  });
+
+  it('tryb „po równo" dzieli od razu — tam reszta JEST treścią rachunku', () => {
+    const w = calculateAll(rachunek({ splitMode: 'even', sharedCosts: [], globalCosts: [] }));
+    expect(udzial(w, 'kuba')).toBeCloseTo(50, 2);
+    expect(w.restDecided).toBe(true);
+  });
+});
+
+describe('restTo — komu przypada kwota nierozpisana po decyzji płatnika', () => {
+  it('bez `restTo` reszta idzie po równo na wszystkich aktywnych', () => {
+    const w = calculateAll(zamkniety());
     // 120 / 6 = 20 na osobę; Ania: danie 40 + reszta 20 + serwis 3,34 (w górę)
     expect(udzial(w, 'ania')).toBeCloseTo(63.34, 2);
     expect(udzial(w, 'kuba')).toBeCloseTo(23.34, 2);
@@ -108,7 +149,7 @@ describe('restTo — komu przypada kwota nierozpisana', () => {
   });
 
   it('`restTo` przerzuca resztę na wskazanych — sumienny przestaje dopłacać', () => {
-    const w = calculateAll(rachunek({ restTo: ['kuba', 'ola'] }));
+    const w = calculateAll(zamkniety({ restTo: ['kuba', 'ola'] }));
     // 120 / 2 = 60 dla Kuby i Oli; Ania płaci już tylko swoje danie + serwis.
     expect(udzial(w, 'ania')).toBeCloseTo(43.34, 2);
     expect(udzial(w, 'kuba')).toBeCloseTo(63.34, 2);
@@ -116,15 +157,15 @@ describe('restTo — komu przypada kwota nierozpisana', () => {
     expect(w.restToIds).toEqual(['kuba', 'ola']);
   });
 
-  it('suma udziałów zawsze pokrywa rachunek — płatnik nigdy stratny', () => {
+  it('suma udziałów pokrywa ZAMKNIĘTY rachunek — płatnik nigdy stratny', () => {
     [undefined, ['kuba', 'ola'], ['kuba']].forEach((restTo) => {
-      const w = calculateAll(rachunek({ restTo }));
+      const w = calculateAll(zamkniety({ restTo }));
       expect(w.controlSum).toBeGreaterThanOrEqual(300);
     });
   });
 
   it('osoba wypisana z rachunku wypada z listy niosącej resztę', () => {
-    const b = rachunek({ restTo: ['kuba', 'ola'] });
+    const b = zamkniety({ restTo: ['kuba', 'ola'] });
     b.participants.ola.status = 'not_applicable';
     const w = calculateAll(b);
     expect(w.restToIds).toEqual(['kuba']);
@@ -133,10 +174,22 @@ describe('restTo — komu przypada kwota nierozpisana', () => {
 
   it('gdy po odsianiu nie zostaje NIKT, reszta wraca do wszystkich aktywnych', () => {
     // Pieniądze nie mogą wyparować dlatego, że wskazana osoba odeszła z rachunku.
-    const b = rachunek({ restTo: ['ktos-kogo-nie-ma'] });
-    const w = calculateAll(b);
+    const w = calculateAll(zamkniety({ restTo: ['ktos-kogo-nie-ma'] }));
     expect(w.restToEveryone).toBe(true);
     expect(w.controlSum).toBeGreaterThanOrEqual(300);
+  });
+
+  it('pozycja dopisana po zamknięciu nie cofa decyzji — niczyja jest tylko NADWYŻKA', () => {
+    // Cofnięcie zabrałoby udział ludziom, którzy zdążyli już na jego podstawie zapłacić,
+    // i zrobiłoby z tego dług płatnika wobec nich.
+    const b = zamkniety();
+    b.totalAmount = 350;
+    b.sharedCosts.push({ id: 'd7', description: 'Deser', amount: 50, sharedBy: [] });
+    const w = calculateAll(b);
+    expect(w.restDecided).toBe(false);
+    expect(w.restUndecided).toBeCloseTo(50, 2);      // sam deser czeka na decyzję
+    expect(w.perPersonUnallocated).toBeCloseTo(20, 2); // stara decyzja stoi: 120 / 6
+    expect(udzial(w, 'kuba')).toBeCloseTo(23.34, 2);   // udział NIE spadł
   });
 });
 

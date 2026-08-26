@@ -77,6 +77,21 @@ Przykład, na którym stoją testy (`src/calc.gate.test.js`): rachunek 300 zł, 
 6 dań po 40, wino 40, serwis 20. Czterech odklikało, Kuba i Ola nie. Ania płaciła **63,34**
 zamiast 50, Kuba **23,34** zamiast 50.
 
+### Koniec z „na razie po równo" (2026-08-26, druga runda)
+
+Kwota nierozpisana **nie dolicza się nikomu, dopóki ktoś o niej nie zdecyduje**. Kto nie
+stuknął ani jednej pozycji, ma udział **0** — a nie kilkaset złotych „wstępnie". To była
+pozostałość po założeniu, że reszta dzieli się od pierwszej sekundy, i myliła przy
+pieniądzach: liczba wyglądała na dług, a była przypuszczeniem aplikacji.
+
+Reguła jest ta sama, co brama: **reszta dolicza się dokładnie wtedy, gdy brama jest otwarta.**
+Stare rachunki → jak dawniej. „Po równo" → zawsze. „Ze swoimi kosztami" → po decyzji płatnika.
+
+`decidedRestGrosze` zwraca **ile groszy** ma już właścicieli, a nie „tak/nie". Powód jest
+konkretny: gdy po zamknięciu dojdzie nowa pozycja, **stara decyzja nie może się cofnąć** —
+cofnięcie zabrałoby udział ludziom, którzy na jego podstawie zdążyli zapłacić, i zrobiłoby
+z tego dług płatnika wobec nich. Niczyja jest wyłącznie nadwyżka (`restUndecided`).
+
 ### Reguła: brama jest o PIENIĄDZACH, nie o ludziach
 
 Nie pytamy „czy wszyscy skończyli" — tego aplikacja nie wie i przy ekipie 12–25 osób
@@ -117,10 +132,14 @@ Dwa z nich są nieoczywiste i **bez nich wracają błędy**:
 - **Rachunek** — baner `payer-confirmation-banner-advanced`, ten sam, co mówi o płatniku.
   **Zero nowych sekcji**: ekran jest zapchany, a baner odpowiada dokładnie na to samo
   pytanie („czemu tego jeszcze nie da się oddać").
-- **Arkusz „Zamknij rachunek"** — pokazuje **POZYCJE, nie listę spóźnialskich**: „Wino 40,00"
-  widać, że było wspólne, „Danie 40,00 · Danie 40,00", że to czyjeś jedzenie. Dwie drogi,
-  **żadna nie zaznaczona z góry**. Osoby bez apki oznaczone „(nie ma apki)", bo nie mają jak
-  się odwołać.
+- **Arkusz „Zamknij rachunek"** — dwie drogi rozdzielone słowem **LUB**, żadna nie zaznaczona
+  z góry. Przyciski są krótkie („Podziel po równo", „Wrzuć spóźnialskim"), a kwota i
+  wyjaśnienie stoją pod nimi. Lista osób jest **zwinięta i przewijana** (`peopleListHtml`),
+  bo przy ekipie 15–25 osób wypisane imiona zjadały cały arkusz.
+- **Liczby zamiast nazw pozycji.** Baner i arkusz mówią „4 z 15 pozycji nikt nie wziął ·
+  6278,00 PLN", a nie wypisują nazw: paragon z japońskiej restauracji ma nazwy po
+  sześćdziesiąt znaków i osiem takich pozycji zamieniało baner w ścianę tekstu. Same pozycje
+  widać niżej na wydruku, wyszarzone (`receipt-line-void`).
 - **Klucz do zamknięcia**: płatnik → admin pokoju (`adminId`, teraz widoczny w składzie jako
   „założył/a pokój") → **każdy po 7 dniach**. Ten trzeci nie jest ozdobą: `adminId` to uid
   urządzenia i jest zamrożony regułami, więc nowy telefon kasuje admina bezpowrotnie.
@@ -133,6 +152,10 @@ Dwa z nich są nieoczywiste i **bez nich wracają błędy**:
 - **Powiadomienia** — trzy rodzaje przypomnień zamiast jednego: `debt`, `fill`, `reopen`.
   `sendNudgePush` ma dla nich osobne treści i deep-link `?group=…&bill=…`; bez tego telefon
   mówiłby „Przypomnienie o zaległości" komuś, kto nie jest nic winien.
+- **Prośba o uzupełnienie idzie tym samym arkuszem, co windykator** — szablony, własna treść,
+  potwierdzenie przy wysyłce do kilkunastu osób. Szablony mają OSOBNĄ szufladę
+  (`billsplitter_fill_templates`), inaczej pod prośbą o kliknięcie wyskakiwałyby gotowce
+  o oddawaniu pieniędzy.
 
 ### Stare rachunki
 
