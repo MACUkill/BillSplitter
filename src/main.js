@@ -2124,6 +2124,18 @@
             </span>`;
         };
 
+        // PŁATNIK JESZCZE NIEZNANY — pytajnik w kole, a nie dziura po znaku.
+        //
+        // Rachunek bez wskazanego płatnika miał w wierszu PUSTE miejsce: kolumna znaków
+        // rozjeżdżała się, a brak niczego nie znaczył. Pytajnik trafia w tę samą kolumnę,
+        // co twarze, i mówi to, co jest do powiedzenia — nie wiadomo jeszcze, kto wyłożył
+        // pieniądze. Kreskowana obwódka odróżnia go od czyjegoś znaku: to puste miejsce
+        // do wypełnienia, a nie osoba o dziwnym kolorze.
+        const unknownPayerHtml = (sizeClass = 'w-11 h-11 text-base') =>
+            `<span class="rounded-full flex-shrink-0 inline-flex items-center justify-center font-bold border-2 border-dashed border-ink-3/40 text-ink-3 ${sizeClass}" aria-label="Nie wiadomo, kto płacił" title="Nie wiadomo, kto płacił">
+                <span style="font-size:0.72em">?</span>
+            </span>`;
+
         // --- Faza 4/5-bridge: metody płatności per osoba (wiele: konto, telefon, Revolut, PayPal, własne) ---
         const PAYMENT_TYPES = {
             account: { label: 'Konto / IBAN', icon: 'fa-building-columns', placeholder: 'Numer konta / IBAN' },
@@ -5055,7 +5067,7 @@
                 // LICZBA, która musi być wyrównana do prawej i zostaje na miejscu.
                 billEl.innerHTML = `
                     <div class="flex items-start gap-3">
-                    ${bill.payerId ? avatarHtml(memberName(bill.payerId), bill.payerId, 'w-11 h-11 text-base') : ''}
+                    ${bill.payerId ? avatarHtml(memberName(bill.payerId), bill.payerId, 'w-11 h-11 text-base') : unknownPayerHtml()}
                     <div class="min-w-0 flex-grow">
                         <p class="font-bold text-lg leading-tight break-words">${escapeHtml(bill.billName)}</p>
                         <div class="mt-1.5 flex items-center gap-2 flex-wrap">
