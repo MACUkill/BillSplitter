@@ -1431,6 +1431,12 @@
                 renderBillsList();
                 renderSettlements();
                 renderBalancePanel();
+                // ODZNAKA I KROPKA LICZĄ SIĘ TEŻ Z RACHUNKÓW (`actionBillsForMe`), a ten
+                // nasłuch ich nie odświeżał — więc sygnał o rachunku czekającym na mój ruch
+                // zapalał się dopiero przy następnej wpłacie albo zmianie w grupie, czyli
+                // często wcale. Po wprowadzeniu bramy widać to wyraźniej: zamknięcie rachunku
+                // ZDEJMUJE zadanie płatnikowi, a otwarcie z powrotem je dokłada.
+                updateNudgeBadge();
             });
 
             const settlementsQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`), orderBy('createdAt', 'desc'));
