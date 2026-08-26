@@ -1,24 +1,28 @@
 # Brief na następną sesję
 
-> ## ⚠️ ZACZNIJ TUTAJ — ETAP 3 ZROBIONY, CZEKA NA TELEFON (2026-08-26)
+> ## ⚠️ ZACZNIJ TUTAJ — ETAP 3 SCALONY DO `BillSplitterV2` (2026-08-26)
 >
-> **Gałąź robocza: `etap1-offline-i-feedback`** (etapy 1, 2 i 3, drzewo czyste, NIE scalona
-> do `BillSplitterV2`). Opis etapu 3 jest w `docs/UI-UX.md` §22 — przeczytaj go, zanim
-> cokolwiek w tym zakresie ruszysz.
+> **Etapy 1, 2 i 3 są na `BillSplitterV2`**, czyli w wersji, której używa ekipa.
+> Scalenie było PRZEWINIĘCIEM (`BillSplitterV2` był przodkiem gałęzi roboczej), więc
+> nie było ani jednego konfliktu — ani tekstowego, ani znaczeń. Gałąź
+> `etap1-offline-i-feedback` zostaje na `origin` jako ślad, wskazuje ten sam commit.
 >
-> **Następny ruch należy do właściciela: obejrzeć to na telefonie.** Trzy tryby, wpłaty
-> przypisane do rachunków i „kto już oddał" zmieniają ekrany, których jego ekipa używa
-> na żywo. Dopiero po tym decyzja o scaleniu do `BillSplitterV2`.
+> Opis etapu 3 jest w `docs/UI-UX.md` §22, a wersją OBOWIĄZUJĄCĄ modelu trybów jest
+> **§22.10** (dwa tryby, bez przełącznika) — §22.1–22.3 opisują pierwszą wersję z trzema.
 >
-> ### ⚠️ DWIE RZECZY DO COFNIĘCIA PRZED SCALENIEM
+> **`main` zostaje nietknięty.** Scalenie V2 na `main` robi wyłącznie właściciel, ręcznie
+> i nie teraz — patrz pamięć projektu.
 >
-> 1. **`public/manifest.json` nosi na tej gałęzi nazwę „Billiada · etap 3" / „Etap 3".**
->    Zmienione świadomie, żeby ikona wersji testowej dała się odróżnić na ekranie
->    początkowym od ikony wersji, której używa ekipa. **Przed scaleniem wróć do
->    „Billiada" w obu polach** — inaczej całej ekipie zmieni się nazwa pod ikoną.
-> 2. Nic więcej. Reszta gałęzi jest gotowa do scalenia taka, jaka jest.
+> ### Zostało do zrobienia po stronie właściciela
 >
-> ### Jak wystawić tę gałąź na telefon (branch deploy Netlify)
+> **Wdrożenie dwóch funkcji push** (kod jest, funkcje nie są wdrożone — do tego czasu
+> telefon przy wpłacie milczy, choć odznaka i skrzynka działają):
+>
+> ```
+> firebase deploy --only functions:sendSettlementPush,functions:sendSettlementConfirmedPush --project billsplitter-push-test
+> ```
+>
+> ### Gałąź testowa na telefon (branch deploy Netlify)
 >
 > Site `groupbillsplitter`, tak samo jak `BillSplitterV2` pod
 > `billsplitterv2--groupbillsplitter.netlify.app`.
@@ -184,10 +188,13 @@ Wszystkie uwagi właściciela dotyczyły jednego: zakładka „Rachunki" niosła
   przelewie w banku. Właściciel: *„całkiem fajne, możemy to zapisać, ale nie wiem czy
   wprowadzę"*. Etap 3 świadomie tego NIE ma — jedno „Ureguluj" na rachunek.
 
-**Gałąź jest na `origin`** (wypchnięta 2026-08-26 za zgodą właściciela) jako osobna,
-nowa gałąź obok `main`, `BillSplitterV2`, `MacuTestowy` i `worktree-ux-poprawki-v2`.
-`BillSplitterV2` stoi nietknięta na `e61188e1`. Pracuj przez `git push` na tej gałęzi,
-nie przez scalanie do V2 — o scaleniu decyduje właściciel, po sprawdzeniu na telefonie.
+**Etapy 1–3 są na `BillSplitterV2`** (scalone 2026-08-26 na polecenie właściciela,
+przewinięciem z `etap1-offline-i-feedback`). To jest gałąź, której używa ekipa: wydanie
+= wypchnięcie gałęzi, Netlify przebudowuje sam. Pracuj tu ostrożnie — po drugiej stronie
+są ludzie i cudze pieniądze.
+
+**`main` zostaje nietknięty i scala go WYŁĄCZNIE właściciel**, ręcznie, w dalekiej
+przyszłości. Asystent tego nie robi nawet przy zielonych testach — patrz pamięć projektu.
 
 ## Pytania otwarte dla właściciela
 

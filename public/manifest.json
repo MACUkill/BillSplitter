@@ -1,6 +1,6 @@
 {
-  "name": "Billiada · etap 3",
-  "short_name": "Etap 3",
+  "name": "Billiada",
+  "short_name": "Billiada",
   "description": "Rachunek dzieli cała ekipa naraz. Bez kont i bez logowania.",
   "start_url": "/",
   "display": "standalone",
