@@ -172,11 +172,48 @@ describe('restTo — komu przypada kwota nierozpisana po decyzji płatnika', () 
     expect(udzial(w, 'ola')).toBe(0);
   });
 
-  it('gdy po odsianiu nie zostaje NIKT, reszta wraca do wszystkich aktywnych', () => {
-    // Pieniądze nie mogą wyparować dlatego, że wskazana osoba odeszła z rachunku.
-    const w = calculateAll(zamkniety({ restTo: ['ktos-kogo-nie-ma'] }));
-    expect(w.restToEveryone).toBe(true);
-    expect(w.controlSum).toBeGreaterThanOrEqual(300);
+  it('gdy WSZYSCY wskazani wypadli, decyzja traci moc i reszta znów jest niczyja', () => {
+    // AUDYT 2026-08-26. Wcześniej reszta wracała po cichu do wszystkich aktywnych:
+    // płatnik rozstrzygnął „to jedzenie Kuby", Kuba wypadł ze składu, a 120 zł przechodziło
+    // na pozostałych — bez słowa, przy otwartej bramie i czynnych przelewach.
+    const b = zamkniety({ restTo: ['kuba', 'ola'] });
+    b.participants.kuba.status = 'not_applicable';
+    b.participants.ola.status = 'not_applicable';
+    const w = calculateAll(b);
+    // Ani grosza nierozpisanego nikomu — udziały zmienią się tylko o koszty wspólne,
+    // które i tak dzielą się przez mniejszą liczbę osób.
+    w.participantTotals.forEach((pt) => expect(pt.restAmount).toBe(0));
+    expect(w.restUndecided).toBeCloseTo(w.unallocated, 2);
+    expect(w.restToIds).toEqual([]);
+    expect(w.restDecided).toBe(false);
+    expect(billSettleGate(b).open).toBe(false); // brama pyta o decyzję jeszcze raz
+  });
+
+  it('gdy została CHOĆ JEDNA wskazana osoba, decyzja obowiązuje dalej', () => {
+    const b = zamkniety({ restTo: ['kuba', 'ola'] });
+    b.participants.ola.status = 'not_applicable';
+    const w = calculateAll(b);
+    expect(w.restToIds).toEqual(['kuba']);
+    expect(billSettleGate(b).open).toBe(true);
+  });
+
+  it('ZAMKNIĘCIE PO ZMIANIE ROZSTRZYGA CAŁOŚĆ — inaczej rachunku nie da się już zamknąć', () => {
+    // BŁĄD BLOKUJĄCY, znaleziony audytem 2026-08-26. Arkusz zapisywał jako `restSettledG`
+    // kwotę NICZYJĄ (samą nadwyżkę), a `decidedRestGrosze` porównuje ją z CAŁYM
+    // nierozpisanym. Decyzja obejmowała więc 50 zł z wiszących 170 i brama wracała na
+    // miejsce natychmiast po zamknięciu — płatnik, który poprawił własny rachunek,
+    // blokował ekipie przelewy na zawsze.
+    const b = zamkniety();
+    b.totalAmount = 350;
+    b.sharedCosts.push({ id: 'd7', description: 'Deser', amount: 50, sharedBy: [] });
+    expect(billSettleGate(b).reason).toBe('changed');
+
+    // Tak zamyka arkusz: całe nierozpisane, nie sama nadwyżka.
+    const poZamknieciu = { ...b, restSettledG: Math.round(calculateAll(b).unallocated * 100) };
+    const gate = billSettleGate(poZamknieciu);
+    expect(gate.open).toBe(true);
+    expect(gate.reason).toBe('closed');
+    expect(calculateAll(poZamknieciu).restUndecided).toBe(0);
   });
 
   it('pozycja dopisana po zamknięciu nie cofa decyzji — niczyja jest tylko NADWYŻKA', () => {
@@ -261,5 +298,22 @@ describe('rachunek wypadający z księgi nie może osierocić wpłaty', () => {
     const ledger = buildLedger(bills, [{ from: 'kuba', to: 'michal', amount: 20, currency: 'PLN' }]);
     const odwrotny = ((ledger.PLN && ledger.PLN.net) || []).find((t) => t.from === 'michal' && t.to === 'kuba');
     expect(odwrotny).toBeUndefined();
+  });
+});
+
+// AUDYT 2026-08-26 — stany, w których dane z bazy przeczą temu, co mówi ekran.
+describe('brama a przestawienie trybu podziału', () => {
+  it('„po równo" dzieli po równo, nawet gdy rachunek nosi starą decyzję o reszcie', () => {
+    // Płatnik zamknął rachunek w trybie „ze swoimi kosztami" (reszta dla Kuby), a potem
+    // przestawił tryb na „po równo". Bez tego warunku całe 300 zł szło dalej Kubie —
+    // przy otwartej bramie, więc te kwoty dało się przelać.
+    const b = rachunek({
+      splitMode: 'even', sharedCosts: [], globalCosts: [],
+      settleOpen: true, everOpened: true, restSettledG: 30000, restTo: ['kuba'],
+    });
+    const w = calculateAll(b);
+    expect(w.restToEveryone).toBe(true);
+    expect(udzial(w, 'ania')).toBeCloseTo(50, 2);
+    expect(udzial(w, 'kuba')).toBeCloseTo(50, 2);
   });
 });

@@ -38,14 +38,27 @@ const isActive = (p) => p && p.status !== 'not_applicable';
 // jedzenie?". Bez tej listy aplikacja musiałaby zgadywać, a przy cudzych pieniądzach
 // zgadywanie jest gorsze niż zapytanie.
 //
-// Lista jest ODPORNA NA ZMIANY SKŁADU: kto wypadł z rachunku albo zniknął z uczestników,
-// ten wypada też stąd. Gdyby po takim odsianiu nie został NIKT, reszta wraca do wszystkich
-// aktywnych — pieniądze nie mogą wyparować tylko dlatego, że wskazana osoba odeszła.
+// Lista jest ODPORNA NA ZMIANY SKŁADU: kto wypadł z rachunku, ten wypada też stąd.
+// Dopóki został choć jeden wskazany, decyzja ma adresata i obowiązuje dalej.
+//
+// GDY WYPADLI WSZYSCY, ZWRACAMY `null` — czyli „decyzja straciła adresata".
+// Do audytu 2026-08-26 reszta wracała wtedy po cichu do wszystkich aktywnych i to był błąd
+// tej samej rodziny, co ten, przed którym broni cała brama: płatnik rozstrzygnął „to jedzenie
+// Kuby", Kuba wypadł ze składu, a sto osiemdziesiąt złotych po cichu przeszło na pozostałych.
+// Udział rósł ludziom bez ani jednego słowa, przy otwartej bramie i czynnych przelewach.
+// Teraz reszta wraca do stanu „niczyja": brama się zamyka i pyta o decyzję jeszcze raz.
+// Pieniądze nie wyparowują — po prostu nikt nie płaci, dopóki nie wiadomo za co.
 const restRecipients = (bill, activeParticipants) => {
+  // „PO RÓWNO" ZNACZY PO RÓWNU — ZAWSZE (audyt 2026-08-26).
+  // Rachunek zamknięty w trybie „ze swoimi kosztami" nosi `restTo`, a płatnik może potem
+  // przestawić tryb na „po równo". Bez tego warunku stara decyzja obowiązywała dalej
+  // i cała kwota szła jednej wskazanej osobie, choć przełącznik mówił „po równo"
+  // — przy otwartej bramie, więc dało się te kwoty przelać.
+  if (billSplitMode(bill) === 'even') return activeParticipants;
   const wanted = Array.isArray(bill && bill.restTo) ? bill.restTo : null;
   if (!wanted || wanted.length === 0) return activeParticipants;
   const narrowed = activeParticipants.filter((p) => wanted.includes(p.id));
-  return narrowed.length > 0 ? narrowed : activeParticipants;
+  return narrowed.length > 0 ? narrowed : null;
 };
 
 // CZY KWOTA NIEROZPISANA MA JUŻ WŁAŚCICIELI.
@@ -197,15 +210,20 @@ export const calculateAll = (bill) => {
   // który zgłasza kontrola, a nie powód, żeby komukolwiek odejmować od udziału.
   const unallocatedG = Math.max(0, effectiveTotalG - allocatedG);
   const aktywni = shares.filter((s) => isActive(s.participant)).map((s) => s.participant);
-  const objeteDecyzjaG = Math.min(unallocatedG, Math.max(0, decidedRestGrosze(bill, unallocatedG)));
+  // Komu przypada reszta. `null` znaczy „decyzja straciła adresata" — wtedy nie ma jej komu
+  // przypisać i cała kwota wraca do stanu niczyjego, tak samo jakby decyzji nigdy nie było.
+  const wskazani = restRecipients(bill, aktywni);
+  const objeteDecyzjaG = wskazani
+    ? Math.min(unallocatedG, Math.max(0, decidedRestGrosze(bill, unallocatedG)))
+    : 0;
   // Grosz różnicy nie tworzy „kwoty niczyjej": procentowy koszt ogólny potrafi przesunąć
   // wynik o tyle bez żadnej zmiany w treści rachunku, a jeden nieprzypisany grosz
   // trzymałby bramę zamkniętą i pokazywał na ekranie „0,01 nikt nie wziął".
-  const wCalosci = (unallocatedG - objeteDecyzjaG) <= TOLERANCE_GROSZE;
+  const wCalosci = wskazani && (unallocatedG - objeteDecyzjaG) <= TOLERANCE_GROSZE;
   const rozdzielonaG = wCalosci ? unallocatedG : objeteDecyzjaG;
   const niczyjaG = Math.max(0, unallocatedG - rozdzielonaG);
   const decyzjaZapadla = niczyjaG <= 0;
-  const restTakers = rozdzielonaG > 0 ? restRecipients(bill, aktywni) : [];
+  const restTakers = (rozdzielonaG > 0 && wskazani) ? wskazani : [];
   const restTakerIds = restTakers.map((p) => p.id);
   const perPersonUnallocatedG = restTakers.length > 0 ? rozdzielonaG / restTakers.length : 0;
 

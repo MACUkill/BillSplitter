@@ -1842,11 +1842,29 @@
             if (gate.open) { showToast('Ten rachunek jest już otwarty do rozliczeń.'); return; }
             const cur = billData.currency || 'PLN';
             const calculations = calculateAllForBill(billData);
-            const wiszaceG = gate.unallocatedG || 0;
+            // CAŁA KWOTA NIEROZPISANA, NIE SAMA NADWYŻKA (poprawione po audycie 2026-08-26).
+            //
+            // Stało tu `gate.unallocatedG`, czyli kwota NICZYJA — a na rachunku zamkniętym,
+            // do którego ktoś dopisał pozycję, jest to wyłącznie ta nowa część. Zapisanie jej
+            // jako `restSettledG` znaczyło, że decyzja obejmuje 60 zł z wiszących 240 —
+            // więc po zamknięciu brama natychmiast wracała na miejsce i RACHUNKU NIE DAŁO SIĘ
+            // JUŻ ZAMKNĄĆ ANI RAZU. Płatnik, który poprawił własny rachunek, blokował ekipie
+            // przelewy na zawsze.
+            //
+            // Decyzja o reszcie jest jedna i niepodzielna: `restTo` to jedna lista dla całej
+            // kwoty, więc zamknięcie rozstrzyga CAŁOŚĆ nierozpisanego na nowo.
+            const wiszaceG = toGrosze(calculations.unallocated);
 
             const aktywni = Object.values(billData.participants || {}).filter((p) => p.status !== PARTICIPANT_OUT);
             const spozniacy = aktywni.filter((p) => !participantReady(billData, p.id));
 
+            // Rachunek zamykany PONOWNIE: część tej kwoty była już kiedyś rozdzielona,
+            // a to zamknięcie rozstrzyga ją na nowo. Bez tego zdania płatnik widzi kwotę
+            // większą niż ta, o której mówił baner, i nie ma jak tego pogodzić.
+            const juzRozdzieloneG = Math.max(0, wiszaceG - (gate.unallocatedG || 0));
+            const ponownieHtml = juzRozdzieloneG > 0
+                ? `<p class="text-sm text-ink-2 mt-2">W tym <b class="text-ink">${fmtMoney(juzRozdzieloneG, cur)}</b> rozdzielone przy poprzednim zamknięciu — ta decyzja rozstrzyga całość na nowo.</p>`
+                : '';
             document.getElementById('close-bill-summary').innerHTML = `
                 <div class="block-quiet p-4">
                     <div class="flex items-baseline justify-between gap-3">
@@ -1854,6 +1872,7 @@
                         <span class="text-2xl font-bold tabular-nums">${fmtMoney(wiszaceG, cur)}</span>
                     </div>
                     ${restBreakdownHtml(billData, calculations)}
+                    ${ponownieHtml}
                 </div>`;
 
             const perWszyscyG = aktywni.length ? Math.ceil(wiszaceG / aktywni.length) : 0;
@@ -6877,7 +6896,18 @@
                 btn.onclick = async () => {
                     const next = btn.dataset.mode;
                     if (next === billSplitMode(billData)) return;
-                    await updateDoc(billDocRef, { splitMode: next });
+                    // ZMIANA TRYBU UNIEWAŻNIA DECYZJĘ O RESZCIE (audyt 2026-08-26).
+                    // Tryb przestawia kształt CAŁEGO rachunku, więc odpowiedź na pytanie
+                    // „co z kwotą, której nikt nie wziął" przestaje pasować do pytania.
+                    // Zostawienie jej znaczyło, że rachunek podpisany „po równo" oddaje
+                    // całość jednej wskazanej osobie. `functions/calc.js` broni się przed tym
+                    // sam, ale stan w bazie ma być prawdziwy, a nie tylko nieszkodliwy.
+                    await updateDoc(billDocRef, {
+                        splitMode: next,
+                        settleOpen: false,
+                        restTo: null,
+                        restSettledG: 0,
+                    });
                     logEvent({
                         type: 'bill-mode',
                         billId: currentBillId,
