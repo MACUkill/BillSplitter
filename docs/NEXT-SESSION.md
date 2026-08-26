@@ -10,6 +10,36 @@
 > przypisane do rachunków i „kto już oddał" zmieniają ekrany, których jego ekipa używa
 > na żywo. Dopiero po tym decyzja o scaleniu do `BillSplitterV2`.
 >
+> ### ⚠️ DWIE RZECZY DO COFNIĘCIA PRZED SCALENIEM
+>
+> 1. **`public/manifest.json` nosi na tej gałęzi nazwę „Billiada · etap 3" / „Etap 3".**
+>    Zmienione świadomie, żeby ikona wersji testowej dała się odróżnić na ekranie
+>    początkowym od ikony wersji, której używa ekipa. **Przed scaleniem wróć do
+>    „Billiada" w obu polach** — inaczej całej ekipie zmieni się nazwa pod ikoną.
+> 2. Nic więcej. Reszta gałęzi jest gotowa do scalenia taka, jaka jest.
+>
+> ### Jak wystawić tę gałąź na telefon (branch deploy Netlify)
+>
+> Site `groupbillsplitter`, tak samo jak `BillSplitterV2` pod
+> `billsplitterv2--groupbillsplitter.netlify.app`.
+>
+> **PUŁAPKA, KTÓRA GRYZIE PO CICHU:** siedem zmiennych `VITE_*` jest przypiętych
+> w Netlify do kontekstu `BillSplitterV2`. Nowa gałąź ich NIE dziedziczy, a
+> `src/main.js:31` ma wtedy cichy fallback na projekt `billsplitter-2fdfa` (stare V1).
+> Aplikacja wygląda identycznie i wstaje normalnie — tyle że na innej bazie.
+>
+> 1. Environment variables → dopisz kontekst gałęzi do scope każdej z siedmiu zmiennych
+>    (`VITE_FIREBASE_API_KEY`, `_AUTH_DOMAIN`, `_PROJECT_ID`, `_STORAGE_BUCKET`,
+>    `_MESSAGING_SENDER_ID`, `_APP_ID`, `VITE_FCM_VAPID_KEY`). Bez `VITE_USE_EMULATOR`.
+> 2. Build & deploy → Branches and deploy contexts → dopisz gałąź.
+> 3. Adres: `https://etap1-offline-i-feedback--groupbillsplitter.netlify.app`
+>
+> Baza jest TA SAMA co u ekipy (`billsplitter-push-test`), więc do zabawy zakładaj nowy
+> pokój. Ruszenie prawdziwego jest bezpieczne — stary kod ignoruje `settlementMode`
+> i `billId`, a saldo na czysto jest niezmiennikiem — ale ekipa widzi wtedy inny ekran
+> niż Ty. Lista „Twoje pokoje" na nowej domenie startuje pusta (`localStorage` jest
+> per domena): wchodź kodem pokoju.
+>
 > **Pełny zapis decyzji projektowych (osiem rund rozmowy z właścicielem):**
 > https://claude.ai/code/artifact/bc3c3b5d-659d-4bc5-8003-1cd5b9e428e5
 >
