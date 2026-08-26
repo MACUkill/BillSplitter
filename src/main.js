@@ -3649,14 +3649,49 @@
             const nazwyHtml = otwarte.slice(0, 4)
                 .map((b) => escapeHtml(b.billName || 'Rachunek')).join(' · ');
             const wiecej = otwarte.length > 4 ? ` i ${otwarte.length - 4} więcej` : '';
+
+            // CZY TO JA JESTEM WĄSKIM GARDŁEM.
+            //
+            // Na Rozliczeniach i Bilansie pytanie brzmi „czemu tej kwoty tu jeszcze nie ma",
+            // a nie „co mam dziś zrobić" — od zadań jest skrzynka i sekcja „Czeka na Ciebie".
+            // Ale jeśli to MOJE nieodklikane pozycje trzymają rachunek, to człowiek stoi
+            // właśnie na ekranie, na którym chciał zapłacić, i ma prawo dowiedzieć się tego
+            // tutaj, jednym zdaniem, z drogą na miejsce. Bez tego szuka po zakładkach.
+            const my = myMemberNow();
+            const mojeDoStukniecia = my ? otwarte.filter((b) => {
+                const p = (b.participants || {})[my.id];
+                return p && p.status !== PARTICIPANT_OUT && !participantReady(b, my.id);
+            }) : [];
+            const mojeDoZamkniecia = my ? otwarte.filter((b) => isPrimaryCloser(b, my.id)) : [];
+            const wolanie = mojeDoStukniecia.length
+                ? { lista: mojeDoStukniecia, tekst: `stuknij swoje pozycje na ${mojeDoStukniecia.length === 1 ? 'tym rachunku' : `${mojeDoStukniecia.length} z nich`}` }
+                : (mojeDoZamkniecia.length
+                    ? { lista: mojeDoZamkniecia, tekst: `zamknij ${mojeDoZamkniecia.length === 1 ? 'ten rachunek' : `${mojeDoZamkniecia.length} z nich`}` }
+                    : null);
+            const wolanieHtml = wolanie
+                ? `<p class="text-sm text-ink-2 mt-2"><b class="text-ink">Czeka na Ciebie:</b> ${wolanie.tekst}.</p>
+                   <button class="filling-go-btn btn btn-quiet w-full mt-2" data-bill="${escapeHtml(wolanie.lista.length === 1 ? wolanie.lista[0].id : '')}">${wolanie.lista.length === 1 ? 'Otwórz rachunek' : 'Pokaż rachunki'}</button>`
+                : '';
+
             return `<div class="block-quiet p-4">
                 <div class="flex items-baseline justify-between gap-3">
                     <span class="font-bold">W uzupełnianiu</span>
                     <span class="font-bold tabular-nums">${kwotyHtml}</span>
                 </div>
                 <p class="text-sm text-ink-2 mt-1">${otwarte.length} ${plural(otwarte.length, 'rachunek', 'rachunki', 'rachunków')} czeka na zamknięcie, więc jeszcze nie liczy się do salda: ${nazwyHtml}${wiecej}.</p>
+                ${wolanieHtml}
             </div>`;
         };
+
+        // Jedna delegacja na oba miejsca, w których stoi blok „W uzupełnianiu" (Bilans
+        // i Rozliczenia). Obie listy przerysowują się przy każdej zmianie, więc nasłuch
+        // wpięty w konkretny przycisk ginąłby razem z nim.
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('.filling-go-btn');
+            if (!btn) return;
+            if (btn.dataset.bill) joinBill(currentGroupId, btn.dataset.bill);
+            else showDeckView('view-bills');
+        });
 
         const renderBalanceFilling = () => {
             const wrap = document.getElementById('balance-filling');
