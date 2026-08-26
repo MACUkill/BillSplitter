@@ -841,7 +841,7 @@
                 html: `<p>Pasek na dole to cztery miejsca w pokoju i jeden przycisk akcji pośrodku.</p>
                     <ul class="list-disc pl-5 space-y-1">
                         <li><b>Bilans</b>: ile jesteś na plusie albo na minusie. To jedna liczba, po którą tu wchodzisz.</li>
-                        <li><b>Kto komu ile</b>: kto komu ile oddaje. „Ureguluj" zapisuje wpłatę, a odbiorca ją potwierdza. Stamtąd wchodzi się też do rejestru wpłat.</li>
+                        <li><b>Rozliczenia</b>: kto komu ile oddaje. „Ureguluj" zapisuje wpłatę, a odbiorca ją potwierdza. Stamtąd wchodzi się też do rejestru wpłat.</li>
                         <li><b>[+]</b> pośrodku: nowy rachunek. Po otwarciu ten sam przycisk zamienia się w krzyżyk i zamyka okno.</li>
                         <li><b>Rachunki</b>: wszystkie rachunki pokoju z pięcioma filtrami, od „Czekają na Ciebie" po „Ukryte".</li>
                         <li><b>Ty</b>: Twoje zdjęcie, kolor znaku, sposoby płatności i ustawienia aplikacji.</li>
@@ -2310,7 +2310,7 @@
                                  z bezwładu: klasa przywędrowała z poprzedniego układu Bilansu,
                                  gdzie ten przycisk leżał na limonkowym bloku. W nowym miejscu
                                  kłóciła się z trzema innymi wejściami do tej samej czynności
-                                 („Kto komu ile", skrzynka, tytuł arkusza) ORAZ z czerwoną kwotą
+                                 (zakładka „Rozliczenia", skrzynka, tytuł arkusza) ORAZ z czerwoną kwotą
                                  na tej samej karcie. Czerwień znaczy w tej aplikacji „pieniądze
                                  wychodzą od Ciebie" i tak ma zostać. -->
                             <button class="plan-pay-btn btn btn-danger flex-grow" data-to="${escapeHtml(t.other)}" data-amount-g="${t.amountG}" data-currency="${escapeHtml(p.currency)}">Ureguluj</button>
@@ -4147,6 +4147,95 @@
             return `<div class="block-quiet p-5"><p class="text-sm text-ink-2">${message}</p>${reset}</div>`;
         };
 
+        // ODSUWANIE WIERSZA PALCEM — jeden odsunięty naraz.
+        //
+        // Dwa otwarte wiersze znaczyłyby dwa przyciski „Ukryj" na ekranie i pytanie,
+        // który z nich dotyczy czego. Zamykamy poprzedni przy otwarciu następnego.
+        let otwartyWiersz = null;
+        const zamknijWiersz = () => {
+            if (otwartyWiersz) otwartyWiersz.classList.remove('is-open');
+            otwartyWiersz = null;
+        };
+
+        // Szerokość odsłanianego przycisku musi zgadzać się z `.bill-swipe-action`
+        // w src/tailwind.css. Czytamy ją z elementu, żeby jedna liczba nie żyła w dwóch
+        // plikach i nie rozjechała się po zmianie stylu.
+        const attachSwipeToHide = (swipe, card) => {
+            let x0 = 0, y0 = 0;
+            // null = jeszcze nie wiadomo, w którą stronę idzie palec.
+            let poziomo = null;
+            let dx = 0;
+            let bylGest = false;
+
+            const szerokosc = () => {
+                const akcja = swipe.querySelector('.bill-swipe-action');
+                return akcja ? akcja.offsetWidth : 96;
+            };
+
+            card.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) return;
+                x0 = e.touches[0].clientX;
+                y0 = e.touches[0].clientY;
+                poziomo = null;
+                dx = 0;
+                bylGest = false;
+            }, { passive: true });
+
+            card.addEventListener('touchmove', (e) => {
+                if (e.touches.length !== 1) return;
+                const rx = e.touches[0].clientX - x0;
+                const ry = e.touches[0].clientY - y0;
+
+                // OŚ ROZSTRZYGA SIĘ RAZ, przy pierwszym wyraźnym ruchu. Bez tego lista
+                // albo nie chce się przewijać, albo wiersze uciekają w bok przy każdym
+                // przewinięciu — a to ten sam palec i ten sam ruch, tylko inna intencja.
+                if (poziomo === null) {
+                    if (Math.abs(rx) < 8 && Math.abs(ry) < 8) return;
+                    poziomo = Math.abs(rx) > Math.abs(ry);
+                    if (poziomo) {
+                        zamknijWiersz();
+                        swipe.classList.add('is-dragging');
+                    }
+                }
+                if (!poziomo) return;
+
+                // Tylko w lewo, i nie dalej niż szerokość przycisku. Ciągnięcie w prawo
+                // z pozycji zamkniętej nie ma czego odsłonić.
+                const otwarty = swipe.classList.contains('is-open');
+                dx = Math.max(-szerokosc(), Math.min(0, rx - (otwarty ? szerokosc() : 0)));
+                card.style.transform = `translateX(${dx}px)`;
+                bylGest = true;
+                // Przewijanie w pionie musi zejść z drogi, gdy palec idzie w bok.
+                if (e.cancelable) e.preventDefault();
+            }, { passive: false });
+
+            const koniec = () => {
+                if (poziomo) {
+                    swipe.classList.remove('is-dragging');
+                    card.style.transform = '';
+                    // Połowa szerokości: mniej znaczy „rozmyśliłem się", więcej „otwieram".
+                    const otwiera = dx < -szerokosc() / 2;
+                    swipe.classList.toggle('is-open', otwiera);
+                    otwartyWiersz = otwiera ? swipe : null;
+                }
+                poziomo = null;
+            };
+            card.addEventListener('touchend', koniec, { passive: true });
+            card.addEventListener('touchcancel', koniec, { passive: true });
+
+            // Stuknięcie w odsuniętą kartę ZAMYKA ją, zamiast wchodzić w rachunek.
+            // Bez tego jedyną drogą powrotu byłoby trafienie w „Ukryj" albo odsunięcie
+            // wiersza z powrotem — a odruch mówi „stuknij obok, żeby anulować".
+            card.addEventListener('click', (e) => {
+                if (bylGest || swipe.classList.contains('is-open')) {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    zamknijWiersz();
+                    bylGest = false;
+                }
+            }, true);
+        };
+
         const renderBillsList = () => {
             const billsList = document.getElementById('bills-history-list');
             if (!billsList || !groupData) return;
@@ -4201,9 +4290,20 @@
                     getBillUserState(data, myMember) === 'visible' && mojeDoOddania.has(id)).length;
                 owedCountEl.textContent = ile ? ` (${ile})` : '';
             }
+            // Ukrycie to jedyny filtr, który człowiek nakłada sam na siebie, i jedyny,
+            // po którym rachunek znika mu z oczu. Bez liczby nie ma jak zauważyć, że coś
+            // się tam odłożyło — pigułka wygląda tak samo przy zerze i przy dwunastu.
+            const hiddenCountEl = document.getElementById('bill-filter-hidden-count');
+            if (hiddenCountEl) {
+                const ile = latestBills.filter(({ data }) => getBillUserState(data, myMember) === 'hidden').length;
+                hiddenCountEl.textContent = ile ? ` (${ile})` : '';
+            }
 
             renderBillsCount(visible);
 
+            // Wiersze powstają od nowa, więc odsunięty wiersz przestaje istnieć razem
+            // ze swoim węzłem — wskaźnik musi zejść razem z nim.
+            otwartyWiersz = null;
             billsList.innerHTML = '';
             if (visible.length === 0) {
                 billsList.innerHTML = billsEmptyStateHtml();
@@ -4236,9 +4336,6 @@
                 const isHidden = (bill.hiddenBy || []).includes(myMember.id);
                 const canToggleHide = myParticipant && myParticipant.status !== 'not_applicable';
                 const summaryHtml = getBillSummaryHtml(bill, myMember, myParticipant);
-                const hideBtn = canToggleHide
-                    ? `<button class="hide-bill-btn tap min-h-tap min-w-tap text-ink-3" title="${isHidden ? 'Przywróć' : 'Ukryj'}"><i class="fas ${isHidden ? 'fa-eye' : 'fa-eye-slash'}"></i></button>`
-                    : '';
 
                 // Data rachunku idzie mikrodrukiem: jest potrzebna do odróżnienia dwóch kolacji
                 // w tym samym miejscu, ale nie konkuruje z nazwą ani z kwotą.
@@ -4258,29 +4355,49 @@
                 // KWOTA NA KAFELKU MÓWI, ILE ZOSTAŁO, A NIE ILE BYŁO — ale tylko w trybie
                 // rachunkowym, bo tylko tam wpłata jest przypisana do rachunku. W planie
                 // minimalnym wpłata idzie w bok i „zostało" nie miałoby tu sensu.
+                //
+                // SAMA KWOTA, BEZ PRZYCISKU (zgłoszenie właściciela 2026-08-26: „robi się
+                // bardzo dużo informacji na tej zakładce, bezsensownie"). „Ureguluj" stało
+                // tu osobnym wierszem pod kafelkiem i rozdymało listę o piętro na każdym
+                // rachunku do oddania. Regulowanie mieszka teraz WYŁĄCZNIE wewnątrz
+                // rachunku, na limonkowej karcie „Twój udział" — jedno wejście zamiast
+                // dwóch, a lista wraca do jednego wiersza na rachunek.
+                // W TRYBIE RACHUNKOWYM WIERSZ NIESIE SAM STATUS, BEZ KWOTY (decyzja
+                // właściciela 2026-08-26). Kwota stoi na ekranie rachunku, na limonkowej
+                // karcie, razem z przyciskiem — a na liście odpowiada wyłącznie na pytanie
+                // „czy mam to jeszcze na głowie". Liczba w tym miejscu kazała ją czytać
+                // i porównywać przy każdym przewinięciu, choć nic z niej nie wynikało.
+                //
+                // DWIE PARY SŁÓW, BO DWIE ROLE. Dłużnik ma coś do zapłacenia („Nieopłacone"),
+                // ale płatnik już zapłacił — z jego strony rachunek nie jest „nieopłacony",
+                // tylko czeka na zwroty. Jedno słowo na obie role kłamałoby jednej z nich.
                 const mojDlug = mojeDoOddania.get(id);
                 const doMnie = doMnieZRachunku.get(id);
+                const statusChip = (klasa, ikona, tekst) =>
+                    `<span class="chip ${klasa} flex-shrink-0"><i class="fas ${ikona}"></i>${tekst}</span>`;
                 let kwotaHtml = `<span class="${status.amountClass}">${status.amount}</span>`;
-                let akcjaHtml = '';
+                // Chip płatnika wycisza się, gdy obok stoi status. Inaczej wiersz niesie
+                // DWA czerwone znaczki naraz („Płaci Ala" i „Nieopłacone"), które mówią
+                // to samo — a czerwień, która powtarza samą siebie, przestaje cokolwiek
+                // znaczyć. Kto wyłożył pieniądze, jest tu informacją, nie ostrzeżeniem.
+                let chipClass = status.chipClass;
                 if (perBillActive && status.tone === 'owe') {
                     kwotaHtml = mojDlug
-                        ? `<span class="font-bold text-owe tabular-nums">${fmtMoney(mojDlug.openG, mojDlug.currency)}</span>`
-                        : `<span class="font-bold text-due">Oddane</span>`;
-                    // „Ureguluj" OSOBNYM WIERSZEM pod kafelkiem, nie w rzędzie z kwotą:
-                    // przy imieniu płatnika, kwocie i krzyżyku ukrywania czwarty element
-                    // zaczyna się zawijać poniżej 400 px, a przycisk do pieniędzy nie może
-                    // być tym, co się rozjeżdża.
-                    if (mojDlug) {
-                        akcjaHtml = `<div class="mt-3 flex items-center gap-2">
-                            <button class="settle-bill-row-btn btn btn-danger flex-grow" data-to="${escapeHtml(mojDlug.payer)}" data-amount-g="${mojDlug.openG}" data-currency="${escapeHtml(mojDlug.currency)}" data-bill-id="${escapeHtml(id)}">Ureguluj</button>
-                        </div>`;
-                    }
+                        ? statusChip('text-owe', 'fa-circle-exclamation', 'Nieopłacone')
+                        : statusChip('text-due', 'fa-check', 'Opłacone');
+                    chipClass = 'chip';
                 } else if (perBillActive && status.tone === 'due' && typeof doMnie === 'number') {
                     kwotaHtml = doMnie > 0
-                        ? `<span class="font-bold text-due tabular-nums">${fmtMoney(doMnie, bill.currency || 'PLN')}</span>`
-                        : `<span class="font-bold text-due">Rozliczony</span>`;
+                        ? statusChip('', 'fa-hourglass-half', 'Czeka na zwrot')
+                        : statusChip('text-due', 'fa-check', 'Rozliczony');
+                    chipClass = 'chip';
                 }
 
+                // WIERSZ ODSUWANY PALCEM. Kartę i przycisk ukrywania rozdziela teraz gest,
+                // a nie centymetr ekranu — powód przy `.bill-swipe` w src/tailwind.css.
+                // Rachunek, którego nie wolno mi ukryć („nie dotyczy Cię"), nie dostaje
+                // opakowania w ogóle: pusty gest, który nic nie odsłania, czyta się gorzej
+                // niż brak gestu.
                 const billEl = document.createElement('div');
                 billEl.className = "card tap p-4 cursor-pointer";
                 // Tło barwi się tylko przy zadaniu do wykonania — reszta listy zostaje biała,
@@ -4292,37 +4409,54 @@
                     <div class="min-w-0 flex-grow">
                         <p class="font-bold text-lg truncate leading-tight">${escapeHtml(bill.billName)}</p>
                         <div class="mt-1 flex items-center gap-2 flex-wrap">
-                            <span class="${status.chipClass}">${status.labelHtml}</span>
+                            <span class="${chipClass}">${status.labelHtml}</span>
                             <span class="text-sm text-ink-3">${created}</span>
                         </div>
                     </div>
                     <div class="flex items-center gap-2 flex-shrink-0">
                         ${kwotaHtml}
-                        ${hideBtn}
                     </div>
                     </div>
-                    ${akcjaHtml}
                 `;
                 billEl.onclick = (e) => {
                     if (e.target.closest('button')) return;
                     joinBill(currentGroupId, id);
                 };
-                const sb = billEl.querySelector('.settle-bill-row-btn');
-                if (sb) {
-                    sb.onclick = (e) => {
-                        e.stopPropagation();
-                        openSettleModal(sb.dataset.to, Number(sb.dataset.amountG), sb.dataset.currency, 'send', sb.dataset.billId);
-                    };
+
+                if (!canToggleHide) {
+                    (dayGrid || billsList).appendChild(billEl);
+                    return;
                 }
-                const hb = billEl.querySelector('.hide-bill-btn');
-                if (hb) {
-                    hb.onclick = async (e) => {
-                        e.stopPropagation();
-                        const billRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, id);
-                        await updateDoc(billRef, { hiddenBy: isHidden ? arrayRemove(myMember.id) : arrayUnion(myMember.id) });
-                    };
-                }
-                (dayGrid || billsList).appendChild(billEl);
+
+                const swipe = document.createElement('div');
+                swipe.className = 'bill-swipe';
+                const akcja = document.createElement('button');
+                akcja.type = 'button';
+                akcja.className = 'bill-swipe-action tap';
+                akcja.innerHTML = `<i class="fas ${isHidden ? 'fa-eye' : 'fa-eye-slash'} text-lg"></i><span>${isHidden ? 'Przywróć' : 'Ukryj'}</span>`;
+                akcja.setAttribute('aria-label', `${isHidden ? 'Przywróć' : 'Ukryj'} rachunek ${bill.billName}`);
+                billEl.classList.add('bill-swipe-card');
+                swipe.append(akcja, billEl);
+                attachSwipeToHide(swipe, billEl);
+
+                akcja.onclick = (e) => {
+                    e.stopPropagation();
+                    const billRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, id);
+                    const przelacz = (ukryj) => fireWrite(
+                        updateDoc(billRef, { hiddenBy: ukryj ? arrayUnion(myMember.id) : arrayRemove(myMember.id) }),
+                        'Nie udało się zmienić widoczności rachunku.',
+                    );
+                    przelacz(!isHidden);
+                    // PASEK „COFNIJ" — ta sama sieć asekuracyjna, co przy kasowaniu rachunku.
+                    // Ukrycie jest odwracalne, ale rachunek znika z listy w tej samej chwili,
+                    // więc bez paska trzeba wiedzieć o istnieniu filtra „Ukryte", żeby wrócić.
+                    showUndoToast(
+                        isHidden ? 'Przywrócono rachunek.' : 'Ukryto rachunek.',
+                        () => przelacz(isHidden),
+                    );
+                };
+
+                (dayGrid || billsList).appendChild(swipe);
             });
         };
 
@@ -5107,7 +5241,12 @@
             return niezerowe.map(([c, v]) => row(c, v)).join('');
         };
 
-        const myShareHtml = (pt, paymentInfo = '', rest = null) => {
+        // `settleHtml` — rozliczenie TEGO rachunku, na dole limonkowej karty (decyzja
+        // właściciela 2026-08-26). Stało wcześniej osobną kartą pod spodem i przyciskiem
+        // na liście rachunków; oba miejsca mówiły o tej samej kwocie, co widnieje wyżej
+        // jako „Twój udział". Teraz kwota, to co z niej zostało i przycisk stoją razem,
+        // w jednym bloku, na który człowiek i tak patrzy.
+        const myShareHtml = (pt, paymentInfo = '', rest = null, settleHtml = '') => {
             const cur = billData.currency;
             const row = (caption, amount) =>
                 `<div class="flex justify-between gap-2 py-0.5"><span class="text-ink-2">${caption}</span><span class="font-semibold">${amount.toFixed(2).replace('.', ',')}</span></div>`;
@@ -5143,6 +5282,46 @@
                     <div class="mt-2 text-sm">${rows}</div>
                 </details>` : ''}
                 ${paymentInfo}
+                ${settleHtml}
+            </div>`;
+        };
+
+        // ROZLICZENIE TEGO RACHUNKU, OCZAMI DŁUŻNIKA — blok na dole limonkowej karty.
+        //
+        // Czerwony przycisk NA LIMONCE jest tu wyjątkiem od zasady „na limonce nie ma
+        // czerwieni ani zieleni". Zasada dotyczy KOLORU TEKSTU, który na limonkowym tle
+        // traci czytelność; pełna czerwona pigułka z białym napisem ma z limonką kontrast
+        // wyższy niż z białą kartą. A czerwień znaczy w tej aplikacji jedno: pieniądze
+        // wychodzą od Ciebie — więc przycisk musi ją nosić tak samo jak wszędzie indziej.
+        //
+        // POKAZUJE SIĘ TYLKO W TRYBIE RACHUNKOWYM. W planie minimalnym przelew za
+        // pojedynczy rachunek rozjeżdża się z planem, którym gra reszta ekipy, i tworzy
+        // dokładnie te wpłaty bez przypisania, które trzeba potem tłumaczyć osobnym blokiem.
+        const myBillSettleHtml = (mine) => {
+            if (!mine) return '';
+            if (mine.openG <= 0) {
+                // Domknięcie pętli: kto oddał, ma to zobaczyć na rachunku, a nie domyślać
+                // się z tego, że przycisk zniknął.
+                return `<div class="mt-4 pt-3 border-t border-ink/10 flex items-center gap-2">
+                    <i class="fas fa-check"></i>
+                    <span class="text-sm font-bold">Za ten rachunek już oddałeś/aś.</span>
+                </div>`;
+            }
+            if (groupSettlementMode() !== 'perBill') return '';
+            // WIERSZ „ZOSTAJE DO ODDANIA" WCHODZI DOPIERO PO CZĘŚCIOWEJ WPŁACIE. Dopóki
+            // nikt nic nie wpłacił, jest co do grosza tą samą liczbą, co „Twój udział"
+            // dwa wiersze wyżej — a ta sama kwota podana dwa razy pod rząd każe szukać
+            // różnicy, której nie ma. Sam przycisk wystarczy: kwota stoi tuż nad nim.
+            const zostaje = mine.paidG > 0
+                ? `<div class="flex items-baseline justify-between gap-3">
+                        <span class="font-bold">Zostaje do oddania</span>
+                        <span class="text-2xl">${amountHtml(mine.openG, mine.currency, 'text-ink')}</span>
+                    </div>
+                    <p class="text-sm text-ink-2 mt-1">Wpłacono już ${fmtMoney(mine.paidG, mine.currency)} z ${fmtMoney(mine.shareG, mine.currency)}.</p>`
+                : '';
+            return `<div class="mt-4 pt-3 border-t border-ink/10">
+                ${zostaje}
+                <button id="bill-settle-btn" class="btn btn-danger w-full ${zostaje ? 'mt-3' : ''}">Ureguluj</button>
             </div>`;
         };
 
@@ -5194,30 +5373,10 @@
             const who = billSettledBy(per, currentBillId);
             if (who.length === 0) return hide(); // rachunek bez potwierdzonego płatnika albo bez kwoty
 
-            const perBillActive = groupSettlementMode() === 'perBill';
-            const mine = who.find((x) => x.debtor === my.id);
+            // STRONA DŁUŻNIKA MIESZKA NA LIMONKOWEJ KARCIE „Twój udział" (`myBillSettleHtml`),
+            // a nie tutaj. Tu zostaje wyłącznie widok PŁATNIKA — „kto już oddał".
             const isPayer = billData.payerId === my.id;
             let html = '';
-
-            if (mine && mine.openG > 0 && perBillActive) {
-                html += `<div class="card p-4 mb-3">
-                    <div class="flex items-center justify-between gap-3">
-                        <span class="font-bold text-lg">Zostaje do oddania</span>
-                        <span class="amount text-2xl text-owe flex-shrink-0">${fmtMoney(mine.openG, mine.currency)}</span>
-                    </div>
-                    ${mine.paidG > 0 ? `<p class="text-sm text-ink-2 mt-1">Wpłacono już ${fmtMoney(mine.paidG, mine.currency)} z ${fmtMoney(mine.shareG, mine.currency)}.</p>` : ''}
-                    <div class="mt-3 flex items-center gap-2">
-                        <button id="bill-settle-btn" class="btn btn-danger flex-grow">Ureguluj</button>
-                    </div>
-                </div>`;
-            } else if (mine && mine.openG <= 0) {
-                // Domknięcie pętli: kto oddał, ma to zobaczyć na rachunku, a nie domyślać
-                // się z tego, że przycisk zniknął.
-                html += `<div class="block-quiet p-4 mb-3 flex items-center gap-3">
-                    <span class="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 bg-due/12 text-due"><i class="fas fa-check"></i></span>
-                    <span class="text-sm"><b>Za ten rachunek już oddałeś/aś.</b> ${fmtMoney(mine.shareG, mine.currency)}.</span>
-                </div>`;
-            }
 
             if (isPayer) {
                 // Kto NIE oddał, stoi wyżej — po to się tu wchodzi. Wewnątrz grupy
@@ -5241,17 +5400,13 @@
                     </div>
                     <div class="mt-2">${wiersze}</div>
                     ${who.some((x) => !x.settled)
-                        ? `<p class="text-xs text-ink-3 mt-2">Wpłaty odbierasz i przypominasz o nich w zakładce „Kto komu ile".</p>`
+                        ? `<p class="text-xs text-ink-3 mt-2">Wpłaty odbierasz i przypominasz o nich w zakładce „Rozliczenia".</p>`
                         : ''}
                 </div>`;
             }
 
             wrap.innerHTML = html;
             wrap.classList.toggle('hidden', !html);
-            const btn = document.getElementById('bill-settle-btn');
-            if (btn && mine) {
-                btn.onclick = () => openSettleModal(billData.payerId, mine.openG, mine.currency, 'send', currentBillId);
-            }
         };
 
         const renderBillScreen = async () => {
@@ -5313,7 +5468,7 @@
             //
             // Rachunek bez POTWIERDZONEGO płatnika nie tworzy ani jednego długu
             // (`computeBillDebts` zwraca wtedy pustą listę), więc nie wchodzi do Bilansu
-            // ani do „Kto komu ile". Do tej pory ekran mówił o tym tylko płatnikowi.
+            // ani do zakładki „Rozliczenia". Do tej pory ekran mówił o tym tylko płatnikowi.
             // Wszyscy pozostali widzieli PUSTY baner: rachunek stał, kwota się zgadzała,
             // a rozliczenia go nie widziały i nic nie tłumaczyło dlaczego. Dla kogoś, kto
             // widzi aplikację pierwszy raz, wygląda to jak usterka.
@@ -5568,6 +5723,9 @@
             // Raz na przerysowanie, nie raz na osobę: przy ekipie piętnastoosobowej to
             // piętnaście przebiegów po tych samych polach dla identycznego wyniku.
             const reszta = restInfo(calculations);
+            // Ile z TEGO rachunku wciąż jestem winien — na dół limonkowej karty.
+            const mojWiersz = billSettledBy(perBillNow(), currentBillId).find((x) => x.debtor === myGroupMember.id);
+            const mojeRozliczenie = myBillSettleHtml(mojWiersz);
 
             sortedParticipants.forEach(pt => {
                 const p = pt.participant;
@@ -5655,7 +5813,7 @@
                             </div>
                         </div>
 
-                        ${myShareHtml(pt, paymentInfo, reszta)}
+                        ${myShareHtml(pt, paymentInfo, reszta, mojeRozliczenie)}
                     </div>`;
                 } else { // Other participants view
                     participantHTML = `
@@ -5691,6 +5849,12 @@
             }
 
             renderBillSettleSection();
+            // Przycisk siedzi w limonkowej karcie („Twój udział"), więc nasłuch dopinamy
+            // po jej wstawieniu — karta powstaje w pętli wyżej, razem z resztą uczestników.
+            const settleBtn = document.getElementById('bill-settle-btn');
+            if (settleBtn && mojWiersz) {
+                settleBtn.onclick = () => openSettleModal(billData.payerId, mojWiersz.openG, mojWiersz.currency, 'send', currentBillId);
+            }
             renderItemTiles();
             renderBillHistory();
 

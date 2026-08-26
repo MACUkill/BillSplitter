@@ -634,6 +634,59 @@ body:has(#offline-banner:not(.hidden)) #app-container {
     color: rgb(var(--brand-ink));
   }
 
+  /* --- WIERSZ RACHUNKU ODSUWANY PALCEM ---------------------------------------
+     Ukrywanie rachunku stało do 2026-08-26 na przekreślonym oku, wpiętym w rząd
+     obok kwoty. Cel dotykowy leżał centymetr od miejsca, w które stuka się, żeby
+     WEJŚĆ w rachunek, więc pomyłka była kwestią czasu — a jej skutkiem jest zniknięcie
+     rachunku z listy, czyli dokładnie to, czego nikt nie chciał.
+     Akcja schodzi więc pod gest: wiersz odsuwa się palcem w lewo i odsłania „Ukryj".
+     Pomyłkowe odsunięcie nie robi nic; dopiero stuknięcie w odsłonięty przycisk działa,
+     a i to da się cofnąć paskiem „Cofnij".
+
+     Przycisk jest PRAWDZIWYM elementem w drzewie, nie rysunkiem pod spodem: dzięki temu
+     da się do niego dojść klawiaturą i czytnikiem ekranu, a `:focus-within` odsuwa wtedy
+     kartę tak samo, jak zrobiłby to palec. Gest, do którego nie ma innej drogi, jest
+     dla części ludzi ścianą. */
+  .bill-swipe {
+    position: relative;
+    border-radius: 1.5rem;
+    overflow: hidden;
+  }
+
+  .bill-swipe-action {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: 6rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+    background-color: rgb(var(--surface-2));
+    color: rgb(var(--ink-2));
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .bill-swipe-card {
+    position: relative;
+    transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+    will-change: transform;
+    /* Bez tego przy odsunięciu widać pod spodem tło strony zamiast przycisku. */
+    background-color: rgb(var(--surface));
+  }
+
+  /* Przeciąganie w toku: przesunięcie ustawia JavaScript co klatkę, więc przejście
+     musi zejść z drogi — inaczej karta wlecze się za palcem z opóźnieniem. */
+  .bill-swipe.is-dragging .bill-swipe-card { transition: none; }
+
+  .bill-swipe.is-open .bill-swipe-card,
+  .bill-swipe:focus-within .bill-swipe-card {
+    transform: translateX(-6rem);
+  }
+
   /* Pigułka NA limonkowym bloku. Zwykły `.chip` ma tło `surface-2`, które na limonce
      robi się brudną plamą — tu tłem jest przyciemniona sama limonka. */
   .pill-on-brand {

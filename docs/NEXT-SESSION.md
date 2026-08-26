@@ -23,16 +23,23 @@
 > Site `groupbillsplitter`, tak samo jak `BillSplitterV2` pod
 > `billsplitterv2--groupbillsplitter.netlify.app`.
 >
-> **PUŁAPKA, KTÓRA GRYZIE PO CICHU:** siedem zmiennych `VITE_*` jest przypiętych
-> w Netlify do kontekstu `BillSplitterV2`. Nowa gałąź ich NIE dziedziczy, a
-> `src/main.js:31` ma wtedy cichy fallback na projekt `billsplitter-2fdfa` (stare V1).
-> Aplikacja wygląda identycznie i wstaje normalnie — tyle że na innej bazie.
+> **WYSTAWIONE I DZIAŁA** (2026-08-26):
+> `https://etap1-offline-i-feedback--groupbillsplitter.netlify.app`
 >
-> 1. Environment variables → dopisz kontekst gałęzi do scope każdej z siedmiu zmiennych
->    (`VITE_FIREBASE_API_KEY`, `_AUTH_DOMAIN`, `_PROJECT_ID`, `_STORAGE_BUCKET`,
->    `_MESSAGING_SENDER_ID`, `_APP_ID`, `VITE_FCM_VAPID_KEY`). Bez `VITE_USE_EMULATOR`.
-> 2. Build & deploy → Branches and deploy contexts → dopisz gałąź.
-> 3. Adres: `https://etap1-offline-i-feedback--groupbillsplitter.netlify.app`
+> 1. Build & deploy → **Branches and deploy contexts** → „Let me add individual branches"
+>    → nazwa gałęzi co do znaku. Samo zapisanie NIE buduje niczego wstecz — Netlify czeka
+>    na następny push, więc trzeba go czymś obudzić (wystarczy pusty commit).
+>    „Trigger deploy" buduje WYŁĄCZNIE gałąź produkcyjną i nie zastąpi tego kroku.
+> 2. Zmienne `VITE_*` **nie wymagały żadnej zmiany.** Stoją jako „Different value for
+>    each deploy context" z wypełnionym kontekstem **Branch deploys**, a ten stosuje się
+>    do wszystkich gałęzi — wpis dla `BillSplitterV2` jest tylko nadpisaniem. Sprawdzone
+>    na wystawionej paczce: niesie `billsplitter-push-test` i ten sam klucz VAPID,
+>    co wersja ekipy. (Gdyby kiedyś było inaczej, `src/main.js:31` ma cichy fallback na
+>    `billsplitter-2fdfa` — aplikacja wygląda identycznie, tylko chodzi na innej bazie.)
+>
+> Uwaga na literówkę w polu **Production branch**: wpisane tam `mainz` zamiast `main`
+> wywala każdy build komunikatem `git ref refs/heads/mainz does not exist` i po cichu
+> zatrzymuje przebudowy produkcji.
 >
 > Baza jest TA SAMA co u ekipy (`billsplitter-push-test`), więc do zabawy zakładaj nowy
 > pokój. Ruszenie prawdziwego jest bezpieczne — stary kod ignoruje `settlementMode`
@@ -56,7 +63,7 @@ npm run emulators                # w osobnym oknie
 npm run test:rules               # 34 testy reguł — WYMAGA CZYSTEGO EMULATORA
 npx vite --port 5199 --strictPort
 BILLIADA_URL=http://localhost:5199/ node tools/audit-offline.mjs   # 13 sprawdzeń
-BILLIADA_URL=http://localhost:5199/ node tools/audit-etap3.mjs     # 28 sprawdzeń
+BILLIADA_URL=http://localhost:5199/ node tools/audit-etap3.mjs     # 34 sprawdzenia
 
 VITE_USE_EMULATOR=true npx vite build
 npx vite preview --port 5197 --strictPort
@@ -86,10 +93,22 @@ kończy się „Could not start emulator hub, port taken".
 - **Wpłata ma opcjonalne `billId`**, przypisanie TYLKO W OBRĘBIE PARY, od najstarszego
   rachunku. Czego nie da się przypisać, ląduje w bloku „Wpłaty bez przypisania" z linią
   uzgadniającą.
-- **„Kto już oddał" na ekranie rachunku — w KAŻDYM trybie.** Filtr „Do oddania (N)" na
-  liście rachunków, „Ureguluj" na wierszu i na rachunku.
+- **„Kto już oddał" na ekranie rachunku — w KAŻDYM trybie.** Filtry „Do oddania (N)"
+  i „Ukryte (N)" na liście rachunków.
 - **Niezmiennik pod testem:** saldo na czysto każdej osoby jest identyczne we wszystkich
   trzech trybach (także na stu losowych pokojach i na kółku długów).
+
+### Poprawki po pierwszym obejrzeniu na telefonie (opis: §22.9)
+
+Wszystkie uwagi właściciela dotyczyły jednego: zakładka „Rachunki" niosła za dużo naraz.
+
+- Zakładka nazywa się **„Rozliczenia"**, nie „Kto komu ile" (stary tytuł kolidował
+  z nazwą trybu „Kto komu").
+- Wiersz rachunku w trybie rachunkowym niesie **sam status, bez kwoty**: „Nieopłacone" /
+  „Opłacone" u dłużnika, „Czeka na zwrot" / „Rozliczony" u płatnika.
+- **„Ureguluj" zniknął z listy** i stoi na limonkowej karcie „Twój udział", pod kwotą.
+- **Ukrywanie zeszło pod gest** (odsunięcie wiersza w lewo) + pasek „Cofnij". Przekreślone
+  oko w rzędzie z kwotą było o centymetr od miejsca wejścia w rachunek.
 
 ### Naprawione przy okazji (usterki zastane, nie wprowadzone przez etap 3)
 

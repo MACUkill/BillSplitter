@@ -211,10 +211,34 @@ await klikPoTresci(bartek, '.bill-filter-btn', 'Do oddania');
 const wierszy = await bartek.$$eval('#bills-history-list .card', (els) => els.length);
 sprawdz('po filtrze zostaje sam rachunek do oddania', wierszy === 1, `${wierszy} kafelków`);
 
-const maUreguluj = await bartek.$('#bills-history-list .settle-bill-row-btn');
-sprawdz('kafelek rachunku ma „Ureguluj"', Boolean(maUreguluj));
+// LISTA NIESIE SAM STATUS, BEZ KWOTY I BEZ PRZYCISKU (decyzja właściciela 2026-08-26).
+// Kwota i „Ureguluj" mieszkają na ekranie rachunku, na limonkowej karcie.
+const trescListy = (await tekstem(bartek, '#bills-history-list')).replace(/\s+/g, ' ');
+sprawdz('kafelek niesie sam status „Nieopłacone"', trescListy.includes('Nieopłacone'), trescListy.slice(0, 90));
+sprawdz('kafelek NIE niesie kwoty ani przycisku',
+  !trescListy.includes('45,00') && !trescListy.includes('Ureguluj'), trescListy.slice(0, 90));
 
-await bartek.click('#bills-history-list .settle-bill-row-btn');
+// Ukrywanie zeszło pod gest: przycisk istnieje w drzewie (dostępny klawiaturą
+// i czytnikiem ekranu), ale leży za kartą, nie w rzędzie z treścią.
+sprawdz('ukrywanie schowane za kartą, nie w rzędzie z treścią',
+  Boolean(await bartek.$('#bills-history-list .bill-swipe-action')));
+sprawdz('starego przycisku oka już nie ma',
+  !(await bartek.$('#bills-history-list .hide-bill-btn')));
+
+// Regulowanie WYŁĄCZNIE wewnątrz rachunku.
+await bartek.click('#bills-history-list .card');
+await bartek.waitForSelector('#bill-screen:not(.hidden)', { timeout: 20000 });
+const naLimonce = await czekajNa(
+  bartek,
+  () => {
+    const b = document.querySelector('#bill-settle-btn');
+    return b && b.closest('.card-mine') && document.querySelector('#my-participant-card').contains(b);
+  },
+  '„Ureguluj" na limonkowej karcie',
+);
+sprawdz('„Ureguluj" stoi na limonkowej karcie „Twój udział"', naLimonce);
+
+await bartek.click('#bill-settle-btn');
 await bartek.waitForSelector('#settle-modal.active', { timeout: 10000 });
 const notka = await tekstem(bartek, '#settle-record-note');
 sprawdz('arkusz wpłaty mówi, KTÓREGO rachunku dotyczy', notka.includes('Kolacja'), notka);
@@ -228,6 +252,34 @@ const znikaZListy = await czekajNa(
   'rachunek znika z „Do oddania"',
 );
 sprawdz('po wpłacie rachunek schodzi z listy do oddania', znikaZListy);
+
+// UKRYWANIE SPOD GESTU + LICZNIK PRZY „Ukryte".
+// Stuknięcie idzie przez `el.click()`, bo przycisk leży ZA kartą — palcem odsłania się
+// go gestem, którego zdalne sterowanie nie odtworzy wiernie. Sprawdzamy tu skutek
+// (zapis, licznik, pasek „Cofnij"), nie samą animację przesunięcia.
+await bartek.click('#nav-bills');
+await klikPoTresci(bartek, '.bill-filter-btn', 'Wszystkie');
+await czekajNa(bartek, () => document.querySelector('#bills-history-list .bill-swipe-action'), 'przycisk ukrywania w drzewie');
+await bartek.$eval('#bills-history-list .bill-swipe-action', (el) => el.click());
+const licznikUkrytych = await czekajNa(
+  bartek,
+  () => (document.querySelector('#bill-filter-hidden-count') || {}).textContent === ' (1)',
+  'licznik przy filtrze „Ukryte"',
+);
+sprawdz('ukrycie działa i filtr „Ukryte" pokazuje liczbę', licznikUkrytych,
+  await tekstem(bartek, '#bill-filter-hidden-count'));
+const jestCofnij = await bartek.evaluate(() => {
+  const t = document.getElementById('toast-notification');
+  return !!t && t.textContent.includes('Cofnij');
+});
+sprawdz('ukrycie da się cofnąć paskiem', jestCofnij);
+// Przywracamy, żeby dalsza część przebiegu widziała rachunek.
+await bartek.$eval('#toast-notification button', (el) => el.click());
+await czekajNa(
+  bartek,
+  () => (document.querySelector('#bill-filter-hidden-count') || {}).textContent === '',
+  'rachunek wrócił po cofnięciu',
+);
 
 // ------------------------------------------------------- Ala: kto już oddał + skrzynka
 console.log('\n— 4. Płatnik widzi, kto oddał —');

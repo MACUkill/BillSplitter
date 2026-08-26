@@ -2066,15 +2066,50 @@ npx vite --port 5199 --strictPort
 BILLIADA_URL=http://localhost:5199/ node tools/audit-etap3.mjs
 ```
 
-28 sprawdzeń. Uwaga na dwie pułapki pisania takich przebiegów, obie zapisane w kodzie:
+34 sprawdzenia. Uwaga na dwie pułapki pisania takich przebiegów, obie zapisane w kodzie:
 ekran rachunku pokazuje się ZANIM `renderBillScreen` dopnie nasłuchy (stąd `klikAzOtworzy`),
 a pole kwoty zapisuje się przy utracie ogniska i potrafi trafić w moment przerysowania
 (stąd `wpiszKwote` z powtórzeniem).
 
-### 22.9 Stan testów po etapie
+### 22.9 Poprawki po pierwszym obejrzeniu na telefonie (2026-08-26, wieczór)
+
+Właściciel wystawił gałąź jako branch deploy Netlify i obejrzał ją na telefonie. Pięć
+uwag, wszystkie o tym samym: **zakładka „Rachunki" niosła za dużo naraz.**
+
+- **Zakładka nazywa się „Rozliczenia", nie „Kto komu ile".** Stary tytuł kolidował
+  z nazwą trybu „Kto komu" — po dołożeniu trzeciego trybu ta sama nazwa znaczyła
+  i miejsce, i jeden ze sposobów liczenia.
+- **Wiersz rachunku niesie w trybie rachunkowym SAM STATUS, bez kwoty.** „Nieopłacone" /
+  „Opłacone" dla dłużnika, „Czeka na zwrot" / „Rozliczony" dla płatnika. Dwie pary słów,
+  bo dwie role: płatnik już zapłacił, więc rachunek nie jest z jego strony „nieopłacony".
+  Kwota stoi na ekranie rachunku, przy przycisku. Chip płatnika wycisza się wtedy do
+  neutralnego — inaczej wiersz niósł dwa czerwone znaczki mówiące to samo.
+- **„Ureguluj" znika z listy i wchodzi na limonkową kartę „Twój udział".** Na liście
+  robił z każdego wiersza dwa piętra; na karcie stoi tam, gdzie i tak stoi kwota.
+  Czerwona pigułka na limonce jest wyjątkiem od zasady „na limonce nie ma czerwieni":
+  zasada dotyczy KOLORU TEKSTU, a pełna pigułka z białym napisem ma z limonką kontrast
+  wyższy niż z białą kartą.
+- **Wiersz „Zostaje do oddania" wchodzi dopiero po CZĘŚCIOWEJ wpłacie.** Bez wpłat jest
+  co do grosza tą samą liczbą, co „Twój udział" dwa wiersze wyżej.
+- **Ukrywanie zeszło pod GEST.** Przekreślone oko stało w rzędzie obok kwoty, centymetr
+  od miejsca, w które stuka się, żeby wejść w rachunek — a skutkiem pomyłki jest
+  zniknięcie rachunku z listy. Teraz wiersz odsuwa się palcem w lewo i odsłania „Ukryj";
+  pomyłkowe odsunięcie nie robi nic, a samo ukrycie da się cofnąć paskiem „Cofnij"
+  (ten sam wzorzec, co przy kasowaniu rachunku). Przycisk jest PRAWDZIWYM elementem
+  w drzewie i `:focus-within` odsuwa kartę tak samo jak palec — gest bez alternatywy
+  jest dla części ludzi ścianą.
+- **Filtr „Ukryte" pokazuje liczbę.** To jedyny filtr, który człowiek nakłada sam na
+  siebie, i jedyny, po którym rachunek znika mu z oczu.
+
+Rozstrzygnięcie osi gestu jest w `attachSwipeToHide`: kierunek ustala się RAZ, przy
+pierwszym wyraźnym ruchu (próg 8 px). Bez tego lista albo nie chce się przewijać, albo
+wiersze uciekają w bok przy każdym przewinięciu — ten sam palec, ten sam ruch, inna
+intencja.
+
+### 22.10 Stan testów po etapie
 
 **293 testy jednostkowe** (30 nowych w `src/perbill.test.js`), 34 testy reguł, 13 sprawdzeń
-przebiegu offline, 9 sprawdzeń service workera, 28 sprawdzeń przebiegu etapu 3. Wszystko
+przebiegu offline, 9 sprawdzeń service workera, 34 sprawdzenia przebiegu etapu 3. Wszystko
 zielone. Reguły Firestore **nie wymagały zmiany**: `settlementMode` na dokumencie grupy
 i `billId` na wpłacie mieszczą się w istniejących regułach, a pola podsumowań nadal są
 zamrożone.

@@ -371,7 +371,7 @@ the verdict, and DESIGN.md
 
             <!-- CO MASZ ZROBIĆ — jedyne miejsce z akcjami rozliczeniowymi na tym ekranie,
                  liczone z NAJKRÓTSZEGO PLANU (`simplifyDebts`), a nie z długów para po parze.
-                 Dzięki temu Bilans i „Kto komu ile" mówią jednym głosem, a ekran główny
+                 Dzięki temu Bilans i zakładka „Rozliczenia" mówią jednym głosem, a ekran główny
                  popycha do sposobu, który wymaga najmniej przelewów.
 
                  Strona „płacisz" idzie jawnymi wierszami (w planie minimalnym to zwykle
@@ -416,10 +416,10 @@ the verdict, and DESIGN.md
             <div id="view-settle" class="deck-view hidden">
             <section id="settlements-section" class="mb-3">
                 <!-- Nagłówek i przełącznik trybu STOJĄ W DWÓCH RZĘDACH na telefonie.
-                     Obok siebie „Kto komu ile" i „Najmniej przelewów" nie mieszczą się
+                     Obok siebie tytuł zakładki i „Najmniej przelewów" nie mieszczą się
                      poniżej 400 px i zaczynają się zawijać jedno na drugie. -->
                 <div class="mb-3">
-                    <h3 class="view-title">Kto komu ile</h3>
+                    <h3 class="view-title">Rozliczenia</h3>
                     <!-- TRZY TRYBY TO JEDNA DRABINA ZWIJANIA tego samego długu:
                          „Najmniej przelewów" zwija MIĘDZY OSOBAMI (optymalizuje trasę),
                          „Kto komu" zwija NA OSOBIE (sumuje należności wobec jednej),
@@ -485,7 +485,11 @@ the verdict, and DESIGN.md
                     <button data-filter="owed" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które jeszcze nie oddałeś/aś">Do oddania<span id="bill-filter-owed-count"></span></button>
                     <button data-filter="mine" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które wyłożyłeś pieniądze">Moje</button>
                     <button data-filter="others" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki grupy, które Cię nie dotyczą">Reszta grupy</button>
-                    <button data-filter="hidden" class="bill-filter-btn filter-pill" aria-pressed="false" title="Ukryte przez Ciebie">Ukryte</button>
+                    <!-- Licznik przy „Ukryte" (2026-08-26). Ukrycie jest jedynym filtrem,
+                         który człowiek sam na siebie nakłada — i jedynym, po którym rachunek
+                         znika mu z oczu. Bez liczby nie ma jak zauważyć, że coś się tam
+                         odłożyło; pigułka wygląda tak samo przy zerze i przy dwunastu. -->
+                    <button data-filter="hidden" class="bill-filter-btn filter-pill" aria-pressed="false" title="Ukryte przez Ciebie">Ukryte<span id="bill-filter-hidden-count"></span></button>
                 </div>
                 <div id="bills-history-list"></div>
             </section>
@@ -824,7 +828,7 @@ the verdict, and DESIGN.md
             <button id="nav-room" class="deck-btn tap" aria-current="page" aria-label="Bilans" title="Bilans">
                 <i class="fas fa-wallet"></i>
             </button>
-            <button id="nav-settle" class="deck-btn tap" aria-label="Kto komu ile" title="Kto komu ile">
+            <button id="nav-settle" class="deck-btn tap" aria-label="Rozliczenia" title="Rozliczenia">
                 <i class="fas fa-right-left"></i>
             </button>
         </div>
