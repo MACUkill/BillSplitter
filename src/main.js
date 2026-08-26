@@ -2733,7 +2733,15 @@
             // Zniknęło też zastrzeżenie „kwoty mogą się jeszcze zmienić — N czeka na Twój
             // ruch": mówi to samo, co blok o rachunkach poza saldem dwa wiersze wyżej,
             // a powtórzony sygnał uczy przewijać oba.
-            note.innerHTML = `<button class="plan-open-settle-btn underline" type="button">Rozliczenia: kto, ile i za co →</button>`;
+            //
+            // I odnośnik „Rozliczenia: kto, ile i za co →" (2026-08-26). Był TRZECIĄ drogą
+            // do tej samej zakładki na jednym ekranie: kafelek „Do oddania" ma pełen przycisk
+            // „Zobacz rozliczenia", „Czekasz na zwrot" ma „Zobacz kto", a na dole ekranu stoi
+            // pasek z zakładką Rozliczenia. Do tego podkreślony odnośnik tekstowy nie
+            // występuje nigdzie indziej w tej aplikacji — wszystko inne jest przyciskiem
+            // albo pigułką — więc wyglądał jak ciało obce, a po odjęciu zdania obok został
+            // sam, bez kontekstu.
+            note.textContent = '';
 
             list.querySelectorAll('.plan-nudge-people-btn').forEach((btn) => {
                 btn.onclick = () => {
@@ -2840,7 +2848,10 @@
             const zdanieTrybu = plan < pairwise
                 ? `Rozliczamy najkrótszą drogą: <b>${plan} ${plural(plan, 'przelew', 'przelewy', 'przelewów')}</b> zamiast ${pairwise}.`
                 : 'Rozliczamy najkrótszą drogą — krócej się tu nie da.';
-            note.innerHTML = `${zdanieTrybu} <button class="plan-open-settle-btn underline" type="button">Rozliczenia: kto komu ile →</button>`;
+            // Sam fakt o planie, bez odnośnika — powód przy bliźniaczej linii w trybie
+            // rachunkowym. Do zakładki Rozliczeń prowadzi pasek na dole ekranu, a przy
+            // należnościach jeszcze przycisk „Zobacz kto" w kafelku.
+            note.innerHTML = zdanieTrybu;
 
             list.querySelectorAll('.plan-pay-btn').forEach((btn) => {
                 btn.onclick = () => openSettleModal(btn.dataset.to, Number(btn.dataset.amountG), btn.dataset.currency, 'send');
