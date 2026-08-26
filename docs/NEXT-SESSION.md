@@ -144,13 +144,26 @@ tym, żeby trzy tryby stały się trzema księgowościami.
 - **Arkusz akceptacji paragonu** (pięć warstw utwardzenia) — wymaga klucza do modelu AI.
   Kod jest pod 32 testami w `src/receipt.flags.test.js`, ale nikt tego nie widział.
 
+## Rozstrzygnięte przez właściciela 2026-08-26
+
+- **Tryb „Dowolny" (każdy rozlicza się jak chce) — POMIJAMY.** Nie budować, nie proponować.
+- **Jedno „Ureguluj" na rachunek.** Zaznaczanie kilku rachunków naraz **nie wchodzi** do
+  etapu 3. Właściciel uznał pomysł za ciekawy, ale nie zdecydował, czy go chce — zapisany
+  niżej jako otwarty pomysł, nie jako zakres. Nie dokładaj go z własnej inicjatywy.
+
+## Otwarte pomysły — NIE ZAKRES, nie realizować bez pytania
+
+- **Zaznaczanie kilku rachunków naraz** i zapis N wpłat jednym gestem, przy jednym
+  przelewie w banku. Rozwiązywałoby to sytuację „oddaję Markowi za pięć rachunków jednym
+  przelewem, a odklikuję pięć razy". Właściciel: *„całkiem fajne, możemy to zapisać, ale
+  nie wiem czy wprowadzę"*.
+
 ## Pytania otwarte dla właściciela
 
-1. Czy wypchnąć gałąź `etap1-offline-i-feedback` na origin? (pytane dwa razy, bez odpowiedzi)
-2. Czy budujemy tryb „Dowolny" (każdy rozlicza się jak chce)? Rekomendacja: **nie**
-   w pierwszym podejściu — to jedyne ustawienie, które celowo odtwarza problem, który
-   naprawiamy.
-3. Czy zaznaczanie kilku rachunków naraz zostaje, czy zostaje jedno „Ureguluj" na rachunek?
+1. Czy wypchnąć gałąź `etap1-offline-i-feedback` na `origin`
+   (`github.com/MACUkill/BillSplitter`) jako NOWĄ, osobną gałąź? Nie dotyka to
+   `BillSplitterV2` ani `main` — znajomi właściciela nie zobaczyliby nic. Pytane
+   trzykrotnie, wciąż bez rozstrzygnięcia.
 
 ---
 
