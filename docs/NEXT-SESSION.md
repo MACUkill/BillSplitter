@@ -1,5 +1,160 @@
 # Brief na następną sesję
 
+> ## ⚠️ ZACZNIJ TUTAJ — ETAP 3: TRYB GLOBALNY I „RACHUNEK PO RACHUNKU" (2026-08-26)
+>
+> **Gałąź robocza: `etap1-offline-i-feedback`** (11 commitów, drzewo czyste, NIE scalona
+> do `BillSplitterV2`). Etapy 1 i 2 są zrobione — opisane w `docs/UI-UX.md` §20 i §21.
+> Etap 3 jest do zrobienia i to jest ta część, na której właścicielowi zależy najbardziej,
+> bo jego ekipa czeka na nią w trakcie używania aplikacji.
+>
+> **Pełny zapis decyzji projektowych (osiem rund rozmowy z właścicielem):**
+> https://claude.ai/code/artifact/bc3c3b5d-659d-4bc5-8003-1cd5b9e428e5
+>
+> Przeczytaj go, zanim cokolwiek zaprojektujesz od nowa. Większość rzeczy, które wyglądają
+> na oczywiste ulepszenia, została już rozważona i świadomie odrzucona.
+
+---
+
+## Zanim ruszysz: co jest zrobione i jak to sprawdzić
+
+```
+npm test                         # 263 testy jednostkowe
+npm run emulators                # w osobnym oknie
+npm run test:rules               # 34 testy reguł — WYMAGA CZYSTEGO EMULATORA
+npx vite --port 5199 --strictPort
+BILLIADA_URL=http://localhost:5199/ node tools/audit-offline.mjs   # 13 sprawdzeń
+
+VITE_USE_EMULATOR=true npx vite build
+npx vite preview --port 5197 --strictPort
+BILLIADA_URL=http://localhost:5197/ node tools/audit-sw.mjs        # 9 sprawdzeń
+```
+
+**KOLEJNOŚĆ MA ZNACZENIE.** Testy reguł zakładają czystą bazę, a przebiegi przeglądarkowe
+zostawiają w emulatorze prawdziwe pokoje i rachunki. Puszczone po audycie wywalają kilka
+sprawdzeń z `PERMISSION_DENIED` i wygląda to jak regresja reguł, której nikt nie wprowadził
+— sprawdzone, ta sama liczba błędów wychodzi na gałęzi bazowej. Reguły najpierw albo
+restart emulatorów pomiędzy.
+
+**`TaskStop` nie ubija emulatora do końca** — zostaje proces `java` i `node` trzymające porty
+4773 i 8770. Trzeba je znaleźć przez `netstat -ano` i ubić po PID, inaczej kolejny start
+kończy się „Could not start emulator hub, port taken".
+
+---
+
+## ETAP 3 — ZAKRES
+
+### 1. Ustawienie trybu w grupie
+
+- Pole `settlementMode` w dokumencie grupy: `'min'` | `'net'` | `'perBill'`.
+  **Brak pola = `'min'`, czyli dzisiejsze zachowanie.** Żaden istniejący pokój nie zmienia
+  się sam z siebie.
+- Dziś tryb żyje jako `let settlementMode = 'min'` w `src/main.js` (zmienna lokalna, ginie
+  przy przeładowaniu). Zostaje jako WIDOK; plan do wykonania idzie z pola grupy.
+- Ekran wyboru w ustawieniach pokoju: trzy opcje, przy każdej jedno zdanie wyjaśnienia.
+- **Tryb grupy świeci limonką marki** i niesie zdanie „Tak rozlicza się ta grupa"
+  (decyzja właściciela). Pozostałe dwa segmenty są widoczne i do otwarcia, ale **bez
+  przycisków akcji** — z jedną cichą linią „grupa umówiła się inaczej".
+
+### 2. Trzy tryby to jedna drabina zwijania
+
+| Tryb | Co zwija |
+|---|---|
+| Najmniej przelewów | zwija **między osobami** — optymalizuje trasę |
+| Kto komu | zwija **na osobie** — sumuje należności wobec jednej |
+| Rachunek po rachunku | **nie zwija nic** — w kolejności dodawania rachunków |
+
+**To jest reguła twarda i była łamana trzy razy w rozmowie.** W trybie trzecim NIE MA
+żadnych podsumowań, sum ani grupowania po osobie. Jeśli ktoś chce wiedzieć, ile łącznie
+idzie do Marka, przełącza się na „Kto komu" — po to on jest. Nie dowoź do jednego trybu
+tego, co robi sąsiedni.
+
+### 3. Gdzie mieszka tryb rachunkowy
+
+- **Rachunki** — filtr „Do oddania (N)" na istniejącej liście (mechanizm filtrów już jest,
+  `getBillUserState`). „Ureguluj" na wierszu i na ekranie rachunku.
+- **„Kto już oddał" na ekranie rachunku** — dla płatnika, **w każdym trybie**. Dziś tej
+  informacji nie ma tam wcale, a pytanie „oddałeś mi za kolację?" pada zawsze.
+- **Przelewy NIE powtarzają listy rachunków.** Sekcja „Do oddania" to trzy linijki
+  z przejściem, nie lista. Odbieranie, przypominanie i rejestr wpłat zostają na miejscu —
+  windykator działa w każdym trybie.
+- **Bilans** analogicznie: wielka kwota bez zmian (saldo na czysto jest identyczne we
+  wszystkich trybach — to niezmiennik), podpis liczy rachunki zamiast osób, pigułka trybu.
+
+### 4. Wpłaty: `billId` i reguła przypisania
+
+- Wpłata dostaje **opcjonalne** pole `billId`. Stare wpłaty działają bez migracji.
+- **Przypisanie TYLKO W OBRĘBIE PARY**: wpłata X→Y gasi długi X wobec Y, od najstarszego.
+  Wcześniejsza wersja tej reguły (FIFO bez ograniczenia do pary) była BŁĘDNA — pokazywałaby
+  rachunek jako spłacony Markowi, choć pieniądze poszły do Oli.
+- Czego nie da się przypisać (wpłaty poprowadzone planem minimalnym, a takie w pokoju
+  właściciela **prawdopodobnie już są**) ląduje w bloku **„Wpłaty bez przypisania"**
+  z kwotą, odbiorcą i zdaniem „powstała w trybie »Najmniej przelewów«".
+- Do tego linia uzgadniająca, żeby Bilans i lista rachunków nie mówiły dwóch różnych rzeczy:
+  `5 rachunków 130,00 · wpłata bez przypisania −30,00 · zostaje 100,00`.
+
+### 5. Potwierdzanie — NIE BUDUJ TEGO OD NOWA
+
+`src/nudges.js` `inboxItems` ma już `kind: 'confirm-payment'` na poziomie 1 (odznaka
+liczbowa). Pojawia się na Bilansie w „Czeka na Ciebie" i w skrzynce pod dzwonkiem,
+z przyciskiem potwierdzenia prosto z wiersza, bez okna (`src/main.js`, `.inbox-confirm-btn`).
+
+**Brakuje wyłącznie nazwy rachunku.** Dodanie `billId` naprawia to w skrzynce, na Bilansie,
+w rejestrze i w treści push naraz.
+
+**5 rachunków odklikniętych naraz = 5 wpłat = odznaka „5" i 5 wierszy w skrzynce.**
+Właściciel: *„i bardzo dobrze, w trybie rachunkowym robimy łopatologicznie bardzo"*.
+NIE zwijać. Dodać tylko nazwę rachunku w wierszu i sortowanie po płatniku, żeby wiersze
+tej samej osoby stały obok siebie.
+
+### 6. Niezmiennik do przykrycia testem
+
+**Saldo na czysto każdej osoby jest identyczne we wszystkich trzech trybach.** Tryb zmienia
+wyłącznie trasę pieniędzy i grubość ziarna, nigdy wynik. To jedyna rzecz, która broni przed
+tym, żeby trzy tryby stały się trzema księgowościami.
+
+---
+
+## Czego NIE ruszać
+
+- **Algorytmu planu minimalnego.** Etap 4, osobna gałąź, świadomie odłożony. Reguła
+  nienaruszalnego przelewu, wiersze planu jako dokumenty, migracja — wszystko czeka.
+  Dopóki tego nie ma, plan minimalny nadal przelicza się przy każdym rachunku i przy
+  każdej cudzej wpłacie. To jest znane i zaakceptowane.
+- **Osobnego odświeżania na żądanie** (przycisk, gest pociągnięcia). Właściciel dopytuje
+  kolegę, co ten miał na myśli. Pasek „Nowa wersja gotowa" to co innego — on już jest
+  i był warunkiem bezpieczeństwa etapu 2.
+- **`firebase/storage` jako importu statycznego.** Dziesięć miejsc wywołań za 31 kB,
+  na ścieżkach zdjęć, których nie da się w pełni przetestować. Świadoma decyzja.
+
+## Długi z etapu 1, warte zamknięcia przy okazji
+
+- **41 czekanych zapisów** w `src/main.js` (`await updateDoc` / `addDoc`). Offline te
+  obietnice nie rozwiązują się nigdy. Przerobione są 3 najgorsze (dołączanie do pokoju,
+  zapis wpłaty, potwierdzanie wpłat) — wzorzec to `fireWrite`. Tryb rachunkowy mnoży
+  akcje potwierdzania, więc kolejne konwersje mają tu realną wartość.
+- **Nasłuch dokumentu grupy w `renderGroupDashboard` nie ma zapisanego `unsubscribe`**
+  (przypisanie idzie do zapytania o rachunki). Przy powtórnej nawigacji nasłuchy się
+  stakują. Zastane, nie wprowadzone przez etap 1 — ale przy dokładaniu ekranów zrobi się
+  gorsze.
+
+## Dwie rzeczy nieobejrzane na oczy
+
+- **Pięć stanów przełącznika powiadomień** — wymaga buildu produkcyjnego, bo w trybie
+  deweloperskim vite nie rejestruje service workera i widać stan „niedostępne".
+- **Arkusz akceptacji paragonu** (pięć warstw utwardzenia) — wymaga klucza do modelu AI.
+  Kod jest pod 32 testami w `src/receipt.flags.test.js`, ale nikt tego nie widział.
+
+## Pytania otwarte dla właściciela
+
+1. Czy wypchnąć gałąź `etap1-offline-i-feedback` na origin? (pytane dwa razy, bez odpowiedzi)
+2. Czy budujemy tryb „Dowolny" (każdy rozlicza się jak chce)? Rekomendacja: **nie**
+   w pierwszym podejściu — to jedyne ustawienie, które celowo odtwarza problem, który
+   naprawiamy.
+3. Czy zaznaczanie kilku rachunków naraz zostaje, czy zostaje jedno „Ureguluj" na rachunek?
+
+---
+
+
 Napisane 2026-08-05, zaktualizowane **2026-08-16** po pełnym audycie.
 
 > ### ⚠️ ZACZNIJ OD `docs/AUDYT-2026-08.md`
