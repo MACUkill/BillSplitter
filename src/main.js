@@ -931,7 +931,12 @@
 
         const showViewportDiagnostics = () => {
             document.addEventListener('click', (e) => {
-                if (!e.target.closest('.brand-lockup, #room-serial')) return;
+                // Cel gestu został JEDEN: znak firmowy na liście pokoi (2026-08-26).
+                // Drugim był kod pokoju w nagłówku pulpitu, ale zniknął. Nazwa pokoju nie
+                // nadaje się na zamiennik — otwiera ustawienia, więc pięć stuknięć otwierałoby
+                // arkusz pięć razy i podgląd wylądowałby pod nim. Lista pokoi ma ten sam
+                // rozmiar okna, co pulpit, więc narzędzie mierzy dokładnie to samo.
+                if (!e.target.closest('.brand-lockup')) return;
                 clearTimeout(diagTimer);
                 diagTaps += 1;
                 diagTimer = setTimeout(() => { diagTaps = 0; }, 1500);
@@ -1366,10 +1371,8 @@
                 userNameEl.textContent = myMember ? myMember.name : '...';
                 const nameDisplay = document.getElementById('dashboard-user-name-display');
                 if (nameDisplay) nameDisplay.textContent = myMember ? myMember.name : '...';
-                // Numer seryjny pokoju stoi w nagłówku na stałe: to jedyna droga do pokoju,
-                // gdy skrót z ekranu początkowego iPhone'a otworzy aplikację bez adresu grupy.
-                const serialEl = document.getElementById('room-serial');
-                if (serialEl) serialEl.textContent = formatSerial(currentGroupId);
+                // Kod pokoju żyje wyłącznie w ustawieniach pokoju — powód przy nagłówku
+                // pulpitu w index.html.
                 const serialSheetEl = document.getElementById('room-settings-serial');
                 if (serialSheetEl) serialSheetEl.textContent = formatSerial(currentGroupId);
                 userNameEl.onclick = async () => {
@@ -1511,11 +1514,6 @@
             document.getElementById('copy-group-link-btn').onclick = () => {
                 copyText(document.getElementById('group-share-link').value, 'Link do grupy skopiowany!');
             };
-            // Stuknięcie w numer seryjny kopiuje sam kod pokoju — to jest to, co podaje się
-            // przy stole i przepisuje z cudzego telefonu. Link mieszka niżej, w stopce pokoju.
-            const serialBtn = document.getElementById('room-serial-btn');
-            if (serialBtn) serialBtn.onclick = () => copyText(currentGroupId, 'Kod pokoju skopiowany.');
-
             // Ustawienia pokoju otwierają się spod NAZWY pokoju — stoją przy rzeczy,
             // której dotyczą. Zwijana sekcja „Pokój" na pulpicie zniknęła bez zamiennika.
             const roomSettingsBtn = document.getElementById('room-settings-btn');
@@ -2490,7 +2488,6 @@
                 if (serial) serial.textContent = formatSerial(currentGroupId);
             }
             renderBalanceWaiting();
-            renderBalanceTasks();
             renderBalanceFilling();
 
             // PIGUŁKA TRYBU. Wielka kwota jest we wszystkich trzech trybach identyczna
@@ -2726,11 +2723,17 @@
 
             list.innerHTML = html.join('');
 
-            const czekaNaMnie = actionBillsForMe().length;
-            const zastrzezenie = czekaNaMnie
-                ? ` <b class="text-ink-2">Kwoty mogą się jeszcze zmienić — ${czekaNaMnie} ${plural(czekaNaMnie, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')} na Twój ruch.</b>`
-                : '';
-            note.innerHTML = `Każdy przelew idzie do osoby, która wyłożyła pieniądze.${zastrzezenie} <button class="plan-open-settle-btn underline" type="button">Rozliczenia: kto, ile i za co →</button>`;
+            // ZOSTAJE SAMA DROGA, BEZ WYKŁADU (decyzja właściciela 2026-08-26).
+            //
+            // Stało tu zdanie „Każdy przelew idzie do osoby, która wyłożyła pieniądze" —
+            // wyjaśnienie trybu, czyli odpowiedź na pytanie zadawane raz w życiu, postawiona
+            // pod kwotą, po którą ludzie przychodzą codziennie. Pełne tłumaczenie mechaniki
+            // zostaje w Rozliczeniach, tuż obok rzeczy, której dotyczy.
+            //
+            // Zniknęło też zastrzeżenie „kwoty mogą się jeszcze zmienić — N czeka na Twój
+            // ruch": mówi to samo, co blok o rachunkach poza saldem dwa wiersze wyżej,
+            // a powtórzony sygnał uczy przewijać oba.
+            note.innerHTML = `<button class="plan-open-settle-btn underline" type="button">Rozliczenia: kto, ile i za co →</button>`;
 
             list.querySelectorAll('.plan-nudge-people-btn').forEach((btn) => {
                 btn.onclick = () => {
@@ -2828,16 +2831,16 @@
             // czego brakuje; po zamianie kolejności widzi najpierw wynik i mógłby mu zaufać
             // bardziej, niż zasługuje. Zdanie pojawia się WYŁĄCZNIE wtedy, gdy coś faktycznie
             // czeka — przy pustej skrzynce nie dokłada ani słowa.
-            const czekaNaMnie = actionBillsForMe().length;
-            const zastrzezenie = czekaNaMnie
-                ? ` <b class="text-ink-2">Kwoty mogą się jeszcze zmienić — ${czekaNaMnie} ${plural(czekaNaMnie, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')} na Twój ruch.</b>`
-                : '';
             // Ta gałąź obsługuje WYŁĄCZNIE plan minimalny — tryb rachunkowy ma własną
             // (`renderBalancePlanPerBill`) i wychodzi z funkcji wyżej.
+            //
+            // Zdanie o liczbie przelewów ZOSTAJE: to fakt o TYM planie („3 zamiast 7"),
+            // a nie wykład o tym, jak działa tryb. Zastrzeżenie „kwoty mogą się zmienić"
+            // odpadło — mówi to samo, co blok o rachunkach poza saldem wyżej.
             const zdanieTrybu = plan < pairwise
                 ? `Rozliczamy najkrótszą drogą: <b>${plan} ${plural(plan, 'przelew', 'przelewy', 'przelewów')}</b> zamiast ${pairwise}.`
                 : 'Rozliczamy najkrótszą drogą — krócej się tu nie da.';
-            note.innerHTML = `${zdanieTrybu}${zastrzezenie} <button class="plan-open-settle-btn underline" type="button">Rozliczenia: kto komu ile →</button>`;
+            note.innerHTML = `${zdanieTrybu} <button class="plan-open-settle-btn underline" type="button">Rozliczenia: kto komu ile →</button>`;
 
             list.querySelectorAll('.plan-pay-btn').forEach((btn) => {
                 btn.onclick = () => openSettleModal(btn.dataset.to, Number(btn.dataset.amountG), btn.dataset.currency, 'send');
@@ -3059,7 +3062,7 @@
             // Rachunki w uzupełnianiu nie wchodzą do księgi, więc bez tego warunku pokój
             // pełen niezamkniętych rachunków ogłaszałby, że nikt nikomu nic nie jest winien
             // — czyli aplikacja mówiłaby nieprawdę o cudzych pieniądzach.
-            const wUzupelnianiuHtml = fillingBillsHtml();
+            const wUzupelnianiuHtml = billsAsideHtml();
             if (currencies.length === 0) {
                 container.innerHTML = wUzupelnianiuHtml
                     ? `${wUzupelnianiuHtml}<div class="mt-3">${nothing}</div>`
@@ -3701,54 +3704,63 @@
             const nazwyHtml = otwarte.slice(0, 4)
                 .map((b) => escapeHtml(b.billName || 'Rachunek')).join(' · ');
             const wiecej = otwarte.length > 4 ? ` i ${otwarte.length - 4} więcej` : '';
-
-            // CZY TO JA JESTEM WĄSKIM GARDŁEM.
-            //
-            // Na Rozliczeniach i Bilansie pytanie brzmi „czemu tej kwoty tu jeszcze nie ma",
-            // a nie „co mam dziś zrobić" — od zadań jest skrzynka i sekcja „Czeka na Ciebie".
-            // Ale jeśli to MOJE nieodklikane pozycje trzymają rachunek, to człowiek stoi
-            // właśnie na ekranie, na którym chciał zapłacić, i ma prawo dowiedzieć się tego
-            // tutaj, jednym zdaniem, z drogą na miejsce. Bez tego szuka po zakładkach.
-            const my = myMemberNow();
-            const mojeDoStukniecia = my ? otwarte.filter((b) => {
-                const p = (b.participants || {})[my.id];
-                return p && p.status !== PARTICIPANT_OUT && !participantReady(b, my.id);
-            }) : [];
-            const mojeDoZamkniecia = my ? otwarte.filter((b) => isPrimaryCloser(b, my.id)) : [];
-            const wolanie = mojeDoStukniecia.length
-                ? { lista: mojeDoStukniecia, tekst: `stuknij swoje pozycje na ${mojeDoStukniecia.length === 1 ? 'tym rachunku' : `${mojeDoStukniecia.length} z nich`}` }
-                : (mojeDoZamkniecia.length
-                    ? { lista: mojeDoZamkniecia, tekst: `zamknij ${mojeDoZamkniecia.length === 1 ? 'ten rachunek' : `${mojeDoZamkniecia.length} z nich`}` }
-                    : null);
-            const wolanieHtml = wolanie
-                ? `<p class="text-sm text-ink-2 mt-2"><b class="text-ink">Czeka na Ciebie:</b> ${wolanie.tekst}.</p>
-                   <button class="filling-go-btn btn btn-quiet w-full mt-2" data-bill="${escapeHtml(wolanie.lista.length === 1 ? wolanie.lista[0].id : '')}">${wolanie.lista.length === 1 ? 'Otwórz rachunek' : 'Pokaż rachunki'}</button>`
-                : '';
-
-            return `<div class="block-quiet p-4">
-                <div class="flex items-baseline justify-between gap-3">
+            return `<div class="flex items-baseline justify-between gap-3">
                     <span class="font-bold">W uzupełnianiu</span>
                     <span class="font-bold tabular-nums">${kwotyHtml}</span>
                 </div>
-                <p class="text-sm text-ink-2 mt-1">${otwarte.length} ${plural(otwarte.length, 'rachunek', 'rachunki', 'rachunków')} czeka na zamknięcie, więc jeszcze nie liczy się do salda: ${nazwyHtml}${wiecej}.</p>
-                ${wolanieHtml}
+                <p class="text-sm text-ink-2 mt-1">${otwarte.length} ${plural(otwarte.length, 'rachunek', 'rachunki', 'rachunków')} czeka na zamknięcie, więc jeszcze nie liczy się do salda: ${nazwyHtml}${wiecej}.</p>`;
+        };
+
+        // JEDEN BLOK NA WSZYSTKIE RACHUNKI POZA SALDEM (decyzja właściciela 2026-08-26).
+        //
+        // Stały tu dwa szare prostokąty jeden pod drugim — „W uzupełnianiu" i osobny kafelek
+        // „N rachunków czeka na Twój ruch" — a mówiły o tej samej rzeczy: o rachunkach, które
+        // jeszcze nie weszły do salda. Trzeci raz to samo szło drobnym drukiem pod planem
+        // przelewów. Zamiast rosnąć, Bilans się teraz skraca.
+        //
+        // STYL: `block-quiet`, bo to INFORMACJA, a `card` w tym systemie znaczy PIENIĄDZE
+        // („Do oddania", „Czekasz na zwrot"). Przycisk jest `btn-dark`, nie `btn-quiet` —
+        // cichy ma tło `surface-2`, czyli dokładnie to samo, co blok, w którym stoi, i czyta
+        // się wtedy jak wyśrodkowany tekst, a nie jak coś do naciśnięcia (ta sama pułapka
+        // co przy `control-fix-total`). Żadnej czerwieni ani zieleni: te dwa kolory znaczą
+        // w tej aplikacji wyłącznie kierunek pieniędzy.
+        const billsAsideHtml = () => {
+            const otwarteHtml = fillingBillsHtml();
+            const zadania = currentInbox().filter((x) => x.level === 2);
+            if (!otwarteHtml && !zadania.length) return '';
+
+            const zadaniaHtml = zadania.length
+                ? `<p class="text-sm text-ink-2 ${otwarteHtml ? 'mt-2' : ''}"><b class="text-ink">${zadania.length} ${plural(zadania.length, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')} na Twój ruch.</b></p>`
+                : '';
+            // Jeden rachunek — wchodzimy wprost w niego. Kilka — na listę z nałożonym filtrem,
+            // bo inaczej człowiek ląduje wśród dwudziestu i sam szuka tych dwóch.
+            const jedyny = zadania.length === 1 ? zadania[0].id : '';
+            const etykieta = zadania.length === 1 ? 'Otwórz rachunek' : 'Pokaż rachunki';
+            return `<div class="block-quiet p-4">
+                ${otwarteHtml}
+                ${zadaniaHtml}
+                <button class="bills-aside-btn btn btn-dark w-full mt-3" data-bill="${escapeHtml(jedyny)}" data-tasks="${zadania.length}">${etykieta}</button>
             </div>`;
         };
 
-        // Jedna delegacja na oba miejsca, w których stoi blok „W uzupełnianiu" (Bilans
-        // i Rozliczenia). Obie listy przerysowują się przy każdej zmianie, więc nasłuch
-        // wpięty w konkretny przycisk ginąłby razem z nim.
+        // Jedna delegacja na oba miejsca, w których stoi ten blok (Bilans i Rozliczenia).
+        // Obie listy przerysowują się przy każdej zmianie, więc nasłuch wpięty w konkretny
+        // przycisk ginąłby razem z nim.
         document.addEventListener('click', (e) => {
-            const btn = e.target.closest('.filling-go-btn');
+            const btn = e.target.closest('.bills-aside-btn');
             if (!btn) return;
-            if (btn.dataset.bill) joinBill(currentGroupId, btn.dataset.bill);
-            else showDeckView('view-bills');
+            if (btn.dataset.bill) { joinBill(currentGroupId, btn.dataset.bill); return; }
+            // Filtr ustawiamy PRZED przejściem, żeby lista otworzyła się na tym, o czym
+            // mówi blok — ale tylko wtedy, gdy faktycznie jest co filtrować.
+            currentBillFilter = Number(btn.dataset.tasks) > 0 ? 'waiting' : 'all';
+            showDeckView('view-bills');
+            renderBillsList();
         });
 
         const renderBalanceFilling = () => {
             const wrap = document.getElementById('balance-filling');
             if (!wrap) return;
-            const html = fillingBillsHtml();
+            const html = billsAsideHtml();
             wrap.innerHTML = html;
             wrap.classList.toggle('hidden', !html);
         };
@@ -3764,30 +3776,6 @@
             renderInboxForYou(list, items);
         };
 
-        // RACHUNKI CZEKAJĄCE NA MÓJ RUCH — na Bilansie JEDNA LINIJKA, nie lista kart.
-        //
-        // Zadania mieszkają na zakładce „Rachunki", ale kropka przy niej gaśnie po pierwszym
-        // wejściu, nawet gdy nic nie zrobiłem (`markBillsSeen`). Bez tej linijki zadanie
-        // zostawałoby, a sygnał znikał — i nic już by o nim nie przypomniało. To jest tania
-        // siatka pod tym, a nie druga lista: jedno zdanie i jedno przejście na miejsce.
-        const renderBalanceTasks = () => {
-            const wrap = document.getElementById('balance-tasks');
-            if (!wrap) return;
-            const ile = currentInbox().filter((x) => x.level === 2).length;
-            wrap.classList.toggle('hidden', ile === 0);
-            if (ile === 0) { wrap.innerHTML = ''; return; }
-            wrap.innerHTML = `<div class="block-quiet p-4 flex items-center justify-between gap-3">
-                <span class="text-sm text-ink-2"><b class="text-ink">${ile} ${plural(ile, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')}</b> na Twój ruch.</span>
-                <button id="balance-tasks-btn" class="btn btn-quiet flex-shrink-0">Pokaż</button>
-            </div>`;
-            document.getElementById('balance-tasks-btn').onclick = () => {
-                // Filtr ustawiamy PRZED przejściem: inaczej człowiek ląduje na pełnej liście
-                // dwudziestu rachunków i sam ma znaleźć te dwa, o których mowa.
-                currentBillFilter = 'waiting';
-                showDeckView('view-bills');
-                renderBillsList();
-            };
-        };
 
         // Rząd twarzy całej ekipy pod nominałem został usunięty 2026-08-15 na wniosek
         // właściciela. Powód jest prosty i wart zapisania, żeby nie wrócił: rząd

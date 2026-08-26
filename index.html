@@ -276,15 +276,14 @@ the verdict, and DESIGN.md
 
         <div id="group-dashboard-screen" class="hidden">
 
-            <!-- NAGŁÓWEK POKOJU — nazwa i twoje zdjęcie. Kod pokoju stoi tuż pod nazwą,
-                 bo to on ratuje wejście na iPhonie, gdzie skrót z ekranu początkowego
-                 gubi adres grupy. -->
-            <!-- Nagłówek stoi w DWÓCH RZĘDACH, nie w jednym z kolumną w środku. Przy
-                 jednym rzędzie strzałka powrotu była wyśrodkowana względem bloku
-                 „nazwa + kod pokoju", więc lądowała pół wiersza niżej niż nazwa i cały
-                 nagłówek wyglądał na przekrzywiony. Teraz pierwszy rząd niesie nawigację
-                 i nazwę, a kod pokoju stoi pod spodem, wyrównany do nazwy. -->
-            <header class="mb-6">
+            <!-- NAGŁÓWEK POKOJU — JEDEN RZĄD: wyjście, nazwa (wejście do ustawień), pomoc
+                 i skrzynka. Drugi rząd z kodem pokoju odpadł 2026-08-26 razem z samym kodem;
+                 odstęp pod nagłówkiem zszedł wtedy z `mb-6` na `mb-4`, bo nie ma już czego
+                 oddzielać od nazwy — a każdy zaoszczędzony piksel na górze telefonu jest
+                 wart więcej niż gdziekolwiek indziej na ekranie.
+                 Marginesu bezpiecznego pod wcięciem iPhone'a to NIE dotyczy: on siedzi
+                 w `#app-container` i zostaje nietknięty. -->
+            <header class="mb-4">
                 <div class="flex items-center gap-2">
                     <!-- WYJŚCIE DO LISTY POKOI. Do tej pory z pokoju nie dało się wyjść inaczej
                          niż przez opuszczenie go albo wyczyszczenie adresu, a ludzie bywają
@@ -320,13 +319,17 @@ the verdict, and DESIGN.md
                     </div>
                 </div>
 
-                <!-- Kod pokoju w drugim rzędzie, wcięty pod nazwę: to jedyna droga do
-                     pokoju, gdy skrót z ekranu początkowego otworzy aplikację bez adresu
-                     grupy, ale nie jest tym, po co ktoś tu wchodzi. -->
-                <button id="room-serial-btn" class="tap ml-9 flex items-center gap-1.5 text-ink-3 text-sm min-h-tap" title="Kod pokoju: stuknij, aby skopiować">
-                    <i class="fas fa-hashtag text-xs"></i>
-                    <span id="room-serial" class="serial text-ink-2"></span>
-                </button>
+                <!-- KOD POKOJU ZNIKNĄŁ Z NAGŁÓWKA (decyzja właściciela 2026-08-26).
+                     Zajmował własny rząd wysokości celu dotykowego — 48 px na górze ekranu,
+                     na wszystkich trzech zakładkach, do końca życia pokoju — a potrzebny
+                     jest raz, przy zapraszaniu ekipy. Mieszka teraz wyłącznie w ustawieniach
+                     pokoju (kod, link i kod QR razem), o jedno stuknięcie w nazwę, którą
+                     chevron obok i tak oznacza jako otwieraną. Świeży pokój pokazuje kod
+                     wielkim drukiem w bloku „Pokój jest pusty" na Bilansie, czyli dokładnie
+                     wtedy, kiedy się zaprasza.
+                     Uzasadnienie, które tu wcześniej stało („jedyna droga do pokoju, gdy
+                     skrót otworzy aplikację bez adresu grupy"), przestało być prawdziwe,
+                     odkąd aplikacja sama wraca do ostatniego pokoju. -->
             </header>
 
             <!-- TRZY MIEJSCA, nie trzy sekcje jednej strony. Pasek przełącza widoki:
@@ -402,14 +405,12 @@ the verdict, and DESIGN.md
                 <div id="balance-waiting-list" class="space-y-2"></div>
             </div>
 
-            <!-- Rachunki czekające na mój ruch — jedno zdanie i przejście na miejsce.
-                 Powód, dla którego to tu w ogóle jest, przy `renderBalanceTasks`. -->
-            <div id="balance-tasks" class="hidden mt-5"></div>
 
-            <!-- W UZUPEŁNIANIU — rachunki, które jeszcze nie weszły do salda.
-                 Wielka kwota nad tym blokiem liczy WYŁĄCZNIE rachunki gotowe do
-                 rozliczenia, więc bez tej linijki reszta znikałaby bez śladu i wracała
-                 w dniu, w którym ktoś zamknie rachunek — jako niespodzianka. -->
+            <!-- RACHUNKI POZA SALDEM — jeden blok na dwie rzeczy: te, które czekają na
+                 zamknięcie (wielka kwota wyżej liczy WYŁĄCZNIE gotowe do rozliczenia, więc
+                 bez tego reszta znikałaby bez śladu i wracała jako niespodzianka), i te,
+                 które czekają na mój ruch. Do 2026-08-26 były to dwa osobne szare bloki
+                 jeden pod drugim plus trzecia wzmianka drobnym drukiem pod planem. -->
             <div id="balance-filling" class="hidden mt-5"></div>
 
             <!-- Pusty pokój na Bilansie: zero to tu stan sukcesu, ale w świeżym pokoju
