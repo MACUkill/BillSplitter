@@ -52,15 +52,37 @@
   }
 }
 
-/* Pasek offline jest przyklejony do GÓRY ekranu, więc jego treść też musi zejść
-   spod wcięcia — inaczej komunikat o braku sieci czyta się spod zegarka. */
+/* Paski systemowe są przyklejone do GÓRY ekranu, więc ich treść musi zejść spod wcięcia
+   — inaczej czyta się ją spod zegarka. Pasek offline miał to od początku; pasek „Nowa
+   wersja gotowa" doszedł w etapie 2 i tego NIE dostał, przez co na iPhonie stał za wysoko
+   i przycisk „Odśwież" był ucięty (zgłoszenie właściciela 2026-08-26).
+
+   WCIĘCIE NALEŻY SIĘ TYLKO PIERWSZEMU PASKOWI W STOSIE. Oba są w jednej kolumnie, więc
+   gdy pokażą się naraz, drugi stoi już pod wcięciem i dodanie mu tego samego odstępu
+   zrobiłoby z niego pasek grubszy o wysokość zegarka. CSS nie umie wskazać „pierwszego
+   widocznego", ale kolejność jest znana i stała: „nowa wersja" stoi nad „offline". */
+#update-banner,
 #offline-banner {
   padding-top: calc(0.5rem + env(safe-area-inset-top));
 }
 
-/* Odsunięcie treści spod paska offline liczy się razem z wcięciem, bo pasek urósł. */
+body:has(#update-banner:not(.hidden)) #offline-banner {
+  padding-top: 0.5rem;
+}
+
+/* Odsunięcie treści spod pasków liczy się razem z wcięciem, bo paski urosły o nie.
+   Pasek „nowa wersja" jest wyższy od offline'owego, bo niesie przycisk (a `.btn` ma
+   własną minimalną wysokość celu dotykowego). */
 body:has(#offline-banner:not(.hidden)) #app-container {
   padding-top: calc(4.25rem + env(safe-area-inset-top));
+}
+
+body:has(#update-banner:not(.hidden)) #app-container {
+  padding-top: calc(5.5rem + env(safe-area-inset-top));
+}
+
+body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-container {
+  padding-top: calc(8.75rem + env(safe-area-inset-top));
 }
 
 /* ==========================================================================
