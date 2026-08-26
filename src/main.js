@@ -1436,9 +1436,14 @@
             });
 
             const billsQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`), orderBy('createdAt', 'desc'));
+            // Pokój, do którego należy TEN nasłuch. Migawka potrafi przyjść po wyjściu z pokoju,
+            // a stempel `everOpened` jest zapisem — pisanie go pod nowe `currentGroupId` trafiłoby
+            // w cudzy rachunek.
+            const grupaNasluchu = currentGroupId;
             unsubscribeGroup = onSnapshot(billsQuery, (snapshot) => {
                 noteSnapshot(snapshot.metadata);
                 latestBills = snapshot.docs.map(d => ({ id: d.id, data: d.data() }));
+                stampEverOpened(grupaNasluchu);
                 renderBillsList();
                 renderSettlements();
                 renderBalancePanel();
@@ -1658,6 +1663,33 @@
         // warunku dałoby dwa miejsca, w których trzeba pamiętać o tej samej rzeczy.
         const canSettleBill = (bill) => billSettleGate(bill).open;
 
+        // ZAMKNIĘTY RACHUNEK JEST ZAMROŻONY W CAŁOŚCI, A NIE TYLKO NA STUKANIE W PARAGON.
+        //
+        // Reguła stała od 2026-08-26 przy jednym module obsługi („na zamkniętym rachunku nikt
+        // już nie klika"), ale pilnowała JEDNEJ z sześciu dróg, którymi da się zmienić treść
+        // rachunku. Ołówek przy pozycji, kosz, „Dodaj pozycję", koszty wspólne, kwota rachunku
+        // i przełącznik trybu omijały ją w całości — a każda z nich przesuwa cudze kwoty.
+        //
+        // Sonda audytowa 2026-08-26: rachunek zamknięty „po równo", udziały 133,34 / 133,34 /
+        // 33,34. Płatnik poprawia ołówkiem jedną pozycję ze 100 na 180 i wychodzi 106,67 /
+        // 186,67 / 6,67 — brama ANI DRGNIE, bo nic nie zawisło bez właściciela, tylko zmieniło
+        // właściciela. Ania płaci o 53 zł więcej, Kuba ma nadpłatę, nikt nie dostaje ani słowa.
+        //
+        // Zamrożenie nie jest ślepym zaułkiem: płatnik i admin mają nad banerem „Otwórz rachunek
+        // z powrotem", a ten pyta wprost i mówi, ile osób już zapłaciło. Reszta ekipy ma „To nie
+        // moje". Zmiana kwot po zamknięciu ma być decyzją, a nie skutkiem ubocznym stuknięcia.
+        const billFrozen = (bill) => !!bill && bill.settleOpen === true && billSettleGate(bill).open;
+
+        // Zwraca true, gdy odmówiliśmy — wołane jako `if (refuseFrozen()) return;`.
+        const refuseFrozen = () => {
+            if (!billFrozen(billData)) return false;
+            const my = myMemberNow();
+            showToast(canCloseBill(billData, my && my.id)
+                ? 'Rachunek zamknięty. Otwórz go z powrotem u góry, żeby poprawić pozycje.'
+                : 'Rachunek jest zamknięty. Poproś o otwarcie, żeby poprawić pozycje.');
+            return true;
+        };
+
         // Powód blokady — ludzkim językiem, do postawienia PRZY wyłączonym przycisku.
         // Martwy szary guzik bez zdania obok czyta się jak usterka aplikacji, a nie jak
         // świadoma ochrona; to jest różnica między „apka nie działa" a „jeszcze nie czas".
@@ -1668,7 +1700,12 @@
             const gate = billSettleGate(bill);
             if (gate.open) return '';
             if (gate.reason === 'over') {
-                return 'Pozycje przekraczają kwotę rachunku. Ktoś musi to poprawić, zanim ruszą przelewy.';
+                // W trybie „po równo" lista pozycji jest schowana, a jedyne, co potrafi
+                // przekroczyć kwotę rachunku, to koszt wspólny (napiwek, serwis). Kierowanie
+                // wtedy do „pozycji" wskazywałoby na coś, czego na ekranie nie ma.
+                return billSplitMode(bill) === 'even'
+                    ? 'Koszty wspólne przekraczają kwotę rachunku. Ktoś musi to poprawić, zanim ruszą przelewy.'
+                    : 'Pozycje przekraczają kwotę rachunku. Ktoś musi to poprawić, zanim ruszą przelewy.';
             }
             const kwota = fmtMoney(gate.unallocatedG || 0, (bill && bill.currency) || 'PLN');
             return gate.reason === 'changed'
@@ -1686,7 +1723,9 @@
             const gate = billSettleGate(bill);
             if (gate.open) return;
             const kroki = gate.reason === 'over'
-                ? '<li>Popraw kwotę rachunku albo pozycje, żeby suma się zgadzała.</li>'
+                ? (billSplitMode(bill) === 'even'
+                    ? '<li>Popraw kwotę rachunku albo koszt wspólny, żeby suma się zgadzała.</li>'
+                    : '<li>Popraw kwotę rachunku albo pozycje, żeby suma się zgadzała.</li>')
                 : `<li>Stuknij na paragonie pozycje, które są Twoje.</li>
                    <li>Gdy nic już nie wisi bez właściciela, rachunek odblokuje się sam.</li>
                    <li>Jeśli coś zostaje, płatnik zamyka rachunek i decyduje, co z tą kwotą.</li>`;
@@ -1761,7 +1800,7 @@
             if (gate.reason === 'over') {
                 return `<div class="card p-4 flex items-start gap-3">
                     <span class="chip text-owe text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Błąd</span>
-                    <span class="text-sm text-ink-2"><b class="text-ink">Pozycje przekraczają kwotę rachunku o ${fmtMoney(toGrosze(gate.diff || 0), cur)}.</b> Dopóki to się nie zgadza, nikt nie może się rozliczyć — inaczej wszyscy by przepłacili. Popraw kwotę albo pozycje wyżej.</span>
+                    <span class="text-sm text-ink-2"><b class="text-ink">${billSplitMode(bill) === 'even' ? 'Koszty wspólne przekraczają' : 'Pozycje przekraczają'} kwotę rachunku o ${fmtMoney(toGrosze(gate.diff || 0), cur)}.</b> Dopóki to się nie zgadza, nikt nie może się rozliczyć — inaczej wszyscy by przepłacili. Popraw kwotę albo ${billSplitMode(bill) === 'even' ? 'koszt wspólny' : 'pozycje'} wyżej.</span>
                 </div>`;
             }
 
@@ -2460,6 +2499,45 @@
         // (`billCountsInLedger`): ktoś mógł już za niego zapłacić, a wpłata bez długu po
         // drugiej stronie tworzy w `buildLedger` krawędź odwrotną — czyli FAŁSZYWY DŁUG
         // w drugą stronę. To ta sama rodzina usterek, co „wiersz widmo" z src/plan.js.
+        // RACHUNEK, Z KTÓREGO DA SIĘ JUŻ PŁACIĆ, ZOSTAJE W KSIĘDZE NA ZAWSZE.
+        //
+        // `everOpened` stawiało dotąd WYŁĄCZNIE ręczne zamknięcie rachunku (`applyBillClose`),
+        // a brama otwiera się na trzy sposoby: decyzją płatnika ('closed'), sama z siebie na
+        // rachunku rozpisanym co do grosza ('exact') i z założenia w trybie „po równo" ('even').
+        // Dwa ostatnie nie zapisywały niczego — więc rachunek, z którego cała ekipa mogła już
+        // przelewać, nosił `everOpened: false` i wypadał z księgi przy pierwszej zmianie, która
+        // zamykała bramę. Znikały wtedy CUDZE długi z tego rachunku, a wpłata, która już poszła,
+        // zamieniała się w `buildLedger` w dług płatnika wobec tego, kto mu zapłacił.
+        //
+        // Sonda audytowa 2026-08-26: rachunek na 300 zł rozpisany co do grosza, Kuba oddaje
+        // swoje 100, płatnik dopisuje zapomnianą herbatę za 50 — i księga mówi, że to PŁATNIK
+        // jest winien Kubie 100, a dług Ani znika. Dwieście złotych różnicy z jednego stuknięcia,
+        // przy rachunku, który na własnym ekranie dalej pokazuje udziały 100 / 100 / 100.
+        //
+        // Dlatego flagę stawiamy w chwili, w której staje się prawdziwa: gdy brama pierwszy raz
+        // stoi otworem na rachunku z potwierdzonym płatnikiem i kwotą. Zapis jest jednorazowy
+        // (`everOpened` nigdy nie wraca do false), idempotentny — dwa telefony zapiszą tę samą
+        // wartość — i idzie przez `fireWrite`, więc nie czeka na sieć. `stampedEverOpened`
+        // pilnuje tylko tego, żeby nie powtórzyć zapisu, zanim wróci echo z serwera.
+        const stampedEverOpened = new Set();
+        const stampEverOpened = (groupId) => {
+            if (!groupId || groupId !== currentGroupId) return;
+            latestBills.forEach(({ id, data }) => {
+                if (!data || data.gated !== true || data.everOpened === true) return;
+                // Rachunek bez potwierdzonego płatnika albo bez kwoty nie tworzy ANI JEDNEGO
+                // długu (`computeBillDebts`), więc nie ma czego trzymać w księdze — a bez tego
+                // warunku flagę dostawałby każdy świeżo założony szkic.
+                if (!data.payerConfirmed || toGrosze(data.totalAmount || 0) <= 0) return;
+                if (!billSettleGate(data).open) return;
+                if (stampedEverOpened.has(id)) return;
+                stampedEverOpened.add(id);
+                fireWrite(
+                    updateDoc(doc(db, `artifacts/${appId}/public/data/groups/${groupId}/bills`, id), { everOpened: true }),
+                    null,
+                );
+            });
+        };
+
         const ledgerBills = () => latestBills
             .map(({ id, data }) => ({ ...data, id }))
             .filter(billCountsInLedger);
@@ -3956,6 +4034,10 @@
             if (!currentBillId) return;
             const m = (groupData.members || {})[id];
             if (!m) return;
+            // Skład rachunku dzieli koszty ogólne i kwotę nierozpisaną, więc dopisanie albo
+            // wypisanie jednej osoby zmienia udział KAŻDEJ POZOSTAŁEJ — i robi to nie ruszając
+            // bramy, bo nic nie zawisło bez właściciela. Patrz `billFrozen`.
+            if (refuseFrozen()) return;
             const billDocRef = doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId);
             if (include) {
                 // Jedna wartość na „jest w rachunku". Wcześniej były trzy („incomplete",
@@ -6280,6 +6362,12 @@
             
             // FIX: Allow payer to edit main fields even after confirmation.
             const canEditMainFields = !isPayerConfirmed || isCurrentUserThePayer;
+            // KTO może zmieniać główne pola, a CZY TERAZ WOLNO, to dwa różne pytania.
+            // Na zamkniętym rachunku kwota, waluta i tryb podziału są zamrożone tak samo jak
+            // pozycje (`billFrozen`): każde z tych pól przelicza cudze udziały, a ludzie mogli
+            // już na ich podstawie zrobić przelew. Droga jest jedna — otworzyć rachunek.
+            const billIsFrozen = billFrozen(billData);
+            const canEditNow = canEditMainFields && !billIsFrozen;
             const canConfirm = isCurrentUserThePayer && !isPayerConfirmed;
 
             // PYTANIE DO WSKAZANEGO PŁATNIKA, zadane raz przy wejściu na rachunek.
@@ -6298,7 +6386,7 @@
             const currencySelect = document.getElementById('currency-select');
             currencySelect.dataset.value = billData.currency;
             document.getElementById('currency-select-label').textContent = billData.currency;
-            currencySelect.disabled = !canEditMainFields;
+            currencySelect.disabled = !canEditNow;
             
             const totalAmountInput = document.getElementById('total-bill-amount');
             if (document.activeElement !== totalAmountInput) {
@@ -6307,7 +6395,7 @@
                     ? billData.totalAmount.toFixed(2).replace('.', ',')
                     : '';
             }
-            totalAmountInput.disabled = !canEditMainFields;
+            totalAmountInput.disabled = !canEditNow;
             
             const payerSelect = document.getElementById('payer-select');
             // „Nikt" brzmiało jak stwierdzenie faktu („nikt nie zapłacił"), a to jest
@@ -6359,7 +6447,9 @@
                     ? ` <b class="text-ink">Można się rozliczać.</b>`
                     : '';
                 const bannerText = isCurrentUserThePayer
-                    ? `Wyłożyłeś/aś pieniądze za ten rachunek. Kwotę wciąż możesz poprawić.${otwarteHtml}`
+                    ? (billFrozen(billData)
+                        ? `Wyłożyłeś/aś pieniądze za ten rachunek. Jest zamknięty, więc kwoty i pozycje są zamrożone — otwórz go, żeby coś poprawić.${otwarteHtml}`
+                        : `Wyłożyłeś/aś pieniądze za ten rachunek. Kwotę wciąż możesz poprawić.${otwarteHtml}`)
                     : `Główne pola rachunku zablokował/a <strong>${escapeHtml(payerName)}</strong>.${otwarteHtml}`;
                 // DROGA POWROTNA DLA PŁATNIKA. Bez niej jedynym sposobem na otwarcie
                 // zamkniętego rachunku była cudza prośba „To nie moje" — czyli człowiek,
@@ -6411,12 +6501,18 @@
                 // takim samym polem: przestawienie go zmienia każdemu udział w cudzych
                 // pieniądzach. Do 2026-08-15 przełącznik zostawał otwarty dla całej
                 // ekipy nawet na zablokowanym rachunku.
-                btn.disabled = !canEditMainFields;
+                btn.disabled = !canEditNow;
             });
             const modeHint = document.getElementById('bill-mode-hint');
             const modeNote = document.getElementById('bill-mode-note');
             if (modeHint) {
-                if (!canEditMainFields) {
+                if (billIsFrozen) {
+                    // Wyłączony przełącznik bez wyjaśnienia czyta się jak usterka — a tu
+                    // powód jest inny niż „to nie Twój rachunek".
+                    modeHint.textContent = mode === 'even'
+                        ? 'Cała kwota dzieli się równo między uczestników. Rachunek jest zamknięty, więc sposobu podziału nie da się teraz zmienić — najpierw trzeba go otworzyć z powrotem.'
+                        : 'Każdy stuka swoje pozycje i wpisuje koszty własne. Rachunek jest zamknięty, więc sposobu podziału nie da się teraz zmienić — najpierw trzeba go otworzyć z powrotem.';
+                } else if (!canEditMainFields) {
                     // Wyłączony przełącznik bez wyjaśnienia czyta się jak usterka.
                     const payerName = billData.payerId ? memberName(billData.payerId) : 'płatnik';
                     modeHint.textContent = mode === 'even'
@@ -6450,7 +6546,7 @@
                 // niezależnie od tego, czy są rozpisane pozycje. Bez tego ta linia
                 // odblokowywałaby przycisk, który dwadzieścia linii wyżej został
                 // świadomie wyłączony dla wszystkich poza płatnikiem.
-                evenBtn.disabled = locked || !canEditMainFields;
+                evenBtn.disabled = locked || !canEditNow;
                 evenBtn.classList.toggle('opacity-40', locked);
                 evenBtn.title = locked
                     ? 'Rachunek ma już rozpisane pozycje albo koszty własne. Usuń je, żeby wrócić do podziału po równo.'
@@ -6801,6 +6897,7 @@
                 const before = billData.totalAmount || 0;
                 const after = parseLocalFloat(e.target.value);
                 if (after === before) return;
+                if (refuseFrozen()) { e.target.value = before > 0 ? before.toFixed(2).replace('.', ',') : ''; return; }
                 await updateDoc(billDocRef, { totalAmount: after });
                 // Zmiana kwoty rachunku dotyczy cudzych pieniędzy — to pierwszy wpis,
                 // którego ktokolwiek szuka w dzienniku.
@@ -6819,7 +6916,10 @@
                         { value: 'EUR', label: 'EUR', hint: 'euro' },
                         { value: 'USD', label: 'USD', hint: 'dolar amerykański' },
                     ],
-                    onPick: async (value) => { await updateDoc(billDocRef, await currencyPatch(value)); },
+                    onPick: async (value) => {
+                        if (refuseFrozen()) return;
+                        await updateDoc(billDocRef, await currencyPatch(value));
+                    },
                 });
             };
 
@@ -6893,9 +6993,17 @@
             // decyzja o rachunku, a nie ustawienie tego telefonu — cała ekipa musi
             // widzieć ten sam kształt.
             document.querySelectorAll('.bill-mode-btn').forEach((btn) => {
-                btn.onclick = async () => {
-                    const next = btn.dataset.mode;
-                    if (next === billSplitMode(billData)) return;
+                // PRZESTAWIENIE TRYBU NA OPŁACONYM RACHUNKU PYTA, TAK JAK OTWARCIE.
+                //
+                // Ta sama czynność co `reopenBill` — kasuje decyzję o reszcie i przelicza
+                // wszystkim udziały — a pytała tylko w jednym z dwóch miejsc. Rachunek „po
+                // równo" nie ma bramy do zamknięcia, więc `settleOpen` jest na nim zawsze
+                // false i zamrożenie go nie łapie: jedno stuknięcie w „Ze swoimi kosztami"
+                // przestawiało cały rachunek na kwoty wstępne, choć ludzie już za niego
+                // zapłacili. Sonda audytowa 2026-08-26: rachunek 300 zł po równo, Ania oddaje
+                // swoje 100, płatnik przestawia tryb — i księga mówi, że to PŁATNIK jest winien
+                // Ani 100, a dług Kuby znika. Pytanie nazywa to, co się stanie, po imieniu.
+                const applyBillMode = async (next) => {
                     // ZMIANA TRYBU UNIEWAŻNIA DECYZJĘ O RESZCIE (audyt 2026-08-26).
                     // Tryb przestawia kształt CAŁEGO rachunku, więc odpowiedź na pytanie
                     // „co z kwotą, której nikt nie wziął" przestaje pasować do pytania.
@@ -6916,6 +7024,21 @@
                             : `przestawił/a rachunek „${billData.billName}" na własne koszty`,
                     });
                 };
+
+                btn.onclick = () => {
+                    const next = btn.dataset.mode;
+                    if (next === billSplitMode(billData)) return;
+                    if (refuseFrozen()) return;
+                    const zaplacili = billSettledBy(perBillNow(), currentBillId).filter((x) => x.paidG > 0).length;
+                    if (zaplacili === 0) { applyBillMode(next); return; }
+                    openConfirm({
+                        title: 'Przestawić sposób podziału?',
+                        body: `Kwoty na tym rachunku policzą się od nowa, a podział kwoty nierozpisanej zostanie cofnięty. ${zaplacili} ${plural(zaplacili, 'osoba już zapłaciła', 'osoby już zapłaciły', 'osób już zapłaciło')} — różnica pojawi się w rozliczeniach.`,
+                        confirmLabel: 'Przestaw',
+                        tone: 'brand',
+                        onConfirm: () => applyBillMode(next),
+                    });
+                };
             });
 
             document.getElementById('delete-bill-btn-advanced').onclick = () => deleteBillWithUndo();
@@ -6926,6 +7049,10 @@
                     const participantId = myCard.firstElementChild.dataset.participantId;
                     const participant = billData.participants[participantId];
                     if (!participant) return;
+                    // Kalkulator kosztów własnych kończy się zapisem kwoty, a ta zmniejsza
+                    // kwotę nierozpisaną — czyli udział pozostałych. Odmawiamy przy wejściu,
+                    // żeby nikt nie wypełniał pól, których i tak nie da się zapisać.
+                    if (refuseFrozen()) return;
 
                     const calcBtn = e.target.closest('.calculator-toggle-btn');
                     const addBtn = e.target.closest('.add-amount-btn');
@@ -6969,6 +7096,11 @@
                     const participantId = myCard.firstElementChild.dataset.participantId;
                     const participant = billData.participants[participantId];
                     if (!participant) return;
+                    // Wpisana kwota zostaje w polu do najbliższej migawki, a tej nie będzie,
+                    // skoro nic nie zapisujemy — więc przerysowujemy ekran ręcznie. Bez
+                    // `withFocusPreserved`: ono ODTWARZA wpisaną wartość, a tu chodzi
+                    // dokładnie o to, żeby pole wróciło do kwoty zapisanej w rachunku.
+                    if (refuseFrozen()) { target.blur(); renderBillScreen(); return; }
 
                     const updates = {};
                     let newTotal = participant.individualAmount;
@@ -7005,17 +7137,10 @@
                     if (!billData.participants[my.id] || billData.participants[my.id].status === 'not_applicable') {
                         showToast('Nie jesteś uczestnikiem tego rachunku.', true); return;
                     }
-                    // NA ZAMKNIĘTYM RACHUNKU NIKT JUŻ NIE KLIKA.
-                    // Kwoty przestały być wstępne — ktoś mógł na ich podstawie zrobić przelew.
-                    // Ciche przesunięcie cudzego udziału pod opłaconą wpłatą byłoby dokładnie
-                    // tym rodzajem zmiany, której nikt nie zauważy, dopóki nie zabraknie pieniędzy.
+                    // NA ZAMKNIĘTYM RACHUNKU NIKT JUŻ NIE KLIKA — patrz `billFrozen`.
+                    // Kwoty przestały być wstępne: ktoś mógł na ich podstawie zrobić przelew.
                     // Droga jest jedna i jawna: prośba o otwarcie do tego, kto zamykał.
-                    if (billData.settleOpen === true && billSettleGate(billData).open) {
-                        showToast(canCloseBill(billData, my.id)
-                            ? 'Rachunek zamknięty. Otwórz go z powrotem u góry, żeby ekipa mogła poprawić pozycje.'
-                            : 'Rachunek jest zamknięty. Poproś o otwarcie, żeby poprawić pozycje.');
-                        return;
-                    }
+                    if (refuseFrozen()) return;
                     const before = (billData.sharedCosts || []).find(x => x.id === tile.dataset.itemId);
                     const wasMine = before ? isPicked(before, my.id) : false;
                     await mutateItems((items) => toggleItemPicker(items, tile.dataset.itemId, my.id));
@@ -7029,7 +7154,14 @@
                 };
             });
             document.querySelectorAll('.item-edit-btn').forEach(btn => {
-                btn.onclick = (e) => { e.stopPropagation(); openItemModal(e.currentTarget.dataset.itemId); };
+                btn.onclick = (e) => {
+                    e.stopPropagation();
+                    // Poprawienie KWOTY pozycji przesuwa cudze udziały mocniej niż stuknięcie
+                    // w linię, a brama tego nie widzi: pieniądze nie zawisły bez właściciela,
+                    // tylko zmieniły właściciela. Patrz `billFrozen`.
+                    if (refuseFrozen()) return;
+                    openItemModal(e.currentTarget.dataset.itemId);
+                };
             });
 
             document.querySelectorAll('.remove-shared-cost-btn').forEach(button => {
@@ -7037,12 +7169,16 @@
                     // Usuwamy PO IDENTYFIKATORZE, nie przez arrayRemove(obiekt): arrayRemove
                     // wymaga dokładnej zgodności całego obiektu, więc czyjeś stuknięcie w kafelek
                     // (zmiana `sharedBy`) sprawiało, że kasowanie po cichu nic nie robiło.
+                    if (refuseFrozen()) return;
                     const costId = e.currentTarget.dataset.costId;
                     await mutateItems((items) => items.filter(sc => sc.id !== costId));
                 };
             });
             document.querySelectorAll('.remove-global-cost-btn').forEach(button => {
                 button.onclick = async (e) => {
+                    // Koszt wspólny dzieli się po równo na wszystkich, więc jego zdjęcie albo
+                    // dołożenie rusza KAŻDEMU udział — i robi to bez ruszania bramy.
+                    if (refuseFrozen()) return;
                     const costId = e.currentTarget.dataset.costId;
                     const costToRemove = (billData.globalCosts || []).find(gc => gc.id === costId);
                     if (costToRemove) await updateDoc(billDocRef, { globalCosts: arrayRemove(costToRemove) });
@@ -7050,7 +7186,7 @@
             });
             // Modal pozycji obsługujemy ręcznie (nie przez setupModal): zamknięcie musi zależeć od
             // walidacji, a przycisk otwarcia potrzebuje trybu „dodaj" vs „edytuj".
-            document.getElementById('add-shared-cost-btn').onclick = () => openItemModal(null);
+            document.getElementById('add-shared-cost-btn').onclick = () => { if (!refuseFrozen()) openItemModal(null); };
             document.getElementById('cancel-shared-cost').onclick = () => {
                 document.getElementById('shared-cost-modal').classList.remove('active');
                 editingItemId = null;
@@ -7064,7 +7200,7 @@
                 document.getElementById('receipt-preview-modal').classList.remove('active');
                 receiptDraft = null;
             };
-            document.getElementById('apply-receipt-btn').onclick = applyReceiptDraft;
+            document.getElementById('apply-receipt-btn').onclick = () => { if (!refuseFrozen()) applyReceiptDraft(); };
 
             // SUMA Z PARAGONU WPISANA RĘCZNIE. Model nie zawsze ją odczyta — bywa ucięta
             // na zdjęciu, rozmazana albo po prostu nie ma jej na wydruku. Do 2026-08-25
@@ -7145,6 +7281,7 @@
             };
 
             setupModal('global-cost-modal', 'add-global-cost-btn', 'cancel-global-cost', 'save-global-cost', async () => {
+                if (refuseFrozen()) return;
                 let description = gcTypeBtn.dataset.value || 'Napiwek';
                 if (description === 'Inne') description = document.getElementById('global-cost-desc-other').value.trim();
                 const type = document.querySelector('input[name="global-cost-format"]:checked').value;
@@ -7158,6 +7295,13 @@
                 document.getElementById('global-cost-desc-other').value = '';
                 document.getElementById('global-cost-value').value = '';
             });
+            // POWÓD MÓWIMY PRZY STUKNIĘCIU, NIE PO WYPEŁNIENIU FORMULARZA.
+            // `setupModal` zamyka okno po zapisie niezależnie od wyniku, więc sam strażnik
+            // w zapisie kazałby najpierw wpisać kwotę, a dopiero potem tłumaczył, że nie teraz.
+            document.getElementById('add-global-cost-btn').onclick = () => {
+                if (refuseFrozen()) return;
+                document.getElementById('global-cost-modal').classList.add('active');
+            };
         };
 
         

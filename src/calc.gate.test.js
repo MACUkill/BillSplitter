@@ -317,3 +317,98 @@ describe('brama a przestawienie trybu podziału', () => {
     expect(udzial(w, 'kuba')).toBeCloseTo(50, 2);
   });
 });
+
+// ====================================================================================
+// AUDYT 2026-08-26, PRZEJŚCIE DRUGIE. Trzy stany, w których brama stała otworem albo
+// znikała, choć pieniądze już się przesuwały.
+// ====================================================================================
+
+describe('nadwyżka blokuje bramę TAKŻE w trybie „po równo"', () => {
+  // Warunek `over` stał niżej niż wyjście dla trybu „po równo", więc omijał tryb, w którym
+  // startuje KAŻDY nowy rachunek. Koszty wspólne działają w obu trybach — wystarczyło wpisać
+  // „200" zamiast „20" przy rachunku na 100 zł.
+  const poRownoZNadwyzka = () => rachunek({
+    splitMode: 'even',
+    totalAmount: 100,
+    sharedCosts: [],
+    globalCosts: [{ id: 'g1', description: 'Serwis', type: 'amount', value: 200 }],
+  });
+
+  it('koszt wspólny większy niż kwota rachunku zamyka bramę', () => {
+    const gate = billSettleGate(poRownoZNadwyzka());
+    expect(gate.open).toBe(false);
+    expect(gate.reason).toBe('over');
+    expect(gate.diff).toBe(100);
+  });
+
+  it('bez tego cała ekipa przelewałaby po 33,34 za rachunek, który kosztował 100', () => {
+    // Sześć osób po 33,34 to 200,04 przy rachunku na 100 — liczba wprost z sondy audytowej.
+    const w = calculateAll(poRownoZNadwyzka());
+    expect(udzial(w, 'ania')).toBeCloseTo(33.34, 2);
+    expect(w.controlSum).toBeGreaterThan(100);
+  });
+
+  it('rachunek „po równo", który się spina, dalej nie ma bramy', () => {
+    const b = rachunek({
+      splitMode: 'even', totalAmount: 300, sharedCosts: [],
+      globalCosts: [{ id: 'g1', description: 'Serwis', type: 'amount', value: 20 }],
+    });
+    expect(billSettleGate(b).reason).toBe('even');
+    expect(billSettleGate(b).open).toBe(true);
+  });
+});
+
+describe('rachunek otwarty SAM Z SIEBIE też musi zostać w księdze', () => {
+  // Brama otwiera się na trzy sposoby, a `everOpened` stawiało tylko ręczne zamknięcie.
+  // Rachunek rozpisany co do grosza ('exact') nosił więc `everOpened: false`, choć cała
+  // ekipa mogła już z niego płacić — i wypadał z księgi przy pierwszej zmianie.
+  const rozpisanyCoDoGrosza = (extra = {}) => ({
+    id: 'b1',
+    billName: 'Sushi',
+    totalAmount: 300, currency: 'PLN', payerId: 'michal', payerConfirmed: true,
+    splitMode: 'own', gated: true, settleOpen: false,
+    participants: { michal: osoba('michal'), ania: osoba('ania'), kuba: osoba('kuba') },
+    globalCosts: [],
+    sharedCosts: [
+      { id: 'i1', description: 'Zestaw A', amount: 100, sharedBy: ['michal'] },
+      { id: 'i2', description: 'Zestaw B', amount: 100, sharedBy: ['ania'] },
+      { id: 'i3', description: 'Zestaw C', amount: 100, sharedBy: ['kuba'] },
+    ],
+    ...extra,
+  });
+
+  it('brama otwiera się bez niczyjego zatwierdzenia — więc wpłaty są możliwe od razu', () => {
+    expect(billSettleGate(rozpisanyCoDoGrosza()).reason).toBe('exact');
+    expect(billCountsInLedger(rozpisanyCoDoGrosza())).toBe(true);
+  });
+
+  it('ze stemplem `everOpened` dopisana pozycja NIE odwraca długu ani nie kasuje cudzego', async () => {
+    const { buildLedger } = await import('./calc.js');
+    const bill = rozpisanyCoDoGrosza({ everOpened: true });
+    // Kuba oddał swoje 100. Płatnik dopisuje zapomnianą herbatę, której nikt nie wziął.
+    bill.sharedCosts.push({ id: 'i4', description: 'Herbata', amount: 50, sharedBy: [] });
+    bill.totalAmount = 350;
+    expect(billSettleGate(bill).open).toBe(false);   // brama słusznie się zamyka
+    expect(billCountsInLedger(bill)).toBe(true);     // ale rachunek zostaje w księdze
+
+    const net = buildLedger([bill].filter(billCountsInLedger), [
+      { from: 'kuba', to: 'michal', amount: 100, currency: 'PLN' },
+    ]).PLN.net;
+    // Dług Ani stoi, dług Kuby zgaszony, płatnik nikomu nic nie jest winien.
+    expect(net).toEqual([{ from: 'ania', to: 'michal', amountG: 10000 }]);
+  });
+
+  it('bez stempla ten sam ruch obraca 200 zł: dług Ani znika, a płatnik jest winien Kubie', async () => {
+    // Test-świadek. Trzyma opisany stan błędu, żeby nikt nie „uprościł" stemplowania
+    // `everOpened` z powrotem do samego zamknięcia rachunku.
+    const { buildLedger } = await import('./calc.js');
+    const bill = rozpisanyCoDoGrosza({ everOpened: false });
+    bill.sharedCosts.push({ id: 'i4', description: 'Herbata', amount: 50, sharedBy: [] });
+    bill.totalAmount = 350;
+    expect(billCountsInLedger(bill)).toBe(false);
+    const net = buildLedger([bill].filter(billCountsInLedger), [
+      { from: 'kuba', to: 'michal', amount: 100, currency: 'PLN' },
+    ]).PLN.net;
+    expect(net).toEqual([{ from: 'michal', to: 'kuba', amountG: 10000 }]);
+  });
+});

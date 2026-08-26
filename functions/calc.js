@@ -354,6 +354,17 @@ export const billSplitMode = (bill) => {
 // bez długu po drugiej stronie tworzy w `buildLedger` krawędź odwrotną, czyli fałszywy dług
 // w drugą stronę (ta sama rodzina usterek co „wiersz widmo" opisany w src/plan.js).
 //
+// KTO STAWIA TĘ FLAGĘ (audyt 2026-08-26, przejście drugie). Do tego audytu stawiało ją
+// WYŁĄCZNIE ręczne zamknięcie rachunku — a brama otwiera się na trzy sposoby, nie na jeden:
+// „closed" (decyzja płatnika), „exact" (rachunek rozpisany co do grosza) i „even" (podział
+// po równo). Dwa ostatnie nie zapisywały niczego, więc rachunek, z którego CAŁA EKIPA MOGŁA
+// JUŻ PŁACIĆ, nosił `everOpened: false`. Wystarczyło potem dopisać zapomnianą pozycję albo
+// zdjąć się z własnej — brama zamykała się, rachunek wypadał z księgi, cudze długi z niego
+// znikały, a wpłaty, które już poszły, zamieniały się w dług płatnika wobec tych, którzy mu
+// zapłacili. Dlatego front stawia `everOpened` w chwili, gdy brama pierwszy raz stoi otworem
+// na rachunku z potwierdzonym płatnikiem i kwotą (src/main.js, nasłuch rachunków), a nie
+// dopiero przy zamknięciu.
+//
 // Zwraca:
 //   open    — czy wolno się rozliczać z tego rachunku
 //   reason  — 'legacy' | 'even' | 'exact' | 'closed' | 'rest' | 'over' | 'changed'
@@ -365,23 +376,33 @@ export function billSettleGate(bill) {
   // działającą funkcję za to, że korzystali z aplikacji wcześniej.
   if (!bill || bill.gated !== true) return { open: true, reason: 'legacy', needsDecision: false };
 
-  // Po równo nie ma czego uzupełniać: cała kwota jest nierozpisana Z ZAŁOŻENIA i to jest
-  // dokładnie ten podział, o który poprosiła ekipa. Brama nie ma tu czego pilnować —
-  // i dzięki temu scena „20 sekund przy stole" zostaje nietknięta.
-  if (billSplitMode(bill) === 'even') return { open: true, reason: 'even', needsDecision: false };
-
   const wynik = calculateAll(bill);
+
   // KWOTA NICZYJA, nie „nierozpisana". Po zamknięciu rachunku część nierozpisanej kwoty ma
   // już właścicieli (decyzja płatnika), więc pilnowanie `unallocated` trzymałoby bramę
   // zamkniętą na rachunku, na którym wszystko jest już rozstrzygnięte.
   const unallocatedG = toGrosze(wynik.restUndecided);
 
-  // NADWYŻKA BLOKUJE ZAMKNIĘCIE. Pozycje ponad kwotę rachunku to jedyny prawdziwy błąd
-  // wpisu (`computeControl`), a przy nim `unallocated` wynosi zero — więc bez tego warunku
-  // brama otwierałaby się na rachunku, na którym WSZYSCY przepłacają.
+  // NADWYŻKA BLOKUJE ZAMKNIĘCIE — I ROBI TO W OBU TRYBACH (audyt 2026-08-26, przejście drugie).
+  //
+  // Pozycje ponad kwotę rachunku to jedyny prawdziwy błąd wpisu (`computeControl`), a przy
+  // nim `unallocated` wynosi zero — więc bez tego warunku brama otwierałaby się na rachunku,
+  // na którym WSZYSCY przepłacają.
+  //
+  // Ten warunek stał NIŻEJ niż wyjście dla trybu „po równo" i przez to omijał tryb, w którym
+  // startuje KAŻDY nowy rachunek. Koszty wspólne działają w obu trybach (napiwek, serwis),
+  // więc wystarczyło wpisać „200" zamiast „20" przy rachunku na 100 zł: kontrola mówiła
+  // „nadwyżka 100", a brama i tak stała otworem i cała ekipa mogła przelewać udziały
+  // większe niż cały rachunek. Nadwyżka nie jest pytaniem o podział — jest pomyłką
+  // w liczbach i blokuje przelewy niezależnie od tego, jak rachunek się dzieli.
   if (wynik.control.status === 'over') {
     return { open: false, reason: 'over', needsDecision: false, unallocatedG, diff: wynik.control.diff };
   }
+
+  // Po równo nie ma czego uzupełniać: cała kwota jest nierozpisana Z ZAŁOŻENIA i to jest
+  // dokładnie ten podział, o który poprosiła ekipa. Brama nie ma tu czego pilnować —
+  // i dzięki temu scena „20 sekund przy stole" zostaje nietknięta.
+  if (billSplitMode(bill) === 'even') return { open: true, reason: 'even', needsDecision: false };
 
   // Nic nie wisi bez właściciela — nikt nie może stracić, więc brama stoi otworem.
   // Dwie drogi do tego stanu i obie są prawidłowe: rachunek rozpisany co do grosza

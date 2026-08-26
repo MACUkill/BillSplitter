@@ -188,3 +188,73 @@ describe('kontrakt etykiet: ekrany i modale', () => {
     expect(inCode.sort()).toEqual([...SCREENS].sort());
   });
 });
+
+// KONTRAKT BRAMY ROZLICZEŃ — druga rodzina cichych awarii (audyt 2026-08-26).
+//
+// Matematyka bramy siedzi w functions/calc.js i ma własne testy. Ale dwie z trzech dziur
+// znalezionych w tym audycie NIE BYŁY błędami matematyki: kod liczył dobrze, tylko nikt
+// go o zdanie nie pytał. Zamknięty rachunek dawał się poprawić ołówkiem, a rachunek
+// otwarty sam z siebie nie dostawał stempla everOpened. Takiej dziury nie wykryje żaden
+// test czystej funkcji — widać ją wyłącznie w tym, czy moduł obsługi w main.js woła strażnika.
+describe("kontrakt bramy rozliczeń: strażnicy w main.js", () => {
+  // Okno tekstu za kotwicą: przetrwa przestawienie linii, nie przetrwa usunięcia strażnika.
+  const okno = (kotwica, dlugosc) => {
+    const i = mainJs.indexOf(kotwica);
+    return i < 0 ? null : mainJs.slice(i, i + dlugosc);
+  };
+
+  // Każdy sposób zmiany treści rachunku musi przechodzić przez refuseFrozen.
+  const ZAMROZONE = [
+    ['stuknięcie w linię paragonu', "document.querySelectorAll('.receipt-line')", 1400],
+    ['ołówek przy pozycji', "document.querySelectorAll('.item-edit-btn')", 600],
+    ['kosz przy pozycji', "document.querySelectorAll('.remove-shared-cost-btn')", 900],
+    ['dodanie pozycji', "document.getElementById('add-shared-cost-btn').onclick", 200],
+    ['kosz przy koszcie wspólnym', "document.querySelectorAll('.remove-global-cost-btn')", 900],
+    ['dodanie kosztu wspólnego', "setupModal('global-cost-modal'", 300],
+    ['wgranie pozycji z paragonu', "document.getElementById('apply-receipt-btn').onclick", 200],
+    ['zmiana kwoty rachunku', "document.getElementById('total-bill-amount').onchange", 600],
+    ['zmiana waluty', "title: 'Waluta rachunku',", 700],
+    ['przestawienie trybu podziału', 'const applyBillMode = async (next) => {', 2500],
+    ['skład rachunku', 'const toggleBillMember = async (id, include) => {', 500],
+    ['koszty własne (kalkulator)', 'myCard.onclick = async (e) => {', 600],
+    ['koszty własne (wpisana kwota)', 'myCard.onchange = async (e) => {', 700],
+  ];
+
+  it("zamknięty rachunek jest zamrożony na KAŻDEJ drodze zmiany, nie tylko na stukaniu", () => {
+    const bez = ZAMROZONE
+      .filter(([, kotwica, dlugosc]) => {
+        const tekst = okno(kotwica, dlugosc);
+        return !tekst || !tekst.includes("refuseFrozen()");
+      })
+      .map(([nazwa]) => nazwa);
+    expect(bez, "Bez strażnika refuseFrozen: " + bez.join(", ")).toEqual([]);
+  });
+
+  it("billFrozen pyta o BRAMĘ, a nie tylko o flagę zamknięcia", () => {
+    // Sam settleOpen nie wystarcza: rachunek zamknięty, do którego ktoś dopisał pozycję,
+    // ma bramę z powrotem zamkniętą i wtedy ekipa MA poprawiać pozycje.
+    const def = okno("const billFrozen = (bill) =>", 200);
+    expect(def, "Nie znaleziono definicji billFrozen").toBeTruthy();
+    expect(def).toContain("settleOpen === true");
+    expect(def).toContain("billSettleGate(bill).open");
+  });
+
+  it("everOpened stemplowane jest przy KAŻDYM otwarciu bramy, nie tylko przy zamknięciu rachunku", () => {
+    // Bez tego rachunek rozpisany co do grosza albo dzielony po równo wypada z księgi przy
+    // pierwszej zmianie, a wpłaty, które już poszły, zamieniają się w dług w drugą stronę.
+    const wywolanie = okno("latestBills = snapshot.docs", 250);
+    expect(wywolanie, "Nasłuch rachunków nie stempluje everOpened").toBeTruthy();
+    expect(wywolanie).toContain("stampEverOpened(");
+    const stamper = okno("const stampEverOpened = (groupId) => {", 1600);
+    expect(stamper, "Nie znaleziono ciała stampEverOpened").toBeTruthy();
+    expect(stamper).toContain("billSettleGate(data).open");
+    expect(stamper).toContain("everOpened: true");
+  });
+
+  it("przestawienie trybu na opłaconym rachunku pyta, tak jak otwarcie rachunku", () => {
+    const handler = okno("const applyBillMode = async (next) => {", 2500);
+    expect(handler, "Nie znaleziono modułu obsługi przełącznika trybu").toBeTruthy();
+    expect(handler).toContain("billSettledBy(perBillNow(), currentBillId)");
+    expect(handler).toContain("openConfirm(");
+  });
+});
