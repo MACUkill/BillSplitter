@@ -873,12 +873,12 @@
                         <li>Grosze zaokrąglają się w górę, żeby płatnik nigdy nie był stratny.</li>
                         <li>Na koniec wskaż płatnika i potwierdź, że to on wyłożył pieniądze.</li>
                     </ul>
-                    <p><b>Zamknięcie rachunku.</b> Dopóki na rachunku wisi kwota, której nikt nie wziął, nie da się go rozliczać — inaczej ten, kto stuknął swoje, dopłacałby za tego, kto tego nie zrobił.</p>
+                    <p><b>Podział reszty.</b> Dopóki na rachunku wisi kwota, której nikt nie wziął, nie da się go rozliczać — inaczej ten, kto stuknął swoje, dopłacałby za tego, kto tego nie zrobił.</p>
                     <ul class="list-disc pl-5 space-y-1">
-                        <li>Jeśli pozycje pokrywają całą kwotę, rachunek <b>otwiera się sam</b> i nikt niczego nie zatwierdza.</li>
-                        <li>Jeśli coś zostaje, rachunek zamyka <b>płatnik</b> (albo osoba, która założyła pokój) i decyduje, czy reszta idzie po równo, czy do tych, którzy nie stuknęli swoich pozycji.</li>
-                        <li>Kto dostał taką resztę, widzi to przy swojej kwocie i może stuknąć <b>„To nie moje"</b> — wtedy płatnik dostanie prośbę o otwarcie rachunku.</li>
-                        <li>Rachunki w uzupełnianiu nie liczą się jeszcze do salda — stoją osobno na Bilansie, żeby nic nie zaskoczyło później.</li>
+                        <li>Jeśli pozycje pokrywają całą kwotę, rachunek jest <b>gotowy od razu</b> i nikt niczego nie zatwierdza.</li>
+                        <li>Jeśli coś zostaje, resztę dzieli <b>płatnik</b> (albo osoba, która założyła pokój) i decyduje, czy idzie po równo, czy do tych, którzy nie stuknęli swoich pozycji.</li>
+                        <li>Kto dostał taką resztę, widzi to przy swojej kwocie i może stuknąć <b>„To nie moje"</b> — wtedy płatnik dostanie prośbę o cofnięcie podziału.</li>
+                        <li>Rachunki, które jeszcze się uzupełniają, nie liczą się do salda — wchodzą do niego dopiero, gdy są gotowe.</li>
                     </ul>`
             }
         };
@@ -1750,8 +1750,8 @@
             if (!billFrozen(billData)) return false;
             const my = myMemberNow();
             showToast(canCloseBill(billData, my && my.id)
-                ? 'Rachunek zamknięty. Otwórz go z powrotem u góry, żeby poprawić pozycje.'
-                : 'Rachunek jest zamknięty. Poproś o otwarcie, żeby poprawić pozycje.');
+                ? 'Reszta jest już podzielona. Cofnij podział u góry, żeby poprawić pozycje.'
+                : 'Reszta jest już podzielona. Poproś o cofnięcie podziału, żeby poprawić pozycje.');
             return true;
         };
 
@@ -1774,7 +1774,7 @@
             }
             const kwota = fmtMoney(gate.unallocatedG || 0, (bill && bill.currency) || 'PLN');
             return gate.reason === 'changed'
-                ? `Po zamknięciu doszło ${kwota}, których nikt nie wziął. Rachunek czeka na ponowne zamknięcie.`
+                ? `Po podziale doszło ${kwota}, których nikt nie wziął. Reszta czeka na ponowny podział.`
                 : `Rachunek jeszcze się uzupełnia — ${kwota} nikt nie wziął.`;
         };
 
@@ -1793,7 +1793,7 @@
                     : '<li>Popraw kwotę rachunku albo pozycje, żeby suma się zgadzała.</li>')
                 : `<li>Stuknij na paragonie pozycje, które są Twoje.</li>
                    <li>Gdy nic już nie wisi bez właściciela, rachunek odblokuje się sam.</li>
-                   <li>Jeśli coś zostaje, płatnik zamyka rachunek i decyduje, co z tą kwotą.</li>`;
+                   <li>Jeśli coś zostaje, płatnik dzieli resztę i decyduje, co z tą kwotą.</li>`;
             showInfo('Jeszcze nie teraz', `
                 <p>${escapeHtml(settleBlockReason(bill))}</p>
                 <p>Dopóki tak jest, przelew z tego rachunku byłby przelewem za cudze pozycje.</p>
@@ -1873,7 +1873,7 @@
             const mogeZamknac = canCloseBill(bill, myMemberId);
             const kwota = fmtMoney(gate.unallocatedG || 0, cur);
             const wstepHtml = gate.reason === 'changed'
-                ? `<b class="text-ink">Rachunek zmienił się po zamknięciu.</b> ${kwota} znów nie ma właściciela, więc przelewy stoją.`
+                ? `<b class="text-ink">Rachunek zmienił się po podziale reszty.</b> ${kwota} znów nie ma właściciela, więc przelewy stoją.`
                 : `<b class="text-ink">Ten rachunek jeszcze się uzupełnia.</b> ${kwota} nikt nie wziął — dopóki tak jest, nie da się go rozliczyć.`;
 
             // Kto nie może zamknąć, dostaje jedno zdanie o tym, na kogo się czeka, i jedno
@@ -1884,7 +1884,7 @@
                 return `<div class="card p-4">
                     <div class="flex items-start gap-3">
                         <span class="chip text-info text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Uzupełniamy</span>
-                        <span class="text-sm text-ink-2">${wstepHtml} Stuknij niżej na paragonie, co Twoje — a rachunek zamknie <strong>${escapeHtml(kto)}</strong>.</span>
+                        <span class="text-sm text-ink-2">${wstepHtml} Stuknij niżej na paragonie, co Twoje — a resztę podzieli <strong>${escapeHtml(kto)}</strong>.</span>
                     </div>
                     ${restBreakdownHtml(bill, calculations)}
                 </div>`;
@@ -1904,7 +1904,7 @@
                     <span class="text-sm text-ink-2">${wstepHtml}</span>
                 </div>
                 ${restBreakdownHtml(bill, calculations)}
-                <button id="close-bill-btn" class="btn btn-dark w-full mt-3">Zamknij rachunek</button>
+                <button id="close-bill-btn" class="btn btn-dark w-full mt-3">Podziel resztę</button>
                 ${przypomnijHtml}
             </div>`;
         };
@@ -1943,7 +1943,7 @@
         const openCloseBillSheet = () => {
             if (!billData) return;
             const gate = billSettleGate(billData);
-            if (gate.open) { showToast('Ten rachunek jest już otwarty do rozliczeń.'); return; }
+            if (gate.open) { showToast('Ten rachunek jest już gotowy do rozliczeń.'); return; }
             const cur = billData.currency || 'PLN';
             const calculations = calculateAllForBill(billData);
             // CAŁA KWOTA NIEROZPISANA, NIE SAMA NADWYŻKA (poprawione po audycie 2026-08-26).
@@ -1967,7 +1967,7 @@
             // większą niż ta, o której mówił baner, i nie ma jak tego pogodzić.
             const juzRozdzieloneG = Math.max(0, wiszaceG - (gate.unallocatedG || 0));
             const ponownieHtml = juzRozdzieloneG > 0
-                ? `<p class="text-sm text-ink-2 mt-2">W tym <b class="text-ink">${fmtMoney(juzRozdzieloneG, cur)}</b> rozdzielone przy poprzednim zamknięciu — ta decyzja rozstrzyga całość na nowo.</p>`
+                ? `<p class="text-sm text-ink-2 mt-2">W tym <b class="text-ink">${fmtMoney(juzRozdzieloneG, cur)}</b> rozdzielone przy poprzednim podziale — ta decyzja rozstrzyga całość na nowo.</p>`
                 : '';
             document.getElementById('close-bill-summary').innerHTML = `
                 <div class="block-quiet p-4">
@@ -2035,15 +2035,15 @@
                 closedBy: (my && my.id) || null,
                 restTo: restTo || null,
                 restSettledG: Math.max(0, Math.round(wiszaceG || 0)),
-            }), 'Nie udało się zamknąć rachunku.');
+            }), 'Nie udało się podzielić reszty.');
             logEvent({
                 type: 'bill-closed',
                 billId: currentBillId,
                 label: restTo
-                    ? `zamknął/ęła rachunek „${billData.billName}" — nierozpisane ${fmtMoney(wiszaceG, billData.currency)} dla tych, którzy nie stuknęli swoich pozycji`
-                    : `zamknął/ęła rachunek „${billData.billName}" — nierozpisane ${fmtMoney(wiszaceG, billData.currency)} po równo`,
+                    ? `podzielił/a resztę rachunku „${billData.billName}" — nierozpisane ${fmtMoney(wiszaceG, billData.currency)} dla tych, którzy nie stuknęli swoich pozycji`
+                    : `podzielił/a resztę rachunku „${billData.billName}" — nierozpisane ${fmtMoney(wiszaceG, billData.currency)} po równo`,
             });
-            showToast('Rachunek zamknięty. Można się rozliczać.');
+            showToast('Rachunek gotowy — można się rozliczać.');
         };
 
         // „TO NIE MOJE" — jedyne wyjście dla kogoś, komu przypisano resztę bez jego udziału.
@@ -2053,7 +2053,7 @@
             const my = myMemberNow();
             if (!my || !billData) return;
             const doKogo = billData.closedBy || billData.payerId;
-            if (!doKogo || doKogo === my.id) { showToast('Ten rachunek zamknąłeś/aś sam/a.'); return; }
+            if (!doKogo || doKogo === my.id) { showToast('Resztę na tym rachunku podzieliłeś/aś sam/a.'); return; }
             const ok = await sendNudge(doKogo, 0, billData.currency || 'PLN', REOPEN_NUDGE_MESSAGE, {
                 kind: 'reopen',
                 billId: currentBillId,
@@ -2082,7 +2082,7 @@
                 }),
                 'Nie udało się otworzyć rachunku.',
             );
-            showToast('Rachunek otwarty — ekipa może poprawić swoje pozycje.');
+            showToast('Podział cofnięty — ekipa może poprawić swoje pozycje.');
         };
 
         // Otwarcie z ekranu rachunku, ręką płatnika albo admina. Osobno od `reopenBill`,
@@ -2091,11 +2091,11 @@
             if (!currentBillId || !billData) return;
             const zaplacili = billSettledBy(perBillNow(), currentBillId).filter((x) => x.paidG > 0).length;
             openConfirm({
-                title: 'Otworzyć rachunek z powrotem?',
+                title: 'Cofnąć podział reszty?',
                 body: zaplacili > 0
                     ? `Podział kwoty nierozpisanej zostanie cofnięty, a ekipa znów będzie mogła klikać pozycje. ${zaplacili} ${plural(zaplacili, 'osoba już zapłaciła', 'osoby już zapłaciły', 'osób już zapłaciło')} — ich kwoty się przeliczą, a różnica pojawi się w rozliczeniach.`
                     : 'Podział kwoty nierozpisanej zostanie cofnięty, a ekipa znów będzie mogła klikać pozycje. Przelewy z tego rachunku znów będą zablokowane.',
-                confirmLabel: 'Otwórz',
+                confirmLabel: 'Cofnij podział',
                 tone: 'brand',
                 onConfirm: () => reopenBill(currentBillId),
             });
@@ -2135,7 +2135,7 @@
             if (!gate.open && gate.reason !== 'over') {
                 const kwota = fmtMoney(gate.unallocatedG || 0, bill.currency);
                 return isPrimaryCloser(bill, myMember.id)
-                    ? `<p class="text-info font-semibold">Do zamknięcia · ${kwota} bez właściciela</p>`
+                    ? `<p class="text-info font-semibold">Do podziału · ${kwota} bez właściciela</p>`
                     : `<p class="text-ink-3">Uzupełniamy · ${kwota} nikt nie wziął</p>`;
             }
 
@@ -2228,7 +2228,7 @@
                         : make('wait', 'Rachunek się nie spina');
                 }
                 return isPrimaryCloser(bill, myMember.id)
-                    ? make('action', 'Zamknij rachunek')
+                    ? make('action', 'Podziel resztę')
                     : make('wait', 'Uzupełniamy');
             }
 
@@ -3623,7 +3623,7 @@
         // Gdyby jechały domyślną, telefon powiedziałby „przypomina o zaległości" komuś,
         // kto nie jest nic winien, a to jest najkrótsza droga do wyłączenia powiadomień.
         const FILL_NUDGE_MESSAGE = 'Stuknij swoje pozycje na rachunku — czekamy, żeby się rozliczyć.';
-        const REOPEN_NUDGE_MESSAGE = 'To nie moje — proszę o otwarcie rachunku, chcę poprawić swoje pozycje.';
+        const REOPEN_NUDGE_MESSAGE = 'To nie moje — proszę o cofnięcie podziału reszty, chcę poprawić swoje pozycje.';
         // SZABLONY OSOBNO DLA KAŻDEGO RODZAJU PRZYPOMNIENIA.
         // Wspólna szuflada znaczyłaby, że pod prośbą „stuknij swoje pozycje" wyskakują
         // gotowce o oddawaniu pieniędzy — czyli podpowiedzi do zupełnie innej rozmowy.
@@ -3872,10 +3872,10 @@
                     if (x.nudgeKind === 'reopen') {
                         return inboxRowHtml({
                             icon: 'fa-rotate-left', tone: 'is-info',
-                            title: `<b>${escapeHtml(memberName(x.from))}</b> prosi o otwarcie rachunku${rachunekHtml}.${quoted}`,
-                            subtitle: 'Otwarcie przeliczy kwoty — także tym, którzy już zapłacili.',
-                            actionsHtml: `${x.billId ? `<button class="nudge-reopen-btn btn btn-dark" data-bill="${escapeHtml(x.billId)}" data-id="${escapeHtml(x.id)}">Otwórz</button>` : ''}
-                                <button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Zostaw zamknięty</button>`,
+                            title: `<b>${escapeHtml(memberName(x.from))}</b> prosi o cofnięcie podziału reszty${rachunekHtml}.${quoted}`,
+                            subtitle: 'Cofnięcie przeliczy kwoty — także tym, którzy już zapłacili.',
+                            actionsHtml: `${x.billId ? `<button class="nudge-reopen-btn btn btn-dark" data-bill="${escapeHtml(x.billId)}" data-id="${escapeHtml(x.id)}">Cofnij podział</button>` : ''}
+                                <button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Zostaw jak jest</button>`,
                         });
                     }
                     // „ODDAJ PIENIĄDZE" — jedyny rodzaj przypomnienia, który niesie kwotę.
@@ -4059,7 +4059,7 @@
                     }
                     if (n.kind === 'reopen') {
                         return { at: ms(n.createdAt), icon: 'fa-rotate-left', tone: 'is-info',
-                            title: `${odHtml} poprosił/a ${doHtml} o otwarcie rachunku${rachunekHtml}.` };
+                            title: `${odHtml} poprosił/a ${doHtml} o cofnięcie podziału reszty${rachunekHtml}.` };
                     }
                     return { at: ms(n.createdAt), icon: 'fa-bell', tone: 'is-owe',
                         title: `${odHtml} przypomniał/a ${doHtml} o zaległości${n.amountG ? ` ${fmtMoney(Number(n.amountG), n.currency || 'PLN')}` : ''}.` };
@@ -6561,7 +6561,7 @@
                 confirmationBanner.innerHTML = `
                     <div class="card p-4 flex flex-wrap justify-between items-center gap-3">
                         <span class="text-sm text-ink-2"><b class="text-ink">Ten rachunek nie wchodzi jeszcze do rozliczeń.</b> Potwierdź, że to Ty wyłożyłeś/aś pieniądze — dopiero wtedy ekipa zobaczy, ile Ci oddać.</span>
-                        <button id="confirm-payer-btn" class="btn btn-dark flex-shrink-0">Potwierdzam</button>
+                        <button id="confirm-payer-btn" class="btn btn-primary flex-shrink-0">Potwierdzam</button>
                     </div>`;
                 document.getElementById('confirm-payer-btn').onclick = async () => {
                      await updateDoc(doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId), { payerConfirmed: true });
@@ -6581,11 +6581,11 @@
                 // jedno słowo: że rozliczanie ruszyło. Bez tego moment odblokowania byłby
                 // niewidoczny — a to jest moment, na który czeka cała ekipa.
                 const otwarteHtml = (gate.reason === 'closed' || gate.reason === 'exact')
-                    ? ` <b class="text-ink">Można się rozliczać.</b>`
+                    ? ` <b class="text-ink">Rachunek gotowy — można się rozliczać.</b>`
                     : '';
                 const bannerText = isCurrentUserThePayer
                     ? (billFrozen(billData)
-                        ? `Wyłożyłeś/aś pieniądze za ten rachunek. Jest zamknięty, więc kwoty i pozycje są zamrożone — otwórz go, żeby coś poprawić.${otwarteHtml}`
+                        ? `Wyłożyłeś/aś pieniądze za ten rachunek. Reszta jest podzielona, więc kwoty i pozycje są zamrożone — cofnij podział, żeby coś poprawić.${otwarteHtml}`
                         : `Wyłożyłeś/aś pieniądze za ten rachunek. Kwotę wciąż możesz poprawić.${otwarteHtml}`)
                     : `Główne pola rachunku zablokował/a <strong>${escapeHtml(payerName)}</strong>.${otwarteHtml}`;
                 // DROGA POWROTNA DLA PŁATNIKA. Bez niej jedynym sposobem na otwarcie
@@ -6593,7 +6593,7 @@
                 // który sam się przed chwilą pomylił, nie miał czym tego naprawić.
                 // Cicho i bez koloru: to jest wyjście awaryjne, nie zaproszenie.
                 cofnijZamkniecieHtml = (gate.reason === 'closed' && canCloseBill(billData, myGroupMember && myGroupMember.id))
-                    ? `<button id="reopen-bill-btn" class="tap min-h-tap w-full mt-2 text-sm font-bold text-ink-3">Otwórz rachunek z powrotem</button>`
+                    ? `<button id="reopen-bill-btn" class="tap min-h-tap w-full mt-2 text-sm font-bold text-ink-3">Cofnij podział reszty</button>`
                     : '';
                 // Stempel foliowy znaczy „potwierdzone" — tu potwierdzone jest, kto wyłożył pieniądze.
                 confirmationBanner.innerHTML = `
@@ -6647,8 +6647,8 @@
                     // Wyłączony przełącznik bez wyjaśnienia czyta się jak usterka — a tu
                     // powód jest inny niż „to nie Twój rachunek".
                     modeHint.textContent = mode === 'even'
-                        ? 'Cała kwota dzieli się równo między uczestników. Rachunek jest zamknięty, więc sposobu podziału nie da się teraz zmienić — najpierw trzeba go otworzyć z powrotem.'
-                        : 'Każdy stuka swoje pozycje i wpisuje koszty własne. Rachunek jest zamknięty, więc sposobu podziału nie da się teraz zmienić — najpierw trzeba go otworzyć z powrotem.';
+                        ? 'Cała kwota dzieli się równo między uczestników. Reszta jest już podzielona, więc sposobu podziału nie da się teraz zmienić — najpierw trzeba cofnąć podział.'
+                        : 'Każdy stuka swoje pozycje i wpisuje koszty własne. Reszta jest już podzielona, więc sposobu podziału nie da się teraz zmienić — najpierw trzeba cofnąć podział.';
                 } else if (!canEditMainFields) {
                     // Wyłączony przełącznik bez wyjaśnienia czyta się jak usterka.
                     const payerName = billData.payerId ? memberName(billData.payerId) : 'płatnik';

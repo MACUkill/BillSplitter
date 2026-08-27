@@ -417,6 +417,28 @@ Cztery odmiany i ani jednej więcej: `btn-primary` (limonka), `btn-dark` (atrame
 `btn-quiet` (cichy blok), `btn-danger` (czerwień). Wysokość 48 px, pigułka, `:active`
 zmniejsza do 97 %. **Bez `:hover` jako jedynego nośnika stanu.**
 
+**Reguła wyboru odmiany** (dopisana 2026-08-27 po zgłoszeniu właściciela o spójności).
+Sama lista czterech odmian nie mówiła, KIEDY której użyć — i barwa zaczęła zależeć od
+ekranu, a nie od znaczenia. Audyt znalazł „Potwierdzam" w trzech różnych kolorach naraz
+i „Zapisz" inaczej niż „Zapisz wpłatę", choć to ta sama czynność.
+
+| Odmiana | Znaczy | Przykłady |
+|---|---|---|
+| `btn-primary` | **domykam sprawę, którą ktoś mi postawił** | Potwierdzam · Zapisz · Zapisz wpłatę · Wyślij |
+| `btn-dark` | **czynność, którą sam zaczynam** | Dodaj pozycję · Podziel resztę · Wejdź · Kopiuj |
+| `btn-danger` | **pieniądze wychodzą ode mnie albo coś znika** | Ureguluj · Usuń rachunek |
+| `btn-quiet` | **wyjście, odłożenie, rzecz drugorzędna** | Anuluj · Jeszcze poczekam · Oznacz przeczytane |
+
+Test: gdyby to samo słowo miało dwa kolory na dwóch ekranach, kolor przestaje cokolwiek
+znaczyć i zostaje ozdobą. Jedna limonka na powierzchnię — dwie znaczą, że żadna nie jest
+tą główną.
+
+**Piąta odmiana istnieje i jest wyjątkiem nazwanym po imieniu.** `btn-ai` (własna barwa
+`--ai` z poświatą) obsługuje **wyłącznie odczyt paragonu przez model**. Nie jest to
+złamanie reguły czterech, tylko oznaczenie jedynego miejsca, w którym pracę wykonuje
+maszyna, a nie człowiek — i dlatego nie wolno jej użyć nigdzie indziej. Gdyby kiedyś
+pojawiła się druga taka funkcja, dzielą tę samą barwę.
+
 ### Żywy paragon (komponent sygnaturowy)
 Pozycje w kolumnie jak na paragonie. Po prawej każdej linii stos okrągłych twarzy tych,
 którzy ją wzięli. Gdy ktoś inny odklika swoje, jego zdjęcie **ląduje na linii z animacją**

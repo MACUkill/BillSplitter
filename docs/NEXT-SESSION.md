@@ -130,6 +130,25 @@ Dwa z nich są nieoczywiste i **bez nich wracają błędy**:
   w nasłuchu rachunków), a nie tylko ręczne zamknięcie — brama otwiera się na trzy sposoby
   (`closed`, `exact`, `even`) i dwa z nich nie zapisywały nic. Audyt 2026-08-26.
 
+### Słownictwo: „podziel resztę", nie „zamknij rachunek"
+
+Zgłoszenie właściciela 2026-08-27, zmienione w całym interfejsie. Stare słowa były
+**odwrócone**: „Zamknij rachunek" OTWIERAŁO przelewy. Dla autora oczywiste, dla kogoś
+pierwszy raz przy stole — dokładnie na odwrót niż mówi słowo.
+
+| Było | Jest |
+|---|---|
+| „Zamknij rachunek" | **„Podziel resztę"** |
+| „Otwórz rachunek z powrotem" | **„Cofnij podział reszty"** |
+| „Rachunek zamknięty. Można się rozliczać." | **„Rachunek gotowy — można się rozliczać."** |
+| „Rachunek czeka na ponowne zamknięcie" | **„Reszta czeka na ponowny podział"** |
+| „Do zamknięcia · 240,00 bez właściciela" | **„Do podziału · 240,00 bez właściciela"** |
+
+Przycisk nazywa **decyzję** (i tak zaraz pyta „po równo czy spóźnialskim"), a stan po niej
+nazywa **gotowość**. Nazwy pól w bazie zostają bez zmian (`settleOpen`, `closedAt`,
+`closedBy`, zdarzenie `bill-closed`): migracja dokumentów kosztowałaby ryzyko, a te nazwy
+nie pokazują się nikomu poza kodem.
+
 ### Rachunek, który się nie spina, znika z ekranów o pieniądzach
 
 Decyzja właściciela 2026-08-27. `reason: 'over'` znaczy, że suma pozycji kłóci się z kwotą,
@@ -175,7 +194,7 @@ w przypomnieniu → wiersz mówi o tym wprost, żeby nie kłóciła się z cytow
 - **Rachunek** — baner `payer-confirmation-banner-advanced`, ten sam, co mówi o płatniku.
   **Zero nowych sekcji**: ekran jest zapchany, a baner odpowiada dokładnie na to samo
   pytanie („czemu tego jeszcze nie da się oddać").
-- **Arkusz „Zamknij rachunek"** — dwie drogi rozdzielone słowem **LUB**, żadna nie zaznaczona
+- **Arkusz „Podziel resztę"** — dwie drogi rozdzielone słowem **LUB**, żadna nie zaznaczona
   z góry. Przyciski są krótkie („Podziel po równo", „Wrzuć spóźnialskim"), a kwota i
   wyjaśnienie stoją pod nimi. Lista osób jest **zwinięta i przewijana** (`peopleListHtml`),
   bo przy ekipie 15–25 osób wypisane imiona zjadały cały arkusz.
@@ -186,12 +205,16 @@ w przypomnieniu → wiersz mówi o tym wprost, żeby nie kłóciła się z cytow
 - **Klucz do zamknięcia**: płatnik → admin pokoju (`adminId`, teraz widoczny w składzie jako
   „założył/a pokój") → **każdy po 7 dniach**. Ten trzeci nie jest ozdobą: `adminId` to uid
   urządzenia i jest zamrożony regułami, więc nowy telefon kasuje admina bezpowrotnie.
-  Sygnał („Zamknij rachunek" na kafelku) dostają jednak **tylko płatnik i admin** —
+  Sygnał („Podziel resztę" na kafelku) dostają jednak **tylko płatnik i admin** —
   inaczej po tygodniu 25 osób dostałoby to samo wezwanie do jednej czynności.
 - **„To nie moje"** — wyłącznie dla wskazanych palcem przy `restTo`. Nie otwiera rachunku
   sam; wysyła prośbę do tego, kto zamykał.
-- **Bilans / Rozliczenia** — rachunki w uzupełnianiu stoją osobno („W uzupełnianiu"),
-  nie znikają. „Wszystko rozliczone" nie pokaże się, gdy coś czeka na zamknięcie.
+- **Bilans / Rozliczenia** — o rachunkach poza saldem **nie mówimy ani słowa** (decyzja
+  właściciela 2026-08-27; blok „W uzupełnianiu" usunięty). To zdanie szło do ludzi, którzy
+  nic z nim nie zrobią — resztę dzieli płatnik i to on dostaje wezwanie. Zostaje wyłącznie
+  „N rachunków czeka na Twój ruch", bo tam ruch jest MÓJ. Milczenie ma jedną granicę:
+  dopóki istnieje rachunek poza księgą (`billsOutsideLedger`), żaden ekran nie ogłosi
+  „Wszystko rozliczone. Nikt nikomu nic nie jest winien" — mówi wtedy „Nic do rozliczenia".
 - **Powiadomienia** — trzy rodzaje przypomnień zamiast jednego: `debt`, `fill`, `reopen`.
   `sendNudgePush` ma dla nich osobne treści i deep-link `?group=…&bill=…`; bez tego telefon
   mówiłby „Przypomnienie o zaległości" komuś, kto nie jest nic winien.
@@ -219,9 +242,9 @@ podzieloną po równo i pozwoli się rozliczyć od razu. Do zabawy zakładaj now
   To pierwsza rzecz do dołożenia, gdyby okazało się, że płatnicy zamykają za wcześnie.
 - **Automatyczne przypomnienia po X godzinach** — próg sygnału (`docs/UI-UX.md` §10.2):
   push wysyła człowiek, nie zegar.
-- **Rejestrowanie gotówki na otwartym rachunku** — rachunek w uzupełnianiu nie ma wiersza
-  w Rozliczeniach, więc „Mam wpłatę" pojawia się dopiero po zamknięciu. Przy stole zamknięcie
-  i tak następuje od razu, ale to jest znane ograniczenie, nie przeoczenie.
+- **Rejestrowanie gotówki na rachunku, który się jeszcze uzupełnia** — taki rachunek nie ma
+  wiersza w Rozliczeniach, więc „Mam wpłatę" pojawia się dopiero, gdy jest gotowy. Przy stole
+  reszta dzieli się od razu, ale to jest znane ograniczenie, nie przeoczenie.
 
 ---
 
