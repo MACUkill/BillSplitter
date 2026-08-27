@@ -1680,6 +1680,71 @@
         // moje". Zmiana kwot po zamknięciu ma być decyzją, a nie skutkiem ubocznym stuknięcia.
         const billFrozen = (bill) => !!bill && bill.settleOpen === true && billSettleGate(bill).open;
 
+        // ZMIANA NAZWY RACHUNKU W MIEJSCU (zgłoszenie właściciela 2026-08-27).
+        //
+        // Nazwa jest TOŻSAMOŚCIĄ rachunku — po niej odróżnia się dwie kolacje z tego samego
+        // tygodnia. Dawało się ją wpisać wyłącznie przy zakładaniu, a rachunek nazywa się
+        // w pośpiechu przy stole, więc literówka zostawała w nim na zawsze.
+        //
+        // WOLNO KAŻDEMU Z POKOJU, dokładnie tak jak wolno poprawić opis pozycji na paragonie.
+        // Nazwa nie rusza ANI JEDNEJ kwoty, a zamknięcie jej u płatnika znaczyłoby, że
+        // literówki nie da się poprawić, dopóki on nie otworzy aplikacji. Kto zmienił, stoi
+        // w Aktywności — to poziom 3 progu sygnału (docs/UI-UX.md §10.2): żadnej kropki,
+        // żadnego pusha, ślad zostaje.
+        //
+        // ZAMROŻENIE ZAMKNIĘTEGO RACHUNKU TU NIE OBOWIĄZUJE (`billFrozen`). Ono broni kwot
+        // przed cichym przesunięciem pod opłaconą wpłatą — nazwa nie przesuwa niczego.
+        let billNameEditing = false;
+
+        const billNameEl = () => document.getElementById('bill-name');
+        const billNameInputEl = () => document.getElementById('bill-name-input');
+
+        const showBillNameEditor = (edytujemy) => {
+            const naglowek = billNameEl();
+            const pole = billNameInputEl();
+            const olowek = document.getElementById('bill-name-edit-btn');
+            if (!naglowek || !pole) return;
+            billNameEditing = edytujemy;
+            naglowek.classList.toggle('hidden', edytujemy);
+            if (olowek) olowek.classList.toggle('hidden', edytujemy);
+            pole.classList.toggle('hidden', !edytujemy);
+        };
+
+        const startBillNameEdit = () => {
+            const pole = billNameInputEl();
+            if (!pole || !billData) return;
+            if (!myMemberNow()) { showToast('Najpierw dołącz do grupy.', true); return; }
+            pole.value = billData.billName || '';
+            showBillNameEditor(true);
+            pole.focus();
+            pole.select();
+        };
+
+        // `zapisz` = false przy Escape: wychodzimy bez zapisu i bez toastu.
+        const finishBillNameEdit = (zapisz) => {
+            const pole = billNameInputEl();
+            if (!billNameEditing || !pole || !billData) return;
+            const stara = billData.billName || '';
+            const nowa = pole.value.trim();
+            showBillNameEditor(false);
+            if (!zapisz || nowa === stara) return;
+            // Pusta nazwa zostawiłaby rachunek bez tożsamości — na liście, w skrzynce
+            // i w rejestrze wpłat stałby wtedy pusty wiersz.
+            if (!nowa) { showToast('Rachunek musi mieć nazwę.', true); return; }
+            fireWrite(
+                updateDoc(
+                    doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId),
+                    { billName: nowa },
+                ),
+                'Nie udało się zmienić nazwy rachunku.',
+            );
+            logEvent({
+                type: 'bill-rename',
+                billId: currentBillId,
+                label: `zmienił/a nazwę rachunku „${stara}" na „${nowa}"`,
+            });
+        };
+
         // Zwraca true, gdy odmówiliśmy — wołane jako `if (refuseFrozen()) return;`.
         const refuseFrozen = () => {
             if (!billFrozen(billData)) return false;
@@ -6455,7 +6520,15 @@
                 openPayerClaim();
             }
 
-            document.getElementById('bill-name').textContent = billData.billName;
+            // NAZWA. Przy otwartym polu nagłówka NIE ruszamy: ten ekran przerysowuje się
+            // po każdym cudzym stuknięciu w paragon, więc zabierałby litery w trakcie pisania.
+            // Gdy pole straciło ognisko inaczej niż przez `blur` (wyjście z ekranu), stan
+            // sam wraca do normy — inaczej nagłówek następnego rachunku zostałby stary.
+            if (billNameEditing && document.activeElement !== billNameInputEl()) billNameEditing = false;
+            if (!billNameEditing) {
+                document.getElementById('bill-name').textContent = billData.billName;
+                showBillNameEditor(false);
+            }
             
             const currencySelect = document.getElementById('currency-select');
             currencySelect.dataset.value = billData.currency;
@@ -6967,6 +7040,26 @@
                 if (unsubscribeBill) unsubscribeBill();
                 navigateToGroup(currentGroupId);
             };
+            // Stuknięcie w samą nazwę otwiera pole — o to prosił właściciel. Ołówek obok
+            // istnieje po to, żeby dało się to ODKRYĆ: nagłówek, który po cichu reaguje na
+            // stuknięcie, jest funkcją, o której wie wyłącznie ten, kto ją zamówił.
+            // Nagłówek zostaje NAGŁÓWKIEM, nie przebiera się za przycisk: `role="button"`
+            // odbiera czytnikom ekranu informację, że to tytuł rachunku. Drogę z klawiatury
+            // i dla czytników niesie ołówek obok, który przyciskiem jest naprawdę.
+            const naglowekNazwy = document.getElementById('bill-name');
+            if (naglowekNazwy) naglowekNazwy.onclick = () => startBillNameEdit();
+            const olowekNazwy = document.getElementById('bill-name-edit-btn');
+            if (olowekNazwy) olowekNazwy.onclick = () => startBillNameEdit();
+            const poleNazwy = document.getElementById('bill-name-input');
+            if (poleNazwy) {
+                // Zapis na wyjściu z pola, nie na każdym znaku: nazwa jedzie do wszystkich
+                // telefonów w pokoju, więc zapis na literę byłby zapisem na literę u każdego.
+                poleNazwy.onblur = () => finishBillNameEdit(true);
+                poleNazwy.onkeydown = (e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); poleNazwy.blur(); }
+                    if (e.key === 'Escape') { e.preventDefault(); showBillNameEditor(false); poleNazwy.blur(); }
+                };
+            }
             document.getElementById('total-bill-amount').onchange = async (e) => {
                 const before = billData.totalAmount || 0;
                 const after = parseLocalFloat(e.target.value);
