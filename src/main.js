@@ -7,7 +7,7 @@
         } from './calc.js';
         import { unreadNudgeCount, hasRecentNudge, inboxItems, badgeCount, hasDot } from './nudges.js';
         import { myPlanRows, planVsPairwise } from './plan.js';
-        import { billLedger, myBillsToPay, billSettledBy, myUnassigned, reconcileToPay, currenciesToPay } from './perbill.js';
+        import { billLedger, myBillsToPay, billSettledBy, myUnassigned, reconcileToPay, currenciesToPay, ledgerVisibleBills } from './perbill.js';
         import { itemQuantity, itemPickers, isPicked, unassignedItems, toggleItemPicker, splitItemByUnits } from './items.js';
         import {
             identityColor, initials, IDENTITY_COLORS,
@@ -2538,15 +2538,51 @@
             });
         };
 
-        const ledgerBills = () => latestBills
-            .map(({ id, data }) => ({ ...data, id }))
-            .filter(billCountsInLedger);
+        // RACHUNEK, KTÓRY SIĘ NIE SPINA, ZNIKA Z EKRANÓW O PIENIĄDZACH (decyzja właściciela
+        // 2026-08-27). Nadwyżka znaczy, że dwie liczby na rachunku się kłócą: suma pozycji
+        // i kwota, którą płatnik realnie wyłożył. Aplikacja nie była w tej restauracji i nie
+        // ma jak rozstrzygnąć, która z nich jest prawdziwa — więc udziały policzone z takiego
+        // rachunku są ZMYŚLONE, a nie tylko wstępne.
+        //
+        // Do tej pory brama blokowała je wyłącznie na ekranie samego rachunku. Zakładka
+        // Rozliczenia sumuje długi z wielu rachunków i o bramę nie pytała, więc pokazywała
+        // kwotę zawyżoną razem z DZIAŁAJĄCYM przyciskiem „Ureguluj" — a dłużnik, który nie
+        // zaglądał do tego rachunku, nie miał jak się zorientować. Sonda: pizza za 33 zł
+        // z napiwkiem wpisanym jako 30 zamiast 3 → każdy widział 20,00 zamiast 11,00.
+        //
+        // Dlatego taki rachunek po prostu NIE ISTNIEJE dla Bilansu i Rozliczeń. Wraca sam,
+        // w tej samej sekundzie, w której płatnik poprawi wpis. Nie mówimy o tym ani słowa
+        // przy kwotach do oddania: człowiek, który ma zwrócić pieniądze, i tak nie może tego
+        // naprawić, a wołanie do czynności, której nie da się wykonać, jest w tej aplikacji
+        // uznane za usterkę. Kto chce wiedzieć, widzi na liście rachunków chip „Rachunek się
+        // nie spina", a płatnik dostaje z niego pełne wezwanie (kropka, „Czeka na Ciebie").
+        //
+        // JEDEN WYJĄTEK — I BEZ NIEGO TA ZMIANA BYŁABY GORSZA NIŻ PROBLEM.
+        // Wpłata musi mieć w księdze dług, który gasi. Rachunek wyjęty z księgi zostawia
+        // wpłaty za niego w powietrzu, a `buildLedger` wyciąga z tego jedyny możliwy wniosek:
+        // że to PŁATNIK jest winien pieniądze temu, kto mu właśnie zapłacił. Sonda: Ania
+        // oddaje całe 76 zł, potem płatnik psuje jeden z rachunków — i po schowaniu go księga
+        // mówi „Michał winien Ani 11 zł". Dlatego rachunek, do którego ktokolwiek już dopłacił,
+        // ZOSTAJE (z zawyżoną kwotą, ale bez odwróconego kierunku). W praktyce to rzadkie:
+        // rachunek psuje się prawie zawsze zanim ktokolwiek zdążył cokolwiek oddać.
+        // Sama reguła (z wyjątkiem od niej) mieszka w src/perbill.js razem z resztą
+        // matematyki o wpłatach — tam ma testy. Tu zostaje wyłącznie podanie jej danych.
+        const ledgerBills = () => ledgerVisibleBills(
+            latestBills.map(({ id, data }) => ({ ...data, id })).filter(billCountsInLedger),
+            latestSettlements,
+        );
 
         // Rachunki, które jeszcze się uzupełniają — nie znikają, tylko stoją osobno.
         // Ukryte byłyby niespodzianką w dniu, w którym ktoś je zamknie.
+        //
+        // ALE RACHUNEK, KTÓRY SIĘ NIE SPINA, TU NIE WCHODZI. „W uzupełnianiu" znaczy
+        // „czeka na ekipę i za chwilę wróci" — a to jest pomyłka we wpisie, czekająca na
+        // jedną osobę przez minutę. Wpisanie jej do tego bloku nazwałoby ją nie tym słowem
+        // i postawiło na Bilansie ogłoszenie, z którym czytający nie ma co zrobić.
         const fillingBills = () => latestBills
             .map(({ id, data }) => ({ ...data, id }))
-            .filter((b) => !billCountsInLedger(b) && b.payerConfirmed && toGrosze(b.totalAmount || 0) > 0);
+            .filter((b) => !billCountsInLedger(b) && b.payerConfirmed && toGrosze(b.totalAmount || 0) > 0
+                && billSettleGate(b).reason !== 'over');
 
         const perBillNow = () => billLedger(ledgerBills(), latestSettlements);
 
@@ -3718,6 +3754,23 @@
                 container.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">Nic nie czeka na Twój ruch.</p>`;
                 return;
             }
+            // ILE NAPRAWDĘ WISI — LICZONE NA ŻYWO Z KSIĘGI (audyt 2026-08-27).
+            //
+            // Przypomnienie zapisuje kwotę w chwili wysyłki i nosi ją już zawsze, jak liczba
+            // napisana długopisem na karteczce. Wiersz w skrzynce NIE ZNIKA po spłaceniu długu
+            // — gaśnie dopiero po ręcznym „Oznacz przeczytane" — a pod spodem stał żywy
+            // przycisk „Ureguluj" z tą starą liczbą i podpis „Już zapłaciłeś? Zapisz wpłatę".
+            // Czyli: oddajesz 120 zł, po tygodniu robisz porządek w skrzynce, stukasz — i
+            // zapisujesz DRUGĄ wpłatę 120 zł. Wpłaty niepotwierdzone liczą się do salda tak
+            // samo jak potwierdzone, więc w tej samej sekundzie Bilans mówi, że to PŁATNIK
+            // jest winien 120 zł temu, kto mu właśnie oddał pieniądze.
+            //
+            // Teraz karteczka nie ma własnej liczby: przy każdym otwarciu skrzynki pytamy
+            // księgę, ile jeszcze zostało tej konkretnej osobie w tej walucie.
+            const mojeDlugiG = new Map();
+            myLedgerRows().rows.forEach((r) => {
+                if (r.dir === 'owe') mojeDlugiG.set(`${r.other}|${r.currency}`, r.amountG);
+            });
             container.innerHTML = items.map((x) => {
                 const amount = x.amountG ? fmtMoney(Number(x.amountG), x.currency || 'PLN') : '';
                 if (x.kind === 'nudge') {
@@ -3750,11 +3803,32 @@
                                 <button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Zostaw zamknięty</button>`,
                         });
                     }
+                    // „ODDAJ PIENIĄDZE" — jedyny rodzaj przypomnienia, który niesie kwotę.
+                    // Patrz `mojeDlugiG` wyżej: liczba pochodzi z księgi, nie z karteczki.
+                    const walutaNudge = x.currency || 'PLN';
+                    const zostaloG = mojeDlugiG.get(`${x.from}|${walutaNudge}`) || 0;
+                    if (zostaloG <= 0) {
+                        // NIE MA CZYM ZAPŁACIĆ DRUGI RAZ. Wiersz zostaje (to dalej wiadomość
+                        // od człowieka i to on decyduje, kiedy ją zdjąć), ale traci przycisk
+                        // i czerwień — bo nie ma już żadnej czynności do wykonania.
+                        return inboxRowHtml({
+                            icon: 'fa-circle-check', tone: 'is-due',
+                            title: `<b>${escapeHtml(memberName(x.from))}</b> przypominał/a o zaległości${amount ? ` <b>${amount}</b>` : ''}.${quoted}`,
+                            subtitle: 'Nic już nie wisi — ten dług jest spłacony.',
+                            actionsHtml: `<button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Oznacz przeczytane</button>`,
+                        });
+                    }
+                    // Kwota mogła się zmienić od wysyłki (rachunek poprawiony, część spłacona).
+                    // Mówimy o tym wprost: inaczej liczba w cytowanej wiadomości kłóci się
+                    // z liczbą na przycisku i wygląda to na usterkę.
+                    const zmianaHtml = (Number(x.amountG) > 0 && Number(x.amountG) !== zostaloG)
+                        ? `<span class="block mt-1 text-xs font-normal text-ink-3">Przypomnienie mówiło o ${amount} — od tego czasu kwota się zmieniła.</span>`
+                        : '';
                     return inboxRowHtml({
                         icon: 'fa-bell', tone: 'is-owe',
-                        title: `<b>${escapeHtml(memberName(x.from))}</b> przypomina o zaległości${amount ? ` <b>${amount}</b>` : ''}.${quoted}`,
+                        title: `<b>${escapeHtml(memberName(x.from))}</b> przypomina o zaległości <b>${fmtMoney(zostaloG, walutaNudge)}</b>.${quoted}${zmianaHtml}`,
                         subtitle: 'Już zapłaciłeś? Zapisz wpłatę, żeby dług zniknął.',
-                        actionsHtml: `<button class="nudge-settle-btn btn btn-danger" data-to="${escapeHtml(x.from)}" data-amount-g="${x.amountG || 0}" data-currency="${escapeHtml(x.currency || 'PLN')}">Ureguluj</button>
+                        actionsHtml: `<button class="nudge-settle-btn btn btn-danger" data-to="${escapeHtml(x.from)}" data-amount-g="${zostaloG}" data-currency="${escapeHtml(walutaNudge)}">Ureguluj</button>
                             <button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Oznacz przeczytane</button>`,
                     });
                 }

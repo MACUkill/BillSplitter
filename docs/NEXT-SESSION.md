@@ -126,6 +126,49 @@ Dwa z nich są nieoczywiste i **bez nich wracają błędy**:
   wchodzi do księgi długów, ale raz otwarty **zostaje w niej na zawsze**: ktoś mógł już
   zapłacić, a wpłata bez długu po drugiej stronie tworzy w `buildLedger` krawędź odwrotną,
   czyli **fałszywy dług w drugą stronę** (rodzina „wiersza widma" z `src/plan.js`).
+  **Stempluje go front przy KAŻDYM pierwszym otwarciu bramy** (`stampEverOpened`
+  w nasłuchu rachunków), a nie tylko ręczne zamknięcie — brama otwiera się na trzy sposoby
+  (`closed`, `exact`, `even`) i dwa z nich nie zapisywały nic. Audyt 2026-08-26.
+
+### Rachunek, który się nie spina, znika z ekranów o pieniądzach
+
+Decyzja właściciela 2026-08-27. `reason: 'over'` znaczy, że suma pozycji kłóci się z kwotą,
+którą płatnik realnie wyłożył — aplikacja nie wie, która z tych dwóch liczb jest prawdziwa,
+więc udziały z takiego rachunku są **zmyślone**, a nie tylko wstępne.
+
+Brama zatrzymywała je wyłącznie na ekranie samego rachunku. Bilans i Rozliczenia sumują długi
+z wielu rachunków i o bramę nie pytały: pokazywały kwotę zawyżoną razem z **działającym**
+przyciskiem „Ureguluj", a dłużnik nie miał z czym porównać zsumowanej liczby.
+
+`ledgerVisibleBills` (`src/perbill.js`) odejmuje takie rachunki od listy, którą dostają
+`buildLedger` i `billLedger`. Rachunek **wraca sam**, w tej samej sekundzie, w której płatnik
+poprawi wpis — bez żadnego zapisu w bazie.
+
+**Nie mówimy o tym ani słowa przy kwotach do oddania.** Kto ma zwrócić pieniądze, i tak nie
+może tego naprawić, a wołanie do czynności, której nie da się wykonać, jest tu usterką.
+Informacja stoi tam, gdzie jest przydatna: chip „Rachunek się nie spina" na liście rachunków
+(cichy dla ekipy, z kropką i wezwaniem dla płatnika) oraz czerwony baner w samym rachunku.
+Blok „W uzupełnianiu" na Bilansie też ich **nie** pokazuje — to nazwałoby pomyłkę we wpisie
+słowem „czeka na ekipę".
+
+**Jeden wyjątek, bez którego lek byłby gorszy od choroby:** rachunek, do którego ktokolwiek
+już dopłacił, **zostaje** (z zawyżoną kwotą). Wpłata musi mieć w księdze dług, który gasi —
+inaczej `buildLedger` robi z niej dług płatnika wobec tego, kto mu właśnie zapłacił. Sonda:
+Ania oddaje 76 zł, płatnik psuje jeden rachunek, rachunek znika → „Michał winien Ani 11 zł".
+W praktyce rzadkie: rachunek psuje się prawie zawsze, zanim ktokolwiek zdążył cokolwiek oddać.
+
+### Przypomnienie w skrzynce nie nosi własnej kwoty
+
+Audyt 2026-08-27. Dokument przypomnienia ma `amountG` zapisane w chwili wysyłki, a wiersz
+w skrzynce **nie znika po spłaceniu długu** — gaśnie dopiero po ręcznym „Oznacz przeczytane".
+Pod spodem stał żywy przycisk „Ureguluj" ze starą liczbą i podpis „Już zapłaciłeś? Zapisz
+wpłatę" — czyli zaproszenie do **drugiej wpłaty tej samej kwoty**. Wpłaty niepotwierdzone
+liczą się do salda tak samo jak potwierdzone, więc fałszywy dług w drugą stronę pojawiał się
+natychmiast.
+
+`renderInboxForYou` liczy teraz `mojeDlugiG` z `myLedgerRows()` przy każdym otwarciu skrzynki.
+Dług spłacony → wiersz traci przycisk i czerwień („Nic już nie wisi"). Kwota inna niż
+w przypomnieniu → wiersz mówi o tym wprost, żeby nie kłóciła się z cytowaną wiadomością.
 
 ### Gdzie to widać
 

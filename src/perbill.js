@@ -23,7 +23,7 @@
 // więc nie gasi tu niczego. Nie wolno jej ani ukryć, ani doliczyć na siłę do cudzego
 // rachunku: ląduje w osobnym bloku „Wpłaty bez przypisania" i wchodzi do linii
 // uzgadniającej, żeby Bilans i lista rachunków nie mówiły dwóch różnych rzeczy.
-import { computeBillDebts, toGrosze } from './calc.js';
+import { computeBillDebts, toGrosze, billSettleGate } from './calc.js';
 
 // Czas powstania rachunku/wpłaty w milisekundach. Dokumenty z Firestore niosą Timestamp,
 // testy — zwykłą liczbę, a świeżo zapisany dokument offline nie ma jeszcze czasu
@@ -229,4 +229,40 @@ export function netFromBills({ rows, unassigned } = {}, myId) {
   });
   for (const [cur, g] of Object.entries(out)) if (g === 0) delete out[cur];
   return out;
+}
+
+// KTÓRE RACHUNKI W OGÓLE TRAFIAJĄ NA EKRANY O PIENIĄDZACH (decyzja właściciela 2026-08-27).
+//
+// Wejściem jest lista rachunków, które już przeszły `billCountsInLedger` — czyli takich,
+// z których wolno się rozliczać albo kiedyś było wolno. Ta funkcja odejmuje z niej jeszcze
+// jedną rzecz: rachunki, które SIĘ NIE SPINAJĄ.
+//
+// „Nie spina się" (`billSettleGate` → 'over') znaczy, że suma pozycji kłóci się z kwotą,
+// którą płatnik realnie wyłożył. Aplikacja nie była w restauracji i nie wie, która z tych
+// dwóch liczb jest prawdziwa — więc udziały policzone z takiego rachunku są ZMYŚLONE.
+// Brama zatrzymuje je na ekranie samego rachunku, ale Bilans i Rozliczenia sumują długi
+// z wielu rachunków naraz i o bramę nie pytały: pokazywały kwotę zawyżoną razem z żywym
+// przyciskiem „Ureguluj". Dłużnik, który do tego rachunku nie zaglądał, nie miał jak się
+// zorientować, bo nie ma z czym porównać zsumowanej liczby.
+//
+// JEDEN WYJĄTEK, BEZ KTÓREGO LEK BYŁBY GORSZY OD CHOROBY.
+// Wpłata musi mieć w księdze dług, który gasi. Rachunek wyjęty z księgi zostawia wpłaty
+// za niego w powietrzu, a `buildLedger` wyciąga z tego jedyny możliwy wniosek: że to
+// PŁATNIK jest winien pieniądze temu, kto mu właśnie zapłacił. Dlatego rachunek, do którego
+// ktokolwiek już dopłacił, ZOSTAJE — z zawyżoną kwotą, ale bez odwróconego kierunku.
+// W praktyce rzadkie: rachunek psuje się prawie zawsze, zanim ktokolwiek zdążył cokolwiek oddać.
+export function ledgerVisibleBills(bills, settlements) {
+  const wszystkie = bills || [];
+  const zepsute = wszystkie.filter((b) => billSettleGate(b).reason === 'over');
+  // Najczęstszy przypadek wychodzi tędy, bez przypisywania wpłat do rachunków.
+  if (zepsute.length === 0) return wszystkie;
+  // Przypisanie MUSI iść po pełnej liście — inaczej pytalibyśmy o wpłaty tę samą listę,
+  // którą dopiero układamy.
+  const pelna = billLedger(wszystkie, settlements);
+  const zostaja = new Set(
+    zepsute
+      .filter((b) => billSettledBy(pelna, b.id).some((x) => x.paidG > 0))
+      .map((b) => b.id),
+  );
+  return wszystkie.filter((b) => billSettleGate(b).reason !== 'over' || zostaja.has(b.id));
 }

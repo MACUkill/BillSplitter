@@ -7,6 +7,7 @@ import {
   reconcileToPay,
   currenciesToPay,
   netFromBills,
+  ledgerVisibleBills,
 } from './perbill.js';
 import { buildLedger } from './calc.js';
 import { myNetByCurrency } from './plan.js';
@@ -358,5 +359,103 @@ describe('NIEZMIENNIK: saldo na czysto identyczne we wszystkich trybach', () => 
       }
       sprawdz(bills, settlements, ludzie);
     }
+  });
+});
+
+// ====================================================================================
+// RACHUNEK, KTÓRY SIĘ NIE SPINA, ZNIKA Z EKRANÓW O PIENIĄDZACH (decyzja właściciela
+// 2026-08-27). Suma pozycji kłóci się z kwotą, którą płatnik wyłożył — aplikacja nie wie,
+// która liczba jest prawdziwa, więc udziały z takiego rachunku są zmyślone i nie mają czego
+// szukać na Bilansie ani w Rozliczeniach. Wraca sam, gdy płatnik poprawi wpis.
+// ====================================================================================
+
+const zepsuty = (id, { everOpened = true, payerId = 'a', at = 0 } = {}) => ({
+  id,
+  billName: id,
+  gated: true,
+  splitMode: 'own',
+  settleOpen: false,
+  everOpened,
+  totalAmount: 33,
+  currency: 'PLN',
+  payerId,
+  payerConfirmed: true,
+  createdAtMs: at,
+  participants: {
+    a: { id: 'a', status: 'in' }, b: { id: 'b', status: 'in' }, c: { id: 'c', status: 'in' },
+  },
+  sharedCosts: [
+    { id: 'i1', description: 'Pizza', amount: 10, sharedBy: ['a'] },
+    { id: 'i2', description: 'Pizza', amount: 10, sharedBy: ['b'] },
+    { id: 'i3', description: 'Pizza', amount: 10, sharedBy: ['c'] },
+  ],
+  // Napiwek wpisany jako 30 zamiast 3: pozycje dają 60 przy rachunku na 33.
+  globalCosts: [{ id: 'g1', description: 'Napiwek', type: 'amount', value: 30 }],
+});
+
+const naprawiony = (b) => ({ ...b, globalCosts: [{ id: 'g1', description: 'Napiwek', type: 'amount', value: 3 }] });
+
+describe('ledgerVisibleBills — co dociera do Bilansu i Rozliczeń', () => {
+  it('rachunek, który się spina, przechodzi bez zmian', () => {
+    const ok = naprawiony(zepsuty('r1'));
+    expect(ledgerVisibleBills([ok], []).map((b) => b.id)).toEqual(['r1']);
+  });
+
+  it('rachunek z nadwyżką znika, gdy nikt jeszcze nic za niego nie oddał', () => {
+    const zly = zepsuty('r1');
+    const dobry = bill('r2', 90, 'a', ['a', 'b', 'c']);
+    expect(ledgerVisibleBills([zly, dobry], []).map((b) => b.id)).toEqual(['r2']);
+  });
+
+  it('zniknięcie NIE rusza długów z pozostałych rachunków', () => {
+    const zly = zepsuty('r1');
+    const dobry = bill('r2', 90, 'a', ['a', 'b', 'c']);
+    const net = buildLedger(ledgerVisibleBills([zly, dobry], []), []).PLN.net;
+    expect(net).toEqual([
+      { from: 'b', to: 'a', amountG: 3000 },
+      { from: 'c', to: 'a', amountG: 3000 },
+    ]);
+  });
+
+  it('wraca sam, gdy płatnik poprawi wpis — bez żadnego zapisu w bazie', () => {
+    const zly = zepsuty('r1');
+    expect(ledgerVisibleBills([zly], []).map((b) => b.id)).toEqual([]);
+    expect(ledgerVisibleBills([naprawiony(zly)], []).map((b) => b.id)).toEqual(['r1']);
+  });
+
+  it('WYJĄTEK: rachunek, do którego ktoś już dopłacił, ZOSTAJE', () => {
+    // Inaczej jego wpłata zawisłaby w powietrzu, a `buildLedger` zrobiłby z niej dług
+    // płatnika wobec tego, kto mu właśnie zapłacił.
+    const zly = zepsuty('r1');
+    const wplata = [pay('s1', 'c', 'a', 11, { at: 5 })];
+    expect(ledgerVisibleBills([zly], wplata).map((b) => b.id)).toEqual(['r1']);
+  });
+
+  it('i dzięki temu kierunek długu się NIE odwraca', () => {
+    const zly = zepsuty('r1');
+    const wplata = [pay('s1', 'c', 'a', 11, { at: 5 })];
+    const net = buildLedger(ledgerVisibleBills([zly], wplata), wplata).PLN.net;
+    // Płatnik (a) nie jest nikomu nic winien — żadnej krawędzi wychodzącej z „a".
+    expect(net.filter((t) => t.from === 'a')).toEqual([]);
+  });
+
+  it('gdyby jednak wypadł mimo wpłaty, dług szedłby w drugą stronę (test-świadek)', () => {
+    // Trzyma opisany stan błędu, żeby nikt nie „uprościł" wyjątku.
+    const wplata = [pay('s1', 'c', 'a', 11, { at: 5 })];
+    const net = buildLedger([], wplata).PLN.net;
+    expect(net).toEqual([{ from: 'a', to: 'c', amountG: 1100 }]);
+  });
+
+  it('rachunek z nadwyżką, ale zapłacony przez KOGO INNEGO w tej samej parze, też zostaje', () => {
+    // Wpłaty przypisują się w obrębie pary od najstarszego rachunku, więc wystarczy,
+    // że cokolwiek na ten rachunek spadło.
+    const zly = zepsuty('r1');
+    const wplata = [pay('s1', 'b', 'a', 5, { at: 5 })];
+    expect(ledgerVisibleBills([zly], wplata).map((b) => b.id)).toEqual(['r1']);
+  });
+
+  it('pusta lista i brak wpłat nie wywracają funkcji', () => {
+    expect(ledgerVisibleBills([], [])).toEqual([]);
+    expect(ledgerVisibleBills(null, null)).toEqual([]);
   });
 });

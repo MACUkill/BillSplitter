@@ -258,3 +258,28 @@ describe("kontrakt bramy rozliczeń: strażnicy w main.js", () => {
     expect(handler).toContain("openConfirm(");
   });
 });
+
+// KONTRAKT SKRZYNKI — przypomnienie nie ma prawa nosić własnej kwoty (audyt 2026-08-27).
+//
+// Wiersz w skrzynce nie znika po spłaceniu długu (gaśnie dopiero po „Oznacz przeczytane"),
+// więc stała przy nim żywa liczba sprzed tygodnia i przycisk, który kazał ją zapłacić.
+// Tego nie wykryje test czystej funkcji — widać to tylko w tym, skąd renderer bierze kwotę.
+describe("kontrakt skrzynki: przypomnienie liczy dług na żywo", () => {
+  it("przycisk „Ureguluj\" bierze kwotę z księgi, nie z zapisanej w przypomnieniu", () => {
+    expect(mainJs).toContain("const mojeDlugiG = new Map();");
+    expect(mainJs).toContain("myLedgerRows().rows.forEach");
+    expect(mainJs).toContain("data-amount-g=\"${zostaloG}\"");
+    // Stara postać: kwota wprost z dokumentu przypomnienia.
+    expect(mainJs).not.toContain("data-amount-g=\"${x.amountG || 0}\"");
+  });
+
+  it("gdy nic już nie wisi, wiersz traci przycisk zapłaty", () => {
+    const start = mainJs.indexOf("if (zostaloG <= 0) {");
+    expect(start, "Nie znaleziono gałęzi dla długu spłaconego").toBeGreaterThan(-1);
+    const end = mainJs.indexOf("const zmianaHtml", start);
+    expect(end, "Gałąź nie ma końca — zmieniła się postać renderera?").toBeGreaterThan(start);
+    const galaz = mainJs.slice(start, end);
+    expect(galaz).not.toContain("nudge-settle-btn");
+    expect(galaz).toContain("nudge-read-btn");
+  });
+});
