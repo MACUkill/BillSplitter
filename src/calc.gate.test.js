@@ -45,8 +45,10 @@ describe('billSettleGate — kiedy wolno się rozliczać', () => {
 
   it('rachunek rozpisany co do grosza otwiera się SAM, bez niczyjego zatwierdzenia', () => {
     const b = rachunek();
+    // Obaj spóźnialscy biorą pozostałe pozycje — inaczej Ola zostaje z udziałem zerowym
+    // i brama słusznie się nie otwiera (patrz reguła „każdy ma stawkę" niżej).
     b.sharedCosts = b.sharedCosts.map((it) => (
-      it.sharedBy.length ? it : { ...it, sharedBy: ['kuba'] }
+      it.sharedBy.length ? it : { ...it, sharedBy: ['kuba', 'ola'] }
     ));
     const gate = billSettleGate(b);
     expect(gate.open).toBe(true);
@@ -410,5 +412,119 @@ describe('rachunek otwarty SAM Z SIEBIE też musi zostać w księdze', () => {
       { from: 'kuba', to: 'michal', amount: 100, currency: 'PLN' },
     ]).PLN.net;
     expect(net).toEqual([{ from: 'michal', to: 'kuba', amountG: 10000 }]);
+  });
+});
+
+// ====================================================================================
+// KAŻDY MUSI MIEĆ NA RACHUNKU JAKĄKOLWIEK STAWKĘ (zgłoszenie właściciela 2026-08-27).
+//
+// „Każda złotówka ma właściciela" nie pyta, ILU tych właścicieli jest. Woda za 25 zł,
+// którą piło pięć osób, a stuknęła jedna, ma właściciela w stu procentach — i brama
+// otwierała się z czystym sumieniem, podczas gdy jedna osoba płaciła dwa razy za dużo.
+// ====================================================================================
+
+const stolik = (extra = {}) => ({
+  id: 'b1',
+  billName: 'Kolacja',
+  gated: true,
+  splitMode: 'own',
+  settleOpen: false,
+  everOpened: true,
+  totalAmount: 55,
+  currency: 'PLN',
+  payerId: 'michal',
+  payerConfirmed: true,
+  participants: {
+    michal: osoba('michal'), ania: osoba('ania'),
+    kuba: osoba('kuba'), ola: osoba('ola'), piotr: osoba('piotr'),
+  },
+  globalCosts: [],
+  // Woda była dla całej piątki, ale stuknęła ją tylko Ania.
+  sharedCosts: [
+    { id: 'w', description: 'Woda', amount: 25, sharedBy: ['ania'] },
+    { id: 'd1', description: 'Danie', amount: 15, sharedBy: ['michal'] },
+    { id: 'd2', description: 'Danie', amount: 15, sharedBy: ['ania'] },
+  ],
+  ...extra,
+});
+
+describe('brama pyta też, czy KAŻDY ma na rachunku stawkę', () => {
+  it('rachunek rozpisany co do grosza NIE otwiera się, gdy ktoś ma udział zerowy', () => {
+    const gate = billSettleGate(stolik());
+    expect(gate.open).toBe(false);
+    expect(gate.reason).toBe('nostake');
+    expect(gate.needsDecision).toBe(true);
+  });
+
+  it('mówi wprost, na kogo czeka — ekran ma wymienić te osoby po imieniu', () => {
+    expect(billSettleGate(stolik()).bezStawki.sort()).toEqual(['kuba', 'ola', 'piotr']);
+  });
+
+  it('bez tej reguły sumienna Ania płaci DWA RAZY tyle, co powinna', () => {
+    // Liczba wprost z sondy audytowej: woda 25 na jednej osobie zamiast na pięciu.
+    const w = calculateAll(stolik());
+    expect(udzial(w, 'ania')).toBeCloseTo(40, 2);   // 25 wody + 15 dania
+    expect(udzial(w, 'kuba')).toBeCloseTo(0, 2);
+    expect(w.restUndecided).toBeCloseTo(0, 2);      // ...i ANI GROSZA bez właściciela
+  });
+
+  it('gdy woda trafia do wszystkich, udziały są uczciwe i brama otwiera się sama', () => {
+    const b = stolik({
+      totalAmount: 100,
+      sharedCosts: [
+        { id: 'w', description: 'Woda', amount: 25, sharedBy: ['michal', 'ania', 'kuba', 'ola', 'piotr'] },
+        { id: 'd1', description: 'Danie', amount: 15, sharedBy: ['michal'] },
+        { id: 'd2', description: 'Danie', amount: 15, sharedBy: ['ania'] },
+        { id: 'd3', description: 'Danie', amount: 15, sharedBy: ['kuba'] },
+        { id: 'd4', description: 'Danie', amount: 15, sharedBy: ['ola'] },
+        { id: 'd5', description: 'Danie', amount: 15, sharedBy: ['piotr'] },
+      ],
+    });
+    expect(billSettleGate(b).reason).toBe('exact');
+    expect(udzial(calculateAll(b), 'ania')).toBeCloseTo(20, 2);
+  });
+
+  it('WŁASNY KOSZT też jest stawką — nie trzeba klikać pozycji', () => {
+    const b = stolik();
+    b.participants.kuba.individualAmount = 10;
+    b.participants.ola.individualAmount = 10;
+    b.participants.piotr.individualAmount = 10;
+    b.totalAmount = 85;
+    expect(billSettleGate(b).reason).toBe('exact');
+  });
+
+  it('kto jest „nie dotyczy", ten nie blokuje niczego', () => {
+    const b = stolik();
+    ['kuba', 'ola', 'piotr'].forEach((id) => { b.participants[id].status = 'not_applicable'; });
+    expect(billSettleGate(b).reason).toBe('exact');
+    expect(billSettleGate(b).open).toBe(true);
+  });
+
+  it('RACHUNEK NIE WISI: domknięcie ręką płatnika otwiera bramę mimo zerowych stawek', () => {
+    // To jest cała różnica między tą regułą a „czekaniem, aż wszyscy skończą", którego
+    // ta brama świadomie nie robi. Decyzja jest o jedno stuknięcie, nie o cudzą obecność.
+    const b = stolik({ settleOpen: true, restSettledG: 0 });
+    expect(billSettleGate(b).open).toBe(true);
+    expect(billSettleGate(b).reason).toBe('closed');
+  });
+
+  it('tryb „po równo" reguły nie zna — tam nikt niczego nie odklikuje', () => {
+    const b = stolik({ splitMode: 'even', sharedCosts: [], globalCosts: [] });
+    expect(billSettleGate(b).open).toBe(true);
+    expect(billSettleGate(b).reason).toBe('even');
+  });
+
+  it('stary rachunek bez pola gated dziala jak dawniej', () => {
+    const b = stolik();
+    delete b.gated;
+    expect(billSettleGate(b).open).toBe(true);
+    expect(billSettleGate(b).reason).toBe('legacy');
+  });
+
+  it('kwota niczyja ma pierwszeństwo — najpierw reszta, potem stawki', () => {
+    // Gdy JEDNOCZEŚNIE coś wisi bez właściciela i ktoś nie ma stawki, ekran ma mówić
+    // o pieniądzach: to one są konkretem, który da się rozstrzygnąć przyciskiem.
+    const b = stolik({ totalAmount: 155 });
+    expect(billSettleGate(b).reason).toBe('rest');
   });
 });

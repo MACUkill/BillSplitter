@@ -30,6 +30,13 @@ export const ceilGrosze = (grosze) => {
 
 const isActive = (p) => p && p.status !== 'not_applicable';
 
+// CZY TA OSOBA MA NA RACHUNKU JAKĄKOLWIEK STAWKĘ — cokolwiek, co ją do niego przypina:
+// własny koszt albo choć jedną odkliknietą pozycję. To samo pytanie zadaje ekran przez
+// `participantReady` w src/main.js; tu jest ta sama reguła bez zależności od DOM.
+const maStawke = (bill, p) =>
+  Number(p && p.individualAmount) > 0
+  || (((bill && bill.sharedCosts) || []).some((sc) => (sc.sharedBy || []).includes(p && p.id)));
+
 // KTO NIESIE KWOTĘ NIEROZPISANĄ.
 //
 // Domyślnie wszyscy aktywni — bo „brak wyboru znaczy wspólne" (patrz calculateAll).
@@ -367,7 +374,7 @@ export const billSplitMode = (bill) => {
 //
 // Zwraca:
 //   open    — czy wolno się rozliczać z tego rachunku
-//   reason  — 'legacy' | 'even' | 'exact' | 'closed' | 'rest' | 'over' | 'changed'
+//   reason  — 'legacy' | 'even' | 'exact' | 'closed' | 'rest' | 'over' | 'changed' | 'nostake'
 //   needsDecision — czy jest co zamykać ręcznie
 export function billSettleGate(bill) {
   // STARE RACHUNKI NIE MAJĄ BRAMY. Pole `gated` dostają wyłącznie rachunki założone po
@@ -408,6 +415,30 @@ export function billSettleGate(bill) {
   // Dwie drogi do tego stanu i obie są prawidłowe: rachunek rozpisany co do grosza
   // (`exact`, nikt niczego nie zatwierdzał) albo decyzja płatnika (`closed`).
   if (unallocatedG <= 0) {
+    // KAŻDY MUSI MIEĆ NA TYM RACHUNKU JAKĄKOLWIEK STAWKĘ (zgłoszenie właściciela 2026-08-27).
+    //
+    // „Każda złotówka ma właściciela" nie wystarcza, bo NIE PYTA, ILU tych właścicieli jest.
+    // Woda za 25 zł, którą piło pięć osób, a stuknęła jedna, ma właściciela w stu procentach
+    // — i brama otwierała się z czystym sumieniem, podczas gdy jedna osoba płaciła 40 zł
+    // zamiast 20, a trzy inne nie były winne ani grosza. To jest dokładnie ta krzywda,
+    // przed którą brama miała chronić, tyle że wpuszczona bokiem: sumienny dopłaca za tego,
+    // kto jeszcze nic nie stuknął.
+    //
+    // Człowiek z udziałem ZEROWYM na rachunku, przy którym siedział, znaczy jedno z dwojga:
+    // albo naprawdę nic nie brał (i powinien być „nie dotyczy"), albo jeszcze nie stuknął.
+    // Aplikacja nie umie tych dwóch rzeczy rozróżnić — więc pyta o to człowieka.
+    //
+    // TO NIE JEST CZEKANIE NA LUDZI, którego ta brama świadomie nie robi (patrz nagłówek
+    // wyżej). Rachunek nie wisi w nieskończoność: płatnik domyka go jednym stuknięciem
+    // (`settleOpen`), a po siedmiu dniach może to zrobić każdy — czyli tym samym zaworem,
+    // co przy reszcie. Blokuje się WYŁĄCZNIE samoczynne otwarcie, nie sama możliwość.
+    const bezStawki = Object.values(bill.participants || {})
+      .filter(isActive)
+      .filter((p) => !maStawke(bill, p))
+      .map((p) => p.id);
+    if (bezStawki.length > 0 && bill.settleOpen !== true) {
+      return { open: false, reason: 'nostake', needsDecision: true, unallocatedG: 0, bezStawki };
+    }
     return {
       open: true,
       reason: bill.settleOpen === true ? 'closed' : 'exact',

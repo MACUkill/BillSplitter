@@ -113,6 +113,7 @@ brama stoi otworem sama i nikt niczego nie zatwierdza.
 | `rest` | zamknięta | coś wisi bez właściciela |
 | `changed` | zamknięta | po zamknięciu doszło więcej, niż obejmowała decyzja |
 | `over` | zamknięta | pozycje przekraczają kwotę rachunku (wszyscy by przepłacili) |
+| `nostake` | zamknięta | wszystko rozpisane co do grosza, ale ktoś aktywny ma udział **zerowy** |
 
 ### Pola w dokumencie rachunku
 
@@ -129,6 +130,43 @@ Dwa z nich są nieoczywiste i **bez nich wracają błędy**:
   **Stempluje go front przy KAŻDYM pierwszym otwarciu bramy** (`stampEverOpened`
   w nasłuchu rachunków), a nie tylko ręczne zamknięcie — brama otwiera się na trzy sposoby
   (`closed`, `exact`, `even`) i dwa z nich nie zapisywały nic. Audyt 2026-08-26.
+
+### Każdy musi mieć na rachunku jakąkolwiek stawkę
+
+Zgłoszenie właściciela 2026-08-27. Reguła „każda złotówka ma właściciela" **nie pyta, ILU
+tych właścicieli jest** — i tędy wracała dokładnie ta krzywda, przed którą brama miała
+chronić.
+
+Sonda: woda za 25 zł dla pięciu osób, stuknęła ją jedna.
+
+    udziały:  michal 15   ANIA 40   kuba 0   ola 0   piotr 0
+    BRAMA:    OTWARTA (exact) — niczyja kwota: 0
+
+Ania płaci **dwa razy tyle, co powinna**, trzy osoby nie są winne ani grosza, a aplikacja
+mówi „wszystko się zgadza, można przelewać".
+
+Brama pyta teraz dodatkowo, czy **każdy aktywny uczestnik ma jakąkolwiek stawkę**: własny
+koszt albo choć jedną odklikniętą pozycję (`maStawke` w functions/calc.js — ta sama reguła,
+co `participantReady` na ekranie). Człowiek z udziałem zerowym znaczy jedno z dwojga: albo
+naprawdę nic nie brał (powinien być „nie dotyczy"), albo jeszcze nie stuknął — a tego
+aplikacja nie rozróżni, więc pyta człowieka.
+
+**TO NIE JEST CZEKANIE NA LUDZI**, którego ta brama świadomie nie robi. Blokuje się wyłącznie
+SAMOCZYNNE otwarcie: płatnik domyka rachunek jednym stuknięciem (`settleOpen`), a po siedmiu
+dniach może to zrobić każdy — tym samym zaworem, co przy reszcie. Arkusz ma wtedy własny
+kształt, bo `wiszaceG` wynosi zero i nie ma czego dzielić: wymienia te osoby po imieniu
+i pyta, czy naprawdę nic nie brały. Przycisk mówi **„Domknij rachunek"**, a cofnięcie —
+**„Cofnij domknięcie"** zamiast „Cofnij podział reszty".
+
+**CZEGO TA REGUŁA NIE ŁAPIE** (i właściciel o tym wie): przypadku, w którym wszyscy stuknęli
+swoje danie, a wspólną wodę dalej niesie jedna osoba. Nikt nie ma wtedy udziału zerowego,
+więc brama się nie odezwie. Właściwym lekarstwem byłaby pozycja oznaczona jako **wspólna**
+(dzielona na wszystkich aktywnych, niezależnie od stukania — tak, jak działają już „Koszty
+wspólne"). Świadomie odłożone: „trzeba wierzyć, że każdy się odpowiednio odklika".
+
+Pocieszenie zmierzone sondą: gdy ktoś przeleci za dużo, a reszta ekipy stuknie wodę później,
+**aplikacja to zauważy sama** — udział spada, nadpłata odwraca się w dług płatnika i staje
+na Bilansie w „Do oddania". Nie ma tam jednak ani pusha, ani kropki.
 
 ### Słownictwo: „podziel resztę", nie „zamknij rachunek"
 

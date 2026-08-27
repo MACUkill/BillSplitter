@@ -283,3 +283,56 @@ describe("kontrakt skrzynki: przypomnienie liczy dług na żywo", () => {
     expect(galaz).toContain("nudge-read-btn");
   });
 });
+
+// KONTRAKT REGUŁY „KAŻDY MA STAWKĘ" (zgłoszenie właściciela 2026-08-27).
+//
+// Matematyka ma własne testy w calc.gate.test.js. Tu pilnujemy drugiej połowy: żeby
+// nowy powód blokady miał SWOJE zdanie na każdym ekranie. Powód bez obsługi w widoku
+// jest gorszy niż brak reguły — brama blokuje, a człowiek nie wie dlaczego i widzi
+// komunikat o kwocie „0,00", której nikt nie wziął.
+describe("kontrakt bramy: powód „nostake\" ma swoje zdanie na każdym ekranie", () => {
+  const okno = (kotwica, dlugosc) => {
+    const i = mainJs.indexOf(kotwica);
+    return i < 0 ? null : mainJs.slice(i, i + dlugosc);
+  };
+
+  const MIEJSCA = [
+    ["powód blokady przy wyszarzonym „Ureguluj\"", "const settleBlockReason = (bill) => {", 1400, "gate.reason === 'nostake'"],
+    ["okno „Jeszcze nie teraz\"", "const showSettleBlockedInfo = (bill) => {", 1800, "gate.reason === 'nostake'"],
+    ["baner na ekranie rachunku", "const gateBannerHtml = (bill, myMemberId) => {", 4000, "brakStawki"],
+    ["podpis pod kafelkiem na liście", "const tekst = gate.reason ===", 400, "bezStawki"],
+    ["arkusz domknięcia", "const boxBezStawki = document.getElementById", 900, "applyBillClose(null, 0)"],
+  ];
+
+  it("każdy ekran, który mówi o blokadzie, zna powód „nostake\"", () => {
+    const bez = MIEJSCA
+      .filter(([, kotwica, dlugosc, szukane]) => {
+        const tekst = okno(kotwica, dlugosc);
+        return !tekst || !tekst.includes(szukane);
+      })
+      .map(([nazwa]) => nazwa);
+    expect(bez, "Bez obsługi powodu „nostake\": " + bez.join(", ")).toEqual([]);
+  });
+
+  it("baner wymienia te osoby po imieniu, a nie liczy ich bezimiennie", () => {
+    const baner = okno("const gateBannerHtml = (bill, myMemberId) => {", 4000);
+    expect(baner, "Nie znaleziono banera bramy").toBeTruthy();
+    expect(baner).toContain("imionaZdanie(gate.bezStawki)");
+  });
+
+  it("domknięcie bez podziału zapisuje zero, a nie udaje podziału", () => {
+    const arkusz = okno("const boxBezStawki = document.getElementById", 900);
+    expect(arkusz, "Nie znaleziono wariantu arkusza dla zerowej stawki").toBeTruthy();
+    expect(arkusz).toContain("applyBillClose(null, 0)");
+    // Dziennik nie może wtedy pisać „podzielił/a resztę — 0,00".
+    expect(mainJs).toContain("nic nie zostało do podziału");
+  });
+
+  it("reguła żyje w matematyce, nie w widoku", () => {
+    const calcJs = readFileSync(join(root, "functions/calc.js"), "utf8");
+    expect(calcJs).toContain("const maStawke =");
+    expect(calcJs).toContain("reason: 'nostake'");
+    // Bez tego warunku rachunek wisiałby, dopóki nie odezwie się ostatnia osoba.
+    expect(calcJs).toContain("bezStawki.length > 0 && bill.settleOpen !== true");
+  });
+});

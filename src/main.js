@@ -1761,6 +1761,17 @@
         // Powód blokady — ludzkim językiem. NAZWY RACHUNKU tu nie ma (decyzja właściciela
         // 2026-08-26): zdanie stoi zawsze przy tym rachunku albo w jego oknie, więc nazwa
         // powtarzała to, co człowiek ma przed oczami, i zjadała pół wiersza.
+        // „Kuba, Ola i Piotr" zamiast „kuba, ola, piotr" — zdanie, nie lista z bazy.
+        // Przy dłuższej liście ucinamy, bo to jest wtręt w zdaniu, a nie spis obecności.
+        const imionaZdanie = (ids, maks = 3) => {
+            const imiona = (ids || []).map((id) => memberName(id));
+            if (imiona.length === 0) return '';
+            if (imiona.length === 1) return imiona[0];
+            if (imiona.length <= maks) return `${imiona.slice(0, -1).join(', ')} i ${imiona[imiona.length - 1]}`;
+            const reszta = imiona.length - maks;
+            return `${imiona.slice(0, maks).join(', ')} i ${reszta} ${plural(reszta, 'inna osoba', 'inne osoby', 'innych osób')}`;
+        };
+
         const settleBlockReason = (bill) => {
             const gate = billSettleGate(bill);
             if (gate.open) return '';
@@ -1771,6 +1782,12 @@
                 return billSplitMode(bill) === 'even'
                     ? 'Koszty wspólne przekraczają kwotę rachunku. Ktoś musi to poprawić, zanim ruszą przelewy.'
                     : 'Pozycje przekraczają kwotę rachunku. Ktoś musi to poprawić, zanim ruszą przelewy.';
+            }
+            // NIKT NIE MA UDZIAŁU ZEROWEGO. Tu nie chodzi o kwotę — wszystko jest rozpisane
+            // co do grosza — tylko o to, że rozpisane jest na ZA MAŁO OSÓB.
+            if (gate.reason === 'nostake') {
+                const kto = imionaZdanie(gate.bezStawki);
+                return `${kto} nie ${(gate.bezStawki || []).length === 1 ? 'wziął/ęła' : 'wzięli'} ani jednej pozycji, więc ich część rachunku niosą dziś inni.`;
             }
             const kwota = fmtMoney(gate.unallocatedG || 0, (bill && bill.currency) || 'PLN');
             return gate.reason === 'changed'
@@ -1787,6 +1804,16 @@
         const showSettleBlockedInfo = (bill) => {
             const gate = billSettleGate(bill);
             if (gate.open) return;
+            if (gate.reason === 'nostake') {
+                showInfo('Jeszcze nie teraz', `
+                    <p>${escapeHtml(settleBlockReason(bill))}</p>
+                    <p>Rachunek jest rozpisany co do grosza, ale ktoś, kto siedział przy stole, nie jest winien ani złotówki — a jego część zapłaci wtedy ktoś inny.</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li>Jeśli tylko nie zdążyli stuknąć — poczekaj albo im przypomnij.</li>
+                        <li>Jeśli naprawdę nic nie brali — płatnik domyka rachunek i przelewy ruszają.</li>
+                    </ul>`);
+                return;
+            }
             const kroki = gate.reason === 'over'
                 ? (billSplitMode(bill) === 'even'
                     ? '<li>Popraw kwotę rachunku albo koszt wspólny, żeby suma się zgadzała.</li>'
@@ -1876,7 +1903,13 @@
             // Kafelek na liście niesie już tylko stan, więc to jest jedyne miejsce, w którym
             // pada CAŁE zdanie: co jest zablokowane, dlaczego i co to odblokuje. Bez tego
             // wyszarzony „Ureguluj" niżej czyta się jak usterka aplikacji.
-            const wstepHtml = gate.reason === 'changed'
+            // NIKT Z UDZIAŁEM ZEROWYM. Baner wymienia te osoby po imieniu, bo to jedyna
+            // informacja, która pozwala coś zrobić: albo im przypomnieć, albo stwierdzić,
+            // że faktycznie nic nie brali.
+            const brakStawki = gate.reason === 'nostake';
+            const wstepHtml = brakStawki
+                ? `<b class="text-ink">${escapeHtml(imionaZdanie(gate.bezStawki))} nie ${(gate.bezStawki || []).length === 1 ? 'wziął/ęła' : 'wzięli'} ani jednej pozycji.</b> Rachunek spina się co do grosza, ale ich część niosą dziś inni — dlatego regulowanie płatności jest jeszcze zablokowane.`
+                : gate.reason === 'changed'
                 ? `<b class="text-ink">Rachunek zmienił się po podziale reszty.</b> ${kwota} znów nie ma właściciela, więc regulowanie płatności jest z powrotem zablokowane.`
                 : `<b class="text-ink">Ten rachunek jeszcze się uzupełnia.</b> ${kwota} nikt nie wziął, a dopóki tak jest, regulowanie płatności jest zablokowane — inaczej przelew szedłby za cudze pozycje.`;
 
@@ -1888,7 +1921,7 @@
                 return `<div class="card p-4">
                     <div class="flex items-start gap-3">
                         <span class="chip text-info text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Uzupełniamy</span>
-                        <span class="text-sm text-ink-2">${wstepHtml} Stuknij niżej na paragonie, co Twoje — a resztę podzieli <strong>${escapeHtml(kto)}</strong>.</span>
+                        <span class="text-sm text-ink-2">${wstepHtml} ${brakStawki ? `Rachunek domknie <strong>${escapeHtml(kto)}</strong>.` : `Stuknij niżej na paragonie, co Twoje — a resztę podzieli <strong>${escapeHtml(kto)}</strong>.`}</span>
                     </div>
                     ${restBreakdownHtml(bill, calculations)}
                 </div>`;
@@ -1925,7 +1958,7 @@
                 </div>
                 ${restBreakdownHtml(bill, calculations)}
                 ${przypomnijHtml}
-                <button id="close-bill-btn" class="btn btn-dark w-full ${ilu > 0 ? 'mt-2' : 'mt-3'}">Podziel resztę</button>
+                <button id="close-bill-btn" class="btn btn-dark w-full ${ilu > 0 ? 'mt-2' : 'mt-3'}">${brakStawki ? 'Domknij rachunek' : 'Podziel resztę'}</button>
             </div>`;
         };
 
@@ -1978,6 +2011,40 @@
             // Decyzja o reszcie jest jedna i niepodzielna: `restTo` to jedna lista dla całej
             // kwoty, więc zamknięcie rozstrzyga CAŁOŚĆ nierozpisanego na nowo.
             const wiszaceG = toGrosze(calculations.unallocated);
+
+            // NIC DO PODZIAŁU, TYLKO DO POTWIERDZENIA (reguła „każdy ma stawkę").
+            //
+            // Rachunek spina się co do grosza, więc `wiszaceG` wynosi zero i zwykły arkusz
+            // proponowałby „podziel 0,00 po równo" — czyli zdanie bez treści. Decyzja jest
+            // tu innego rodzaju: nie „komu przypisać pieniądze", tylko „czy ci ludzie
+            // naprawdę nic nie brali". Odpowiedź zapisujemy tą samą flagą (`settleOpen`),
+            // bo znaczy dokładnie to samo: płatnik wziął rachunek na siebie i domknął go.
+            if (gate.reason === 'nostake') {
+                const ludzie = (gate.bezStawki || []).map((id) => ({ id, name: memberName(id) }));
+                const tytul = document.getElementById('close-bill-title');
+                if (tytul) tytul.textContent = 'Domknij rachunek';
+                document.getElementById('close-bill-summary').innerHTML = `
+                    <div class="block-quiet p-4">
+                        <div class="flex items-baseline justify-between gap-3">
+                            <span class="font-bold">Nie ${ludzie.length === 1 ? 'wziął/ęła' : 'wzięli'} ani jednej pozycji</span>
+                            <span class="text-2xl font-bold tabular-nums">${ludzie.length}</span>
+                        </div>
+                        ${peopleListHtml(ludzie)}
+                        <p class="text-sm text-ink-2 mt-2">Rachunek spina się co do grosza, więc nie ma czego dzielić — ale ich część niosą dziś inni. Domknięcie <b class="text-ink">odblokuje regulowanie płatności</b> i zostawi kwoty takie, jakie są teraz.</p>
+                    </div>`;
+                const boxBezStawki = document.getElementById('close-bill-options');
+                boxBezStawki.innerHTML = `
+                    <button class="close-bill-opt btn btn-dark w-full">Domknij rachunek</button>
+                    <p class="text-sm text-ink-2 -mt-1">Tak robimy, gdy te osoby naprawdę nic nie brały. Jeśli tylko nie zdążyły stuknąć — lepiej poczekać albo im przypomnieć.</p>
+                    <button id="close-bill-later" class="btn btn-quiet w-full">Jeszcze poczekam</button>`;
+                boxBezStawki.querySelector('.close-bill-opt').onclick = () => applyBillClose(null, 0);
+                document.getElementById('close-bill-later').onclick =
+                    () => closeModal(document.getElementById('close-bill-modal'));
+                document.getElementById('close-bill-modal').classList.add('active');
+                return;
+            }
+            const tytulPodzialu = document.getElementById('close-bill-title');
+            if (tytulPodzialu) tytulPodzialu.textContent = 'Podziel resztę';
 
             const aktywni = Object.values(billData.participants || {}).filter((p) => p.status !== PARTICIPANT_OUT);
             const spozniacy = aktywni.filter((p) => !participantReady(billData, p.id));
@@ -2060,11 +2127,15 @@
             logEvent({
                 type: 'bill-closed',
                 billId: currentBillId,
-                label: restTo
-                    ? `podzielił/a resztę rachunku „${billData.billName}" — nierozpisane ${fmtMoney(wiszaceG, billData.currency)} dla tych, którzy nie stuknęli swoich pozycji`
-                    : `podzielił/a resztę rachunku „${billData.billName}" — nierozpisane ${fmtMoney(wiszaceG, billData.currency)} po równo`,
+                label: wiszaceG <= 0
+                    ? `domknął/ęła rachunek „${billData.billName}" — nic nie zostało do podziału`
+                    : (restTo
+                        ? `podzielił/a resztę rachunku „${billData.billName}" — nierozpisane ${fmtMoney(wiszaceG, billData.currency)} dla tych, którzy nie stuknęli swoich pozycji`
+                        : `podzielił/a resztę rachunku „${billData.billName}" — nierozpisane ${fmtMoney(wiszaceG, billData.currency)} po równo`),
             });
             showToast('Rachunek gotowy — można się rozliczać.');
+            // (ta sama wiadomość dla obu dróg domknięcia: dla ekipy zmienia się dokładnie
+            // jedna rzecz — od tej chwili da się oddawać pieniądze)
         };
 
         // „TO NIE MOJE" — jedyne wyjście dla kogoś, komu przypisano resztę bez jego udziału.
@@ -2111,12 +2182,19 @@
         const reopenBillWithConfirm = () => {
             if (!currentBillId || !billData) return;
             const zaplacili = billSettledBy(perBillNow(), currentBillId).filter((x) => x.paidG > 0).length;
+            // Rachunek domknięty BEZ podziału (reguła „każdy ma stawkę") nie ma czego cofać
+            // w kwotach — cofa się samo domknięcie. Zdanie o „podziale kwoty nierozpisanej"
+            // mówiłoby wtedy o czymś, co nigdy się nie wydarzyło.
+            const cofamyPodzial = (billData.restSettledG || 0) > 0;
+            const cofamyHtml = cofamyPodzial
+                ? 'Podział kwoty nierozpisanej zostanie cofnięty, a ekipa znów będzie mogła klikać pozycje.'
+                : 'Rachunek wróci do uzupełniania, a ekipa znów będzie mogła klikać pozycje.';
             openConfirm({
-                title: 'Cofnąć podział reszty?',
+                title: cofamyPodzial ? 'Cofnąć podział reszty?' : 'Cofnąć domknięcie rachunku?',
                 body: zaplacili > 0
-                    ? `Podział kwoty nierozpisanej zostanie cofnięty, a ekipa znów będzie mogła klikać pozycje. ${zaplacili} ${plural(zaplacili, 'osoba już zapłaciła', 'osoby już zapłaciły', 'osób już zapłaciło')} — ich kwoty się przeliczą, a różnica pojawi się w rozliczeniach.`
-                    : 'Podział kwoty nierozpisanej zostanie cofnięty, a ekipa znów będzie mogła klikać pozycje. Przelewy z tego rachunku znów będą zablokowane.',
-                confirmLabel: 'Cofnij podział',
+                    ? `${cofamyHtml} ${zaplacili} ${plural(zaplacili, 'osoba już zapłaciła', 'osoby już zapłaciły', 'osób już zapłaciło')} — ich kwoty się przeliczą, a różnica pojawi się w rozliczeniach.`
+                    : `${cofamyHtml} Przelewy z tego rachunku znów będą zablokowane.`,
+                confirmLabel: cofamyPodzial ? 'Cofnij podział' : 'Cofnij domknięcie',
                 tone: 'brand',
                 onConfirm: () => reopenBill(currentBillId),
             });
@@ -2158,9 +2236,15 @@
                 // Chip obok mówi już „Rachunek się uzupełnia", więc podpis nie powtarza
                 // tego słowa — niesie LICZBĘ, czyli jedyną rzecz, której chip nie zmieści.
                 // Błękit zostaje u tego, czyj jest ruch: kolor niesie „kto", tekst „ile".
+                //
+                // Przy zerowej stawce kwota nie mówi NIC (wszystko jest rozpisane co do
+                // grosza), więc podpis liczy ludzi zamiast złotówek.
+                const tekst = gate.reason === 'nostake'
+                    ? `${(gate.bezStawki || []).length} ${plural((gate.bezStawki || []).length, 'osoba nie wzięła', 'osoby nie wzięły', 'osób nie wzięło')} ani jednej pozycji`
+                    : `${kwota} nikt nie wziął`;
                 return isPrimaryCloser(bill, myMember.id)
-                    ? `<p class="text-info font-semibold">${kwota} nikt nie wziął</p>`
-                    : `<p class="text-ink-3">${kwota} nikt nie wziął</p>`;
+                    ? `<p class="text-info font-semibold">${tekst}</p>`
+                    : `<p class="text-ink-3">${tekst}</p>`;
             }
 
             const calculations = calculateAllForBill(bill);
@@ -6624,7 +6708,7 @@
                 // który sam się przed chwilą pomylił, nie miał czym tego naprawić.
                 // Cicho i bez koloru: to jest wyjście awaryjne, nie zaproszenie.
                 cofnijZamkniecieHtml = (gate.reason === 'closed' && canCloseBill(billData, myGroupMember && myGroupMember.id))
-                    ? `<button id="reopen-bill-btn" class="tap min-h-tap w-full mt-2 text-sm font-bold text-ink-3">Cofnij podział reszty</button>`
+                    ? `<button id="reopen-bill-btn" class="tap min-h-tap w-full mt-2 text-sm font-bold text-ink-3">${(billData.restSettledG || 0) > 0 ? 'Cofnij podział reszty' : 'Cofnij domknięcie'}</button>`
                     : '';
                 // Stempel foliowy znaczy „potwierdzone" — tu potwierdzone jest, kto wyłożył pieniądze.
                 confirmationBanner.innerHTML = `
