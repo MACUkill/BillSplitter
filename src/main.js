@@ -1895,8 +1895,24 @@
             // PRZYCISKI JEDEN POD DRUGIM, NIE OBOK SIEBIE. W rzędzie „Zamknij rachunek"
             // łamało się na dwa wiersze na wąskim telefonie, a złamana etykieta na przycisku
             // wygląda na usterkę układu. Pod spodem obie mieszczą się w całości.
+            // NAJPIERW ZAPYTAJ, POTEM DZIEL (decyzja właściciela 2026-08-27).
+            //
+            // Podział reszty jest ZAWSZE PRZYBLIŻENIEM — dokładny wynik daje dopiero to, że
+            // ludzie stukną swoje pozycje, i po to w ogóle powstała brama. Do tej pory głośny
+            // (czarny) był ten gorszy wynik, a lepszy stał pod nim wyszarzony — czyli układ
+            // po cichu popychał płatnika w stronę zgadywania.
+            //
+            // Do tego `btn-quiet` po prostu ginął: jego tło (238) na białej karcie (255) to
+            // siedemnaście punktów różnicy, a tuż nad nim stała pełna czerń. W takim
+            // sąsiedztwie przestaje wyglądać na przycisk — ta sama pułapka, którą opisuje
+            // uwaga przy `billsAsideHtml`.
+            //
+            // Teraz obie drogi mają tę samą wagę, a kolejność czytania podpowiada tę
+            // dokładniejszą. Limonki tu NIE MA świadomie: w regule z DESIGN.md znaczy ona
+            // „domykam sprawę, którą ktoś mi postawił", a przypomnienie sam zaczynam — i jest
+            // to przycisk, który budzi do dwudziestu pięciu telefonów naraz.
             const przypomnijHtml = ilu > 0
-                ? `<button id="remind-fill-btn" class="btn btn-quiet w-full mt-2">Przypomnij ${ilu} ${plural(ilu, 'osobie', 'osobom', 'osobom')}</button>`
+                ? `<button id="remind-fill-btn" class="btn btn-dark w-full mt-3">Przypomnij ${ilu} ${plural(ilu, 'osobie', 'osobom', 'osobom')}</button>`
                 : '';
             return `<div class="card p-4">
                 <div class="flex items-start gap-3">
@@ -1904,8 +1920,8 @@
                     <span class="text-sm text-ink-2">${wstepHtml}</span>
                 </div>
                 ${restBreakdownHtml(bill, calculations)}
-                <button id="close-bill-btn" class="btn btn-dark w-full mt-3">Podziel resztę</button>
                 ${przypomnijHtml}
+                <button id="close-bill-btn" class="btn btn-dark w-full ${ilu > 0 ? 'mt-2' : 'mt-3'}">Podziel resztę</button>
             </div>`;
         };
 
@@ -2921,7 +2937,7 @@
                     </div>
                     <p class="text-sm text-ink-2 mt-1">${moje.length} ${plural(moje.length, 'rachunek', 'rachunki', 'rachunków')} · od ${ludzie.length === 1 ? '1 osoby' : `${ludzie.length} osób`}</p>
                     <div class="mt-3 flex items-center gap-2">
-                        <button class="plan-nudge-people-btn btn btn-primary flex-grow" data-currency="${escapeHtml(cur)}">Przypomnij (${ludzie.length})</button>
+                        <button class="plan-nudge-people-btn btn btn-dark flex-grow" data-currency="${escapeHtml(cur)}">Przypomnij (${ludzie.length})</button>
                         <button class="plan-open-settle-btn btn btn-quiet flex-shrink-0">Zobacz kto</button>
                     </div>
                 </div>`);
@@ -3026,7 +3042,7 @@
                             <span class="amount text-2xl text-due flex-shrink-0">${fmtMoney(p.receiveTotalG, p.currency)}</span>
                         </div>
                         <div class="mt-3 flex items-center gap-2">
-                            <button class="plan-nudge-all-btn btn btn-primary flex-grow" data-currency="${escapeHtml(p.currency)}">Przypomnij (${p.receive.length})</button>
+                            <button class="plan-nudge-all-btn btn btn-dark flex-grow" data-currency="${escapeHtml(p.currency)}">Przypomnij (${p.receive.length})</button>
                             <button class="plan-open-settle-btn btn btn-quiet flex-shrink-0">Zobacz kto</button>
                         </div>
                     </div>`

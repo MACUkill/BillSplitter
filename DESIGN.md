@@ -425,7 +425,7 @@ i „Zapisz" inaczej niż „Zapisz wpłatę", choć to ta sama czynność.
 | Odmiana | Znaczy | Przykłady |
 |---|---|---|
 | `btn-primary` | **domykam sprawę, którą ktoś mi postawił** | Potwierdzam · Zapisz · Zapisz wpłatę · Wyślij |
-| `btn-dark` | **czynność, którą sam zaczynam** | Dodaj pozycję · Podziel resztę · Wejdź · Kopiuj |
+| `btn-dark` | **czynność, którą sam zaczynam** | Dodaj pozycję · Podziel resztę · Przypomnij · Wejdź |
 | `btn-danger` | **pieniądze wychodzą ode mnie albo coś znika** | Ureguluj · Usuń rachunek |
 | `btn-quiet` | **wyjście, odłożenie, rzecz drugorzędna** | Anuluj · Jeszcze poczekam · Oznacz przeczytane |
 
