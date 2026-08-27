@@ -1819,7 +1819,7 @@
             const sierot = calculations.orphanCount || 0;
             const wszystkich = calculations.itemCount || 0;
             if (sierot > 0) {
-                czesci.push(`<p class="text-sm text-ink-2 mt-2"><b class="text-ink">${sierot} z ${wszystkich} pozycji nikt nie wziął</b> · ${fmtMoney(toGrosze(calculations.orphanAmount || 0), cur)}. Na wydruku niżej są wyszarzone.</p>`);
+                czesci.push(`<p class="text-sm text-ink-2 mt-2"><b class="text-ink">${sierot} z ${wszystkich} pozycji nikt nie wziął</b> · ${fmtMoney(toGrosze(calculations.orphanAmount || 0), cur)}</p>`);
             }
             // Różnica między kwotą rachunku a sumą pozycji. Na rachunku bez ani jednej pozycji
             // jest całą jego treścią, nie usterką — więc nazywamy ją spokojnie.
@@ -1872,9 +1872,13 @@
             const calculations = calculateAllForBill(bill);
             const mogeZamknac = canCloseBill(bill, myMemberId);
             const kwota = fmtMoney(gate.unallocatedG || 0, cur);
+            // BANER NAZYWA BLOKADĘ PO IMIENIU (zgłoszenie właściciela 2026-08-27).
+            // Kafelek na liście niesie już tylko stan, więc to jest jedyne miejsce, w którym
+            // pada CAŁE zdanie: co jest zablokowane, dlaczego i co to odblokuje. Bez tego
+            // wyszarzony „Ureguluj" niżej czyta się jak usterka aplikacji.
             const wstepHtml = gate.reason === 'changed'
-                ? `<b class="text-ink">Rachunek zmienił się po podziale reszty.</b> ${kwota} znów nie ma właściciela, więc przelewy stoją.`
-                : `<b class="text-ink">Ten rachunek jeszcze się uzupełnia.</b> ${kwota} nikt nie wziął — dopóki tak jest, nie da się go rozliczyć.`;
+                ? `<b class="text-ink">Rachunek zmienił się po podziale reszty.</b> ${kwota} znów nie ma właściciela, więc regulowanie płatności jest z powrotem zablokowane.`
+                : `<b class="text-ink">Ten rachunek jeszcze się uzupełnia.</b> ${kwota} nikt nie wziął, a dopóki tak jest, regulowanie płatności jest zablokowane — inaczej przelew szedłby za cudze pozycje.`;
 
             // Kto nie może zamknąć, dostaje jedno zdanie o tym, na kogo się czeka, i jedno
             // polecenie, które MOŻE wykonać. Wołanie do czynności, której ktoś nie ma jak
@@ -1993,6 +1997,7 @@
                     </div>
                     ${restBreakdownHtml(billData, calculations)}
                     ${ponownieHtml}
+                    <p class="text-sm text-ink-2 mt-2">Podział tej kwoty <b class="text-ink">domyka rachunek</b> i odblokowuje regulowanie płatności — od tej chwili ekipa może oddawać pieniądze.</p>
                 </div>`;
 
             const perWszyscyG = aktywni.length ? Math.ceil(wiszaceG / aktywni.length) : 0;
@@ -2150,9 +2155,12 @@
             const gate = billSettleGate(bill);
             if (!gate.open && gate.reason !== 'over') {
                 const kwota = fmtMoney(gate.unallocatedG || 0, bill.currency);
+                // Chip obok mówi już „Rachunek się uzupełnia", więc podpis nie powtarza
+                // tego słowa — niesie LICZBĘ, czyli jedyną rzecz, której chip nie zmieści.
+                // Błękit zostaje u tego, czyj jest ruch: kolor niesie „kto", tekst „ile".
                 return isPrimaryCloser(bill, myMember.id)
-                    ? `<p class="text-info font-semibold">Do podziału · ${kwota} bez właściciela</p>`
-                    : `<p class="text-ink-3">Uzupełniamy · ${kwota} nikt nie wziął</p>`;
+                    ? `<p class="text-info font-semibold">${kwota} nikt nie wziął</p>`
+                    : `<p class="text-ink-3">${kwota} nikt nie wziął</p>`;
             }
 
             const calculations = calculateAllForBill(bill);
@@ -2243,9 +2251,16 @@
                         ? make('action', 'Rachunek się nie spina')
                         : make('wait', 'Rachunek się nie spina');
                 }
-                return isPrimaryCloser(bill, myMember.id)
-                    ? make('action', 'Podziel resztę')
-                    : make('wait', 'Uzupełniamy');
+                // CHIP NA LIŚCIE OPISUJE STAN RACHUNKU, NIE WYDAJE POLECENIA
+                // (zgłoszenie właściciela 2026-08-27: „«Podziel resztę» jako status jest
+                // totalnie bez sensu"). Lista rachunków odpowiada na pytanie „co się dzieje
+                // z moimi pieniędzmi", a nie „co mam teraz zrobić" — polecenie należy do
+                // wnętrza rachunku, gdzie stoi przycisk i całe wyjaśnienie.
+                //
+                // Ton zostaje różny dla obu ról i to on niesie „czyj ruch": płatnik i admin
+                // dostają błękit stanu (kropka, wiersz „Czeka na Ciebie"), reszta ekipy samą
+                // informację. Zmienia się słowo, nie sygnał.
+                return make(isPrimaryCloser(bill, myMember.id) ? 'action' : 'wait', 'Rachunek się uzupełnia');
             }
 
             const calculations = calculateAllForBill(bill);
