@@ -2637,17 +2637,21 @@
             latestSettlements,
         );
 
-        // Rachunki, które jeszcze się uzupełniają — nie znikają, tylko stoją osobno.
-        // Ukryte byłyby niespodzianką w dniu, w którym ktoś je zamknie.
+        // RACHUNKI POZA KSIĘGĄ — mają płatnika i kwotę, a mimo to nie liczą się do salda.
+        // Dwa powody: rachunek jeszcze się uzupełnia albo się nie spina.
         //
-        // ALE RACHUNEK, KTÓRY SIĘ NIE SPINA, TU NIE WCHODZI. „W uzupełnianiu" znaczy
-        // „czeka na ekipę i za chwilę wróci" — a to jest pomyłka we wpisie, czekająca na
-        // jedną osobę przez minutę. Wpisanie jej do tego bloku nazwałoby ją nie tym słowem
-        // i postawiło na Bilansie ogłoszenie, z którym czytający nie ma co zrobić.
-        const fillingBills = () => latestBills
-            .map(({ id, data }) => ({ ...data, id }))
-            .filter((b) => !billCountsInLedger(b) && b.payerConfirmed && toGrosze(b.totalAmount || 0) > 0
-                && billSettleGate(b).reason !== 'over');
+        // NIGDZIE ICH NIE OGŁASZAMY (decyzja właściciela 2026-08-27): to zdanie skierowane
+        // do kogoś, kto nic z nim nie zrobi, a zamyka rachunek płatnik i to on dostaje
+        // wezwanie. Ta lista służy do JEDNEJ rzeczy — do milczenia we właściwym momencie.
+        // Dopóki istnieje choć jeden taki rachunek, ekran nie ma prawa ogłosić „wszystko
+        // rozliczone, nikt nikomu nic nie jest winien", bo to byłaby nieprawda o cudzych
+        // pieniądzach. Zamiast tego mówi krócej i uczciwie: „nic do rozliczenia".
+        const billsOutsideLedger = () => {
+            const wKsiedze = new Set(ledgerBills().map((b) => b.id));
+            return latestBills
+                .map(({ id, data }) => ({ ...data, id }))
+                .filter((b) => !wKsiedze.has(b.id) && b.payerConfirmed && toGrosze(b.totalAmount || 0) > 0);
+        };
 
         const perBillNow = () => billLedger(ledgerBills(), latestSettlements);
 
@@ -2722,9 +2726,13 @@
                 // w świeżym pokoju i kłócił się z zachętą poniżej.
                 const cur = (groupData && groupData.defaultCurrency) || 'PLN';
                 amountsEl.innerHTML = heroAmountHtml(0, cur, 'text-brand-ink');
+                // Trzeci stan: rachunki są, ale żaden nie wszedł jeszcze do salda. Wtedy
+                // podpis milknie zamiast ogłaszać, że nikt nikomu nic nie jest winien.
                 captionEl.textContent = latestBills.length === 0
                     ? 'Jeszcze nic nie policzone.'
-                    : 'Wszystko rozliczone. Nikt nikomu nic nie jest winien.';
+                    : (billsOutsideLedger().length > 0
+                        ? 'Nic do rozliczenia.'
+                        : 'Wszystko rozliczone. Nikt nikomu nic nie jest winien.');
                 return;
             }
 
@@ -3268,14 +3276,16 @@
                 <span><span class="block font-bold">Wszystko rozliczone</span><span class="block text-sm text-ink-2">Nikt nikomu nic nie jest winien.</span></span>
             </div>`;
             // „Wszystko rozliczone" TYLKO wtedy, gdy naprawdę nie ma czego rozliczać.
-            // Rachunki w uzupełnianiu nie wchodzą do księgi, więc bez tego warunku pokój
-            // pełen niezamkniętych rachunków ogłaszałby, że nikt nikomu nic nie jest winien
-            // — czyli aplikacja mówiłaby nieprawdę o cudzych pieniądzach.
-            const wUzupelnianiuHtml = billsAsideHtml({ zZadaniami: false });
+            // Rachunki poza księgą nie są tu już wypisywane (decyzja właściciela 2026-08-27),
+            // ale przy nich ten ekran MILCZY, zamiast ogłaszać sukces: pokój pełen
+            // niedokończonych rachunków twierdziłby inaczej, że nikt nikomu nic nie jest
+            // winien — czyli aplikacja mówiłaby nieprawdę o cudzych pieniądzach.
+            const nicDoRozliczenia = `<div class="card p-5 flex items-center gap-3">
+                <span class="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 bg-surface-2 text-ink-3"><i class="fas fa-check text-lg"></i></span>
+                <span class="font-bold">Nic do rozliczenia</span>
+            </div>`;
             if (currencies.length === 0) {
-                container.innerHTML = wUzupelnianiuHtml
-                    ? `${wUzupelnianiuHtml}<div class="mt-3">${nothing}</div>`
-                    : nothing;
+                container.innerHTML = billsOutsideLedger().length > 0 ? nicDoRozliczenia : nothing;
                 return;
             }
 
@@ -3286,7 +3296,7 @@
             // tłumaczyło też RZECZY NAJWAŻNIEJSZEJ: że w planie minimalnym można nie mieć
             // nic do zapłaty, mimo że w Bilansie stoi „jesteś winien dwóm osobom". Właściciel
             // zobaczył dokładnie tę sprzeczność i nie miał z czego jej wyjaśnić.
-            let html = wUzupelnianiuHtml ? `<div class="mb-3">${wUzupelnianiuHtml}</div>` : '';
+            let html = '';
             const myOweCount = new Set(
                 Object.keys(ledger).flatMap((c) => ledger[c].net.filter((t) => t.from === myId).map((t) => t.to)),
             ).size;
@@ -3936,27 +3946,18 @@
         // tych, którzy jej szukają — to jest dla tych, którzy po prostu weszli.
         // Sekcja znika bez śladu, gdy nic nie czeka: pusta lista „Czeka na Ciebie"
         // byłaby zaproszeniem do szukania problemu, którego nie ma.
-        // RACHUNKI, KTÓRE JESZCZE NIE WESZŁY DO SALDA. Nie chowamy ich — chowanie kwoty,
-        // która za chwilę wróci, jest gorsze niż pokazanie jej osobno i nazwanie po imieniu.
-        // Blok mówi też, CZYJ jest ruch, żeby nie było to samo ogłoszenie w kółko.
-        const fillingBillsHtml = () => {
-            const otwarte = fillingBills();
-            if (!otwarte.length) return '';
-            const poWalucie = {};
-            otwarte.forEach((b) => {
-                const cur = b.currency || 'PLN';
-                poWalucie[cur] = (poWalucie[cur] || 0) + toGrosze(b.totalAmount || 0);
-            });
-            const kwotyHtml = Object.entries(poWalucie).map(([cur, g]) => fmtMoney(g, cur)).join(' · ');
-            const nazwyHtml = otwarte.slice(0, 4)
-                .map((b) => escapeHtml(b.billName || 'Rachunek')).join(' · ');
-            const wiecej = otwarte.length > 4 ? ` i ${otwarte.length - 4} więcej` : '';
-            return `<div class="flex items-baseline justify-between gap-3">
-                    <span class="font-bold">W uzupełnianiu</span>
-                    <span class="font-bold tabular-nums">${kwotyHtml}</span>
-                </div>
-                <p class="text-sm text-ink-2 mt-1">${otwarte.length} ${plural(otwarte.length, 'rachunek', 'rachunki', 'rachunków')} czeka na zamknięcie, więc jeszcze nie liczy się do salda: ${nazwyHtml}${wiecej}.</p>`;
-        };
+        // BLOK „W UZUPEŁNIANIU" USUNIĘTY (decyzja właściciela 2026-08-27).
+        //
+        // Stał na Bilansie i w Rozliczeniach i ogłaszał, że N rachunków „czeka na zamknięcie,
+        // więc jeszcze nie liczy się do salda". Powód usunięcia jest ten sam, co przy rachunku
+        // z nadwyżką: to jest zdanie skierowane do kogoś, kto nic z nim nie zrobi. Zamyka
+        // rachunek płatnik i to on dostaje wezwanie — reszta ekipy dostawała ogłoszenie,
+        // które tylko dokładało treści do dwóch najgęstszych ekranów w aplikacji.
+        // Do tego samo „czeka na zamknięcie" da się przeczytać na kilka sposobów.
+        //
+        // ZOSTAJE wiersz „N rachunków czeka na Twój ruch" — bo tam ruch jest MÓJ.
+        // `billsOutsideLedger()` żyje dalej: pilnuje, żeby stan pusty nie ogłaszał sukcesu,
+        // którego nie ma (patrz `renderSettlements` i podpis na Bilansie).
 
         // JEDEN BLOK NA WSZYSTKIE RACHUNKI POZA SALDEM (decyzja właściciela 2026-08-26).
         //
@@ -3979,21 +3980,11 @@
         // rachunków ogłaszałby „Wszystko rozliczone. Nikt nikomu nic nie jest winien",
         // czyli aplikacja mówiłaby nieprawdę o cudzych pieniądzach. Wołanie „stuknij swoje
         // pozycje" i przejście na listę rachunków odpadają — od tego jest Bilans.
-        const billsAsideHtml = ({ zZadaniami = true } = {}) => {
-            const otwarteHtml = fillingBillsHtml();
-            const zadania = zZadaniami ? currentInbox().filter((x) => x.level === 2) : [];
-            if (!otwarteHtml && !zadania.length) return '';
+        const billsAsideHtml = () => {
+            const zadania = currentInbox().filter((x) => x.level === 2);
+            if (!zadania.length) return '';
 
-            if (!zadania.length) {
-                // Sama informacja, bez drogi donikąd: na Rozliczeniach nie ma czego otwierać,
-                // a przycisk „Pokaż rachunki" byłby czwartym przejściem do zakładki, która
-                // stoi w pasku na dole ekranu.
-                //
-                // I bez barwy: nic tu nie czeka na ruch tej osoby, więc `block-quiet`.
-                return `<div class="block-quiet p-4">${otwarteHtml}</div>`;
-            }
-
-            const zadaniaHtml = `<p class="text-sm text-ink-2 ${otwarteHtml ? 'mt-2' : ''}"><b class="text-ink">${zadania.length} ${plural(zadania.length, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')} na Twój ruch.</b></p>`;
+            const zadaniaHtml = `<p class="text-sm text-ink-2"><b class="text-ink">${zadania.length} ${plural(zadania.length, 'rachunek czeka', 'rachunki czekają', 'rachunków czeka')} na Twój ruch.</b></p>`;
             // Jeden rachunek — wchodzimy wprost w niego. Kilka — na listę z nałożonym filtrem,
             // bo inaczej człowiek ląduje wśród dwudziestu i sam szuka tych dwóch.
             const jedyny = zadania.length === 1 ? zadania[0].id : '';
@@ -4003,7 +3994,6 @@
             // więc musi mieć ten sam kolor. Szary `block-quiet` znaczy w tym systemie
             // „informacja, nic do zrobienia" i na tym bloku po prostu kłamał.
             return `<div class="card tile-action p-4">
-                ${otwarteHtml}
                 ${zadaniaHtml}
                 <button class="bills-aside-btn btn btn-dark w-full mt-3" data-bill="${escapeHtml(jedyny)}" data-tasks="${zadania.length}">${etykieta}</button>
             </div>`;
@@ -7043,11 +7033,12 @@
             // Stuknięcie w samą nazwę otwiera pole — o to prosił właściciel. Ołówek obok
             // istnieje po to, żeby dało się to ODKRYĆ: nagłówek, który po cichu reaguje na
             // stuknięcie, jest funkcją, o której wie wyłącznie ten, kto ją zamówił.
-            // Nagłówek zostaje NAGŁÓWKIEM, nie przebiera się za przycisk: `role="button"`
-            // odbiera czytnikom ekranu informację, że to tytuł rachunku. Drogę z klawiatury
-            // i dla czytników niesie ołówek obok, który przyciskiem jest naprawdę.
-            const naglowekNazwy = document.getElementById('bill-name');
-            if (naglowekNazwy) naglowekNazwy.onclick = () => startBillNameEdit();
+            // NAZWĘ OTWIERA WYŁĄCZNIE OŁÓWEK (decyzja właściciela 2026-08-27).
+            //
+            // Nagłówek też był klikalny, ale to jest największy przedmiot na tym ekranie
+            // i leży dokładnie tam, gdzie kciuk ląduje przy przewijaniu — więc pole do wpisu
+            // otwierało się przez przypadek. Ołówek jest mały, stoi obok i nie robi nic,
+            // czego ktoś nie chciał. Nagłówek zostaje nagłówkiem, także dla czytnika ekranu.
             const olowekNazwy = document.getElementById('bill-name-edit-btn');
             if (olowekNazwy) olowekNazwy.onclick = () => startBillNameEdit();
             const poleNazwy = document.getElementById('bill-name-input');
@@ -8088,6 +8079,17 @@
             }
         };
 
+        // PASEK „COFNIJ" CHOWA SIĘ SAM (zgłoszenie właściciela 2026-08-27).
+        //
+        // Nie miał własnego licznika. Przepływ usuwania rachunku sprzątał go po swojemu
+        // (`finalizeBillDeletion` po sześciu sekundach), więc tam znikał — ale ukrycie
+        // i przywrócenie rachunku wołają go bez żadnego sprzątania, a wtedy pasek zostawał
+        // na ekranie do końca sesji i zasłaniał dolną nawigację.
+        //
+        // Sześć sekund, nie 3,6 jak zwykły toast: to jest okno na COFNIĘCIE, a nie sam
+        // komunikat, więc musi trwać tyle, ile trwa możliwość cofnięcia (tyle samo, co
+        // termin domknięcia kasowania rachunku).
+        const UNDO_TOAST_MS = 6000;
         const showUndoToast = (message, onUndo) => {
             const toastId = 'toast-notification';
             const existing = document.getElementById(toastId);
@@ -8103,6 +8105,10 @@
             btn.onclick = () => { toast.remove(); onUndo(); };
             toast.append(span, btn);
             document.body.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 400);
+            }, UNDO_TOAST_MS);
             return toast;
         };
 
