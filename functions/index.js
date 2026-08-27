@@ -131,8 +131,11 @@ export const sendNudgePush = onDocumentCreated(
       title = "Rachunek czeka na Ciebie";
       body = `${fromName} czeka, aż stukniesz swoje pozycje na rachunku${nazwa}.`;
     } else if (nudge.kind === "reopen") {
-      title = "Prośba o otwarcie rachunku";
-      body = `${fromName}: to nie moje — prosi o otwarcie rachunku${nazwa}.`;
+      // SŁOWNICTWO MUSI SIĘ ZGADZAĆ Z EKRANEM (2026-08-27). W aplikacji nie ma już
+      // „otwierania rachunku" — jest „cofnięcie podziału reszty". Push, który mówi
+      // czymś innym niż przycisk, na który wysyła, czyta się jak wiadomość z innej apki.
+      title = "Prośba o cofnięcie podziału";
+      body = `${fromName}: to nie moje — prosi o cofnięcie podziału reszty${nazwa}.`;
     }
 
     const res = await admin.messaging().sendEachForMulticast({
