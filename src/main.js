@@ -1958,6 +1958,24 @@
             const przypomnijHtml = ilu > 0
                 ? `<button id="remind-fill-btn" class="btn btn-dark w-full mt-3">Przypomnij ${ilu} ${plural(ilu, 'osobie', 'osobom', 'osobom')}</button>`
                 : '';
+            // „LUB" MIĘDZY DWIEMA DROGAMI (zgłoszenie właściciela 2026-08-27).
+            //
+            // Odkąd oba przyciski mają tę samą wagę, czytają się jak lista kroków do
+            // wykonania po kolei — a to są DWIE ODPOWIEDZI na to samo pytanie: „poczekać na
+            // ludzi czy rozstrzygnąć samemu". W motywie ciemnym oba są białe i bez tego
+            // rozdzielnika wyglądają jak jeden przedmiot przecięty na pół.
+            //
+            // Ten sam znak, co w arkuszu podziału („Podziel po równo" LUB „Wrzuć
+            // spóźnialskim") — nie wprowadzamy drugiego sposobu na powiedzenie tej samej
+            // rzeczy. Pojawia się WYŁĄCZNIE wtedy, gdy są dwie drogi: bez kogo przypominać
+            // zostaje sam przycisk rozstrzygnięcia i nie ma czego rozdzielać.
+            const lubHtml = ilu > 0
+                ? `<div class="flex items-center gap-3 py-1 mt-2">
+                        <span class="h-px flex-grow bg-ink/10"></span>
+                        <span class="text-xs font-bold text-ink-3 tracking-wide">LUB</span>
+                        <span class="h-px flex-grow bg-ink/10"></span>
+                    </div>`
+                : '';
             return `<div class="card p-4">
                 <div class="flex items-start gap-3">
                     <span class="chip text-info text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Uzupełniamy</span>
@@ -1965,6 +1983,7 @@
                 </div>
                 ${restBreakdownHtml(bill, calculations)}
                 ${przypomnijHtml}
+                ${lubHtml}
                 <button id="close-bill-btn" class="btn btn-dark w-full ${ilu > 0 ? 'mt-2' : 'mt-3'}">${brakStawki ? 'Domknij rachunek' : 'Podziel resztę'}</button>
             </div>`;
         };
