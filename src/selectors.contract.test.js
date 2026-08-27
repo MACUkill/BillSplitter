@@ -300,7 +300,6 @@ describe("kontrakt bramy: powód „nostake\" ma swoje zdanie na każdym ekranie
     ["powód blokady przy wyszarzonym „Ureguluj\"", "const settleBlockReason = (bill) => {", 1400, "gate.reason === 'nostake'"],
     ["okno „Jeszcze nie teraz\"", "const showSettleBlockedInfo = (bill) => {", 1800, "gate.reason === 'nostake'"],
     ["baner na ekranie rachunku", "const gateBannerHtml = (bill, myMemberId) => {", 4000, "brakStawki"],
-    ["podpis pod kafelkiem na liście", "const tekst = gate.reason ===", 400, "bezStawki"],
     ["arkusz domknięcia", "const boxBezStawki = document.getElementById", 900, "applyBillClose(null, 0)"],
   ];
 

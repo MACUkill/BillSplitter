@@ -1772,6 +1772,12 @@
             return `${imiona.slice(0, maks).join(', ')} i ${reszta} ${plural(reszta, 'inna osoba', 'inne osoby', 'innych osób')}`;
         };
 
+        // KTO NIESIE CUDZĄ CZĘŚĆ — zdanie musi się zgadzać w liczbie. Przy jednej osobie
+        // „ich część niosą dziś inni" brzmi jak błąd, a to jest zdanie o cudzych pieniądzach.
+        const cudzaCzescHtml = (ile) => (ile === 1
+            ? 'tę część niesie dziś ktoś inny'
+            : 'ich część niosą dziś inni');
+
         const settleBlockReason = (bill) => {
             const gate = billSettleGate(bill);
             if (gate.open) return '';
@@ -1787,7 +1793,8 @@
             // co do grosza — tylko o to, że rozpisane jest na ZA MAŁO OSÓB.
             if (gate.reason === 'nostake') {
                 const kto = imionaZdanie(gate.bezStawki);
-                return `${kto} nie ${(gate.bezStawki || []).length === 1 ? 'wziął/ęła' : 'wzięli'} ani jednej pozycji, więc ich część rachunku niosą dziś inni.`;
+                const ilu = (gate.bezStawki || []).length;
+                return `${kto} nie ${ilu === 1 ? 'wziął/ęła' : 'wzięli'} ani jednej pozycji, a ${cudzaCzescHtml(ilu)}.`;
             }
             const kwota = fmtMoney(gate.unallocatedG || 0, (bill && bill.currency) || 'PLN');
             return gate.reason === 'changed'
@@ -1908,7 +1915,7 @@
             // że faktycznie nic nie brali.
             const brakStawki = gate.reason === 'nostake';
             const wstepHtml = brakStawki
-                ? `<b class="text-ink">${escapeHtml(imionaZdanie(gate.bezStawki))} nie ${(gate.bezStawki || []).length === 1 ? 'wziął/ęła' : 'wzięli'} ani jednej pozycji.</b> Rachunek spina się co do grosza, ale ich część niosą dziś inni — dlatego regulowanie płatności jest jeszcze zablokowane.`
+                ? `<b class="text-ink">${escapeHtml(imionaZdanie(gate.bezStawki))} nie ${(gate.bezStawki || []).length === 1 ? 'wziął/ęła' : 'wzięli'} ani jednej pozycji.</b> Rachunek spina się co do grosza, ale ${cudzaCzescHtml((gate.bezStawki || []).length)} — dlatego regulowanie płatności jest jeszcze zablokowane.`
                 : gate.reason === 'changed'
                 ? `<b class="text-ink">Rachunek zmienił się po podziale reszty.</b> ${kwota} znów nie ma właściciela, więc regulowanie płatności jest z powrotem zablokowane.`
                 : `<b class="text-ink">Ten rachunek jeszcze się uzupełnia.</b> ${kwota} nikt nie wziął, a dopóki tak jest, regulowanie płatności jest zablokowane — inaczej przelew szedłby za cudze pozycje.`;
@@ -2030,7 +2037,7 @@
                             <span class="text-2xl font-bold tabular-nums">${ludzie.length}</span>
                         </div>
                         ${peopleListHtml(ludzie)}
-                        <p class="text-sm text-ink-2 mt-2">Rachunek spina się co do grosza, więc nie ma czego dzielić — ale ich część niosą dziś inni. Domknięcie <b class="text-ink">odblokuje regulowanie płatności</b> i zostawi kwoty takie, jakie są teraz.</p>
+                        <p class="text-sm text-ink-2 mt-2">Rachunek spina się co do grosza, więc nie ma czego dzielić — ale ${cudzaCzescHtml(ludzie.length)}. Domknięcie <b class="text-ink">odblokuje regulowanie płatności</b> i zostawi kwoty takie, jakie są teraz.</p>
                     </div>`;
                 const boxBezStawki = document.getElementById('close-bill-options');
                 boxBezStawki.innerHTML = `
@@ -2200,64 +2207,16 @@
             });
         };
 
-        const getBillSummaryHtml = (bill, myMember, myParticipant) => {
-            if (!myParticipant || myParticipant.status === 'not_applicable') {
-                return `<p class="text-ink-3">Nie dotyczy Cię</p>`;
-            }
-
-            if (!bill.payerId) {
-                return `<p class="text-info font-semibold">Wskaż, kto płacił</p>`;
-            }
-            if (bill.payerId && !bill.payerConfirmed) {
-                const payerName = bill.participants[bill.payerId]?.name || 'Płatnik';
-                const text = myMember.id === bill.payerId ? "Potwierdź, że zapłaciłeś/aś" : `Czeka na potwierdzenie: ${escapeHtml(payerName)}`;
-                return `<p class="text-info font-semibold">${text}</p>`;
-            }
-            // KWOTĘ UZUPEŁNIA WYŁĄCZNIE PŁATNIK (zgłoszenie właściciela 2026-08-18).
-            // Po potwierdzeniu płatnika pole kwoty jest zablokowane dla wszystkich poza nim
-            // (`canEditMainFields`), więc wołanie reszty ekipy do działania było wołaniem
-            // do czynności, której nie mają jak wykonać.
-            if (!bill.totalAmount || bill.totalAmount <= 0) {
-                const czekamNaPlatnika = bill.payerConfirmed && myMember.id !== bill.payerId;
-                return czekamNaPlatnika
-                    ? `<p class="text-ink-3">Czeka na kwotę od: ${escapeHtml(bill.participants[bill.payerId]?.name || 'płatnika')}</p>`
-                    : `<p class="text-info font-semibold">Uzupełnij kwotę</p>`;
-            }
-
-            if (!participantReady(bill, myMember.id)) {
-                return `<p class="text-info font-semibold">Stuknij, co Twoje</p>`;
-            }
-
-            // Brama: rachunek dalej się uzupełnia, choć ja swoje zrobiłem. Zdanie mówi ILE
-            // wisi, bo bez liczby „uzupełniamy" nie daje pojęcia, jak daleko do końca.
-            const gate = billSettleGate(bill);
-            if (!gate.open && gate.reason !== 'over') {
-                const kwota = fmtMoney(gate.unallocatedG || 0, bill.currency);
-                // Chip obok mówi już „Rachunek się uzupełnia", więc podpis nie powtarza
-                // tego słowa — niesie LICZBĘ, czyli jedyną rzecz, której chip nie zmieści.
-                // Błękit zostaje u tego, czyj jest ruch: kolor niesie „kto", tekst „ile".
-                //
-                // Przy zerowej stawce kwota nie mówi NIC (wszystko jest rozpisane co do
-                // grosza), więc podpis liczy ludzi zamiast złotówek.
-                const tekst = gate.reason === 'nostake'
-                    ? `${(gate.bezStawki || []).length} ${plural((gate.bezStawki || []).length, 'osoba nie wzięła', 'osoby nie wzięły', 'osób nie wzięło')} ani jednej pozycji`
-                    : `${kwota} nikt nie wziął`;
-                return isPrimaryCloser(bill, myMember.id)
-                    ? `<p class="text-info font-semibold">${tekst}</p>`
-                    : `<p class="text-ink-3">${tekst}</p>`;
-            }
-
-            const calculations = calculateAllForBill(bill);
-            const myCalc = calculations.participantTotals.find(pt => pt.participant.id === myMember.id);
-            const myTotal = myCalc ? myCalc.total : 0;
-            const payer = bill.participants[bill.payerId];
-
-            // Model wpłat: lista pokazuje KONSUMPCJĘ (udział), nie rozliczenie. Rozliczenie → sekcja „Rozliczenia".
-            if (payer && payer.id === myParticipant.id) {
-                return `<p class="text-sm text-ink-2">Wyłożyłeś/aś ${calculations.controlSum.toFixed(2).replace('.', ',')} ${bill.currency} · Twój udział: ${myTotal.toFixed(2).replace('.', ',')}</p>`;
-            }
-            return `<p class="text-sm text-ink-2">Twój udział: ${myTotal.toFixed(2).replace('.', ',')} ${bill.currency}${payer ? ` · płaci ${escapeHtml(memberName(bill.payerId))}` : ''}</p>`;
-        };
+        // PODPIS POD KAFELKIEM ZNIKNĄŁ — I FUNKCJA ZNIKA RAZEM Z NIM.
+        //
+        // `getBillSummaryHtml` budowało drugi wiersz na kafelku rachunku. Przebudowa listy
+        // z 2026-08-26 („robi się bardzo dużo informacji na tej zakładce") zdjęła ten wiersz
+        // z widoku, ale funkcja została i była WOŁANA PRZY KAŻDYM ODRYSOWANIU, a jej wynik
+        // po cichu wyrzucany. Wyszło to dopiero przy teście w przeglądarce 2026-08-27:
+        // dwa razy poprawiałem w niej treść, przekonany, że zmieniam coś na ekranie.
+        //
+        // Wszystko, co mówiła, mówi dziś `billStatus` — jednym słownikiem, dla kafelka
+        // rachunku i dla wiersza rozliczenia naraz.
 
         // --- STATUS RACHUNKU: jeden słownik na cały interfejs ---
         //
@@ -5461,7 +5420,6 @@
                 const myParticipant = bill.participants ? bill.participants[myMember.id] : null;
                 const isHidden = (bill.hiddenBy || []).includes(myMember.id);
                 const canToggleHide = myParticipant && myParticipant.status !== 'not_applicable';
-                const summaryHtml = getBillSummaryHtml(bill, myMember, myParticipant);
 
                 // Data rachunku idzie mikrodrukiem: jest potrzebna do odróżnienia dwóch kolacji
                 // w tym samym miejscu, ale nie konkuruje z nazwą ani z kwotą.
@@ -6700,7 +6658,7 @@
                     : '';
                 const bannerText = isCurrentUserThePayer
                     ? (billFrozen(billData)
-                        ? `Wyłożyłeś/aś pieniądze za ten rachunek. Reszta jest podzielona, więc kwoty i pozycje są zamrożone — cofnij podział, żeby coś poprawić.${otwarteHtml}`
+                        ? `Wyłożyłeś/aś pieniądze za ten rachunek. ${(billData.restSettledG || 0) > 0 ? 'Reszta jest podzielona, więc kwoty i pozycje są zamrożone — cofnij podział' : 'Rachunek jest domknięty, więc kwoty i pozycje są zamrożone — cofnij domknięcie'}, żeby coś poprawić.${otwarteHtml}`
                         : `Wyłożyłeś/aś pieniądze za ten rachunek. Kwotę wciąż możesz poprawić.${otwarteHtml}`)
                     : `Główne pola rachunku zablokował/a <strong>${escapeHtml(payerName)}</strong>.${otwarteHtml}`;
                 // DROGA POWROTNA DLA PŁATNIKA. Bez niej jedynym sposobem na otwarcie
@@ -6773,7 +6731,11 @@
                 } else {
                     modeHint.textContent = mode === 'even'
                         ? 'Cała kwota dzieli się równo między uczestników i nikt niczego nie uzupełnia. Chcesz rozpisać paragon na pozycje? Przełącz na „Ze swoimi kosztami".'
-                        : 'Każdy stuka swoje pozycje i wpisuje koszty własne. To, czego nikt nie weźmie imiennie, i tak podzieli się po równo.';
+                        // OBIETNICA SPRZED BRAMY. Zdanie mówiło, że nieodklikane pozycje
+                        // „i tak podzielą się po równo" — a od wprowadzenia bramy NIE dzielą
+                        // się same: wiszą bez właściciela i blokują przelewy, dopóki płatnik
+                        // nie zdecyduje. Ekran obiecywał więc coś, czego aplikacja nie robi.
+                        : 'Każdy stuka swoje pozycje i wpisuje koszty własne. O tym, czego nikt nie weźmie imiennie, decyduje na końcu płatnik.';
                 }
             }
 
