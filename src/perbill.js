@@ -23,7 +23,7 @@
 // więc nie gasi tu niczego. Nie wolno jej ani ukryć, ani doliczyć na siłę do cudzego
 // rachunku: ląduje w osobnym bloku „Wpłaty bez przypisania" i wchodzi do linii
 // uzgadniającej, żeby Bilans i lista rachunków nie mówiły dwóch różnych rzeczy.
-import { computeBillDebts, toGrosze, billSettleGate } from './calc.js';
+import { computeBillDebts, toGrosze, billSettleGate, settlementCountsInLedger } from './calc.js';
 
 // Czas powstania rachunku/wpłaty w milisekundach. Dokumenty z Firestore niosą Timestamp,
 // testy — zwykłą liczbę, a świeżo zapisany dokument offline nie ma jeszcze czasu
@@ -95,6 +95,10 @@ export function billLedger(bills, settlements) {
 
   ordered.forEach((s) => {
     if (!s || !s.from || !s.to || s.from === s.to) return;
+    // Sporna i wycofana wpłata NIE gasi rachunku i NIE trafia do „bez przypisania" —
+    // dla księgi po prostu jej nie ma. Reguła stoi w `settlementCountsInLedger`,
+    // wspólna z `buildLedger`, żeby oba ekrany nie mówiły dwóch różnych rzeczy.
+    if (!settlementCountsInLedger(s)) return;
     const currency = s.currency || 'PLN';
     const amountG = toGrosze(s.amount || 0);
     if (amountG <= 0) return;

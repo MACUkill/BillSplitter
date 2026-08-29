@@ -553,6 +553,27 @@ function netDirected(directed) {
   return net;
 }
 
+// CZY WPŁATA LICZY SIĘ DO SALDA — jedno miejsce dla obu ksiąg (buildLedger tutaj
+// i billLedger w src/perbill.js). Rozjazd między nimi znaczyłby, że Bilans i zakładka
+// Rozliczeń mówią o tych samych pieniądzach dwie różne rzeczy.
+//
+// DWA STANY WYKLUCZAJĄ WPŁATĘ i oba znaczą dokładnie to samo: pieniędzy nie ma.
+//   `disputed`  — odbiorca szukał na koncie i nie znalazł („Nie widzę").
+//   `withdrawn` — nadawca sam wycofał zgłoszenie („Pomyłka, nie wysłałem").
+// W obu przypadkach dług MUSI wrócić na saldo, inaczej znaczek „nie znalazłem" nie
+// znaczyłby nic, a aplikacja twierdziłaby, że odbiorca ma pieniądze, których nie ma.
+//
+// Oba pola są OPCJONALNE. Wpłaty zapisane przed 2026-08-29 nie mają ich wcale, więc
+// czytają się dokładnie tak, jak dotąd — migracji nie ma i nie będzie.
+//
+// `confirmed` NIE JEST tu warunkiem i to jest celowe (patrz komentarz w billLedger):
+// dłużnik, który zgłosił wpłatę, ma mieć czyste saldo od razu, inaczej zapłaciłby
+// drugi raz. Potwierdzenie jest mechanizmem zaufania, nie warunkiem wejścia do księgi.
+export function settlementCountsInLedger(s) {
+  if (!s) return false;
+  return s.disputed !== true && s.withdrawn !== true;
+}
+
 // Ledger całej grupy: rachunki (udziały) MINUS wpłaty (rejestr spłat). Zwraca { [currency]: { directed, net } }:
 //   directed — krawędzie kierunkowe A→B z detalem (contributions: kind 'bill' | 'payment'),
 //   net      — znetowane pary (kto komu ile, jeden kierunek na parę).
@@ -576,6 +597,8 @@ export function buildLedger(bills, settlements) {
   });
   (settlements || []).forEach((s) => {
     if (!s || !s.from || !s.to || s.from === s.to) return;
+    // Sporna i wycofana wpłata NIE gasi długu — patrz `settlementCountsInLedger`.
+    if (!settlementCountsInLedger(s)) return;
     const cur = s.currency || 'PLN';
     const amountG = toGrosze(s.amount || 0);
     // wpłata from→to = krawędź odwrotna to→from (kredyt redukujący dług)
