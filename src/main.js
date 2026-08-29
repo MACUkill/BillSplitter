@@ -106,6 +106,9 @@
         // różne sposoby wydawania pieniędzy, a nie dwa powiększenia — i każdy z nich
         // potrzebuje INNYCH informacji na Bilansie, w Rozliczeniach i na Rachunkach.
         let settleContext = null; // { to, currency, billIds } — kontekst modala „Ureguluj"
+        // Która strona Rozliczeń jest na wierzchu: 'owe' (Płacisz) albo 'due' (Dostajesz).
+        // Stan jest ULOTNY i tak ma zostać — to wybór na teraz, nie ustawienie pokoju.
+        let settleSide = 'owe';
         let paymentEditMethods = [];
         let paymentEditMemberId = null;
         let newBillState = { name: '', type: null, participantIds: [] };
@@ -3195,6 +3198,329 @@
                 <div class="mt-1 pl-2 border-l border-ink/15">${fwd.map(c => line(c, false)).join('')}${rev.map(c => line(c, true)).join('')}</div></details>`;
         };
 
+        // === STAN WPŁATY ========================================================
+        //
+        // Sześć stanów, z których pięć powstało 2026-08-29 razem z odpowiedzią „nie widzę".
+        // Do tej pory wpłata miała jeden bit (`confirmed`) i dlatego na zgłoszony przelew
+        // dało się odpowiedzieć wyłącznie „tak" — kto nie widział pieniędzy na koncie,
+        // nie miał czym tego powiedzieć.
+        //
+        // Trzy nowe pola pisze KAŻDE INNA STRONA i to jest w nich najważniejsze:
+        //   `disputed`  — odbiorca: „szukałem i nie znalazłem"
+        //   `insisted`  — nadawca:  „wysłałem na pewno, sprawdź jeszcze raz"
+        //   `stalled`   — odbiorca: „nadal nie widzę" (druga odmowa, koniec ping-ponga)
+        //   `withdrawn` — nadawca:  „pomyłka, nie wysłałem"
+        //
+        // Reguły Firestore pilnują dokładnie tego przypisania, więc nikt nie może
+        // odpowiedzieć za drugą stronę. Wszystkie pola są opcjonalne — wpłaty sprzed
+        // tej zmiany nie mają żadnego i czytają się jak „pending"/"confirmed".
+        const SETTLE_PENDING = 'pending';       // zgłoszona, czeka na odbiorcę
+        const SETTLE_CONFIRMED = 'confirmed';   // domknięta
+        const SETTLE_DISPUTED = 'disputed';     // odbiorca nie znalazł, piłka u nadawcy
+        const SETTLE_INSISTED = 'insisted';     // nadawca podtrzymał, piłka u odbiorcy
+        const SETTLE_STALLED = 'stalled';       // dwie rundy bez skutku, aplikacja milczy
+        const SETTLE_WITHDRAWN = 'withdrawn';   // nadawca wycofał zgłoszenie
+
+        const settlementState = (s) => {
+            if (!s) return SETTLE_PENDING;
+            if (s.withdrawn === true) return SETTLE_WITHDRAWN;
+            if (s.disputed === true) {
+                if (s.stalled === true) return SETTLE_STALLED;
+                return s.insisted === true ? SETTLE_INSISTED : SETTLE_DISPUTED;
+            }
+            return s.confirmed === true ? SETTLE_CONFIRMED : SETTLE_PENDING;
+        };
+
+        // CZY TA SPRAWA CZEKA NA MÓJ RUCH — jedyne kryterium, po którym dzielimy stosy
+        // i jedyne, które zapala sygnał. Świeże zgłoszenie i podtrzymanie nadawcy czekają
+        // na odbiorcę; odmowa odbiorcy czeka na nadawcę; sprawa „stoi" nie czeka na nikogo.
+        const settlementWaitsFor = (s) => {
+            switch (settlementState(s)) {
+                case SETTLE_PENDING: return 'to';     // odbiorca
+                case SETTLE_INSISTED: return 'to';    // odbiorca, druga runda
+                case SETTLE_DISPUTED: return 'from';  // nadawca
+                default: return null;                 // confirmed / stalled / withdrawn
+            }
+        };
+
+        const mySettlements = (myId, strona) => (myId
+            ? latestSettlements.filter((s) => s && s[strona] === myId && s.from !== s.to)
+            : []);
+
+        // Wpłaty czekające na MOJĄ odpowiedź — to one zapalają odznakę i wiersz na Bilansie.
+        const settlementsAwaitingMe = (myId) =>
+            mySettlements(myId, 'to').filter((s) => settlementWaitsFor(s) === 'to');
+        // Sprawy sporne widziane z obu stron. Odbiorca widzi te, na które sam odpowiedział
+        // odmownie; nadawca te, których druga strona nie znalazła.
+        const disputesAsPayee = (myId) => mySettlements(myId, 'to')
+            .filter((s) => [SETTLE_DISPUTED, SETTLE_STALLED].includes(settlementState(s)));
+        const disputesAsDebtor = (myId) => mySettlements(myId, 'from')
+            .filter((s) => [SETTLE_DISPUTED, SETTLE_INSISTED, SETTLE_STALLED].includes(settlementState(s)));
+
+        const settlementAmountG = (s) => toGrosze((s && s.amount) || 0);
+        const settlementCurrency = (s) => (s && s.currency) || 'PLN';
+
+        // Data zgłoszenia stoi na KAŻDYM kafelku o wpłacie i to nie jest ozdoba: to jedyna
+        // rzecz, po której da się znaleźć przelew na wyciągu bankowym. Bez niej druga runda
+        // sporu jest tylko głośniejszym powtórzeniem pierwszej.
+        const tsDate = (t) => (t && typeof t.toDate === 'function') ? t.toDate() : null;
+        const stampLong = (t) => {
+            const d = tsDate(t);
+            if (!d) return '';
+            const dni = Math.round(
+                (new Date().setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 86400000,
+            );
+            const godzina = d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
+            if (dni === 0) return `dziś ${godzina}`;
+            if (dni === 1) return `wczoraj ${godzina}`;
+            const sameYear = d.getFullYear() === new Date().getFullYear();
+            return `${d.toLocaleDateString('pl-PL', sameYear
+                ? { day: 'numeric', month: 'long' }
+                : { day: 'numeric', month: 'long', year: 'numeric' })}, ${godzina}`;
+        };
+        const stampShort = (t) => {
+            const d = tsDate(t);
+            if (!d) return '';
+            const dni = Math.round(
+                (new Date().setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 86400000,
+            );
+            if (dni === 0) return 'dziś';
+            if (dni === 1) return 'wczoraj';
+            return d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
+        };
+
+        // === STOS SPRAW =========================================================
+        //
+        // Jedna nazwa, jedna sprawa na wierzchu, reszta pod spodem. Powód jest
+        // arytmetyczny: lista rośnie wraz z ekipą, a stos ma zawsze wysokość jednej
+        // karty — piętnaście osób i trzy osoby dają ten sam pierwszy ekran.
+        //
+        // NAZWY STOSÓW MÓWIĄ O STANIE, NIE O KATEGORII, i to jest cała różnica wobec
+        // pierwszej próby tego podziału. „Do potwierdzenia" obok „Dostajesz" czytało się
+        // jak dwie listy tego samego, bo drugie słowo nazywało kategorię i brzmiało,
+        // jakby obejmowało również pierwszą. „Do potwierdzenia" obok „Czekasz na przelew"
+        // pomylić się nie da: jedno znaczy „ktoś już przelał, sprawdź", drugie „jeszcze
+        // nie przelał, poganiaj".
+        //
+        // ODWROTNA GĘSTOŚĆ. Zwinięty stos jest BOGATSZY od rozwiniętej listy: gdy patrzysz
+        // na jedną sprawę, chcesz szczegółu; gdy skanujesz czterdzieści — gęstości.
+        const stackOpenKey = (name) => `billsplitter_stack_${name}_${currentGroupId || 'x'}`;
+        const stackIsOpen = (name, domyslnie) => {
+            try {
+                const v = localStorage.getItem(stackOpenKey(name));
+                return v === null ? domyslnie : v === '1';
+            } catch { return domyslnie; }
+        };
+        const setStackOpen = (name, open) => {
+            try { localStorage.setItem(stackOpenKey(name), open ? '1' : '0'); } catch (_) {}
+        };
+
+        // Blok stanu ma ZAWSZE trzy wiersze — patrz `.stack-state` w tailwind.css.
+        // Bez tego przyciski skakałyby pod palcem przy przeklikiwaniu stosu.
+        const stackLine = (lewo, prawo = '', klasa = '') =>
+            `<span class="stack-state-line ${klasa}"><span class="truncate">${lewo}</span>${prawo ? `<b class="flex-shrink-0">${prawo}</b>` : '<span></span>'}</span>`;
+        const stackState = (linie) =>
+            `<div class="stack-state">${[...linie, '', ''].slice(0, 3).map((l) => l || '<span class="stack-state-line"></span>').join('')}</div>`;
+
+        // `items` to pary { big, row } — ta sama sprawa w dwóch gęstościach.
+        const stackHtml = ({ name, title, tone = '', items, otwartyDomyslnie = false }) => {
+            if (!items || !items.length) return '';
+            const open = items.length > 1 && stackIsOpen(name, otwartyDomyslnie);
+            const head = `<div class="stack-head">
+                <span class="stack-title ${tone}">${escapeHtml(title)}<span class="stack-count">${items.length}</span></span>
+                ${items.length > 1
+                    ? `<button type="button" class="stack-toggle chip" data-stack="${escapeHtml(name)}" data-open="${open ? '1' : '0'}">${open ? 'Zwiń' : 'Rozwiń'}</button>`
+                    : ''}
+            </div>`;
+            if (open) return `${head}<div class="card p-3 mb-1">${items.map((x) => x.row).join('')}</div>`;
+            // Krawędzie rysujemy TYLKO wtedy, gdy pod spodem coś jest — przy jednej sprawie
+            // stos sam z siebie wygląda jak zwykła karta i nie trzeba na to żadnego progu.
+            const edges = items.length > 2
+                ? `<div class="stack-edge stack-edge-2"></div><div class="stack-edge stack-edge-1"></div>`
+                : items.length > 1 ? `<div class="stack-edge stack-edge-1"></div>` : '';
+            // Klasa składana W CAŁOŚCI przed wstawieniem — skaner Tailwinda znajduje
+            // wtedy każdą nazwę jako pełny tekst (patrz selectors.contract.test.js).
+            const topClass = `card stack-top${items[0].flagged || ''}`;
+            return `${head}<div class="stack">${edges}<div class="${topClass}">${items[0].big}</div></div>`;
+        };
+
+        // --- KARTY SPRAW ---------------------------------------------------------
+        //
+        // Każda karta odpowiada na jedno pytanie i niesie DOKŁADNIE te przyciski, które
+        // ten stan pozwala wykonać. Kolor przycisku mówi o RODZAJU czynności, nie o jej
+        // ważności na danej karcie: czerwień to „pieniądze wychodzą ode mnie", limonka
+        // „domykam sprawę pieniędzy", ciemny „czynność, która pieniędzy nie rusza"
+        // (stąd „Przypomnij" jest ciemny ZAWSZE, także gdy stoi sam na karcie).
+        const zacoBody = (s) => {
+            const nazwy = billNamesOfSettlement(s);
+            if (!nazwy.length) return '';
+            return `<div class="stack-zaco-body">${nazwy
+                .map((n) => `<span class="stack-state-line"><span class="truncate">${escapeHtml(n)}</span></span>`)
+                .join('')}</div>`;
+        };
+        // Blok stanu bywa rozwijalny („Za co"), ale rozwinięcie doklejamy POD nim, żeby
+        // sam blok został przy stałej wysokości.
+        const stackStateMaybeZaco = (s, linie) => {
+            const body = zacoBody(s);
+            if (!body) return stackState(linie);
+            return `<details class="stack-zaco">
+                <summary>${stackState(linie)}</summary>
+                ${body}
+            </details>`;
+        };
+
+        const settleAvatarBig = (id) => avatarHtml(memberName(id), id, 'w-12 h-12 text-lg');
+        const settleAvatarRow = (id) => avatarHtml(memberName(id), id, 'w-7 h-7 text-xs');
+
+        // Ile rachunków pokrywa ta wpłata — jedna fraza, używana w obu gęstościach.
+        const ileRachunkow = (s) => {
+            const n = billNamesOfSettlement(s).length;
+            return n ? `${n} ${plural(n, 'rachunek', 'rachunki', 'rachunków')}` : '';
+        };
+
+        // KARTA WPŁATY OCZAMI ODBIORCY. Cztery stany, cztery zestawy przycisków.
+        const payeeCard = (s) => {
+            const stan = settlementState(s);
+            const kwota = fmtMoney(settlementAmountG(s), settlementCurrency(s));
+            const kto = escapeHtml(memberName(s.from));
+            const zaCo = ileRachunkow(s);
+            const kiedy = stampLong(s.createdAt);
+            const id = escapeHtml(s.id);
+            const czeka = stan === SETTLE_PENDING || stan === SETTLE_INSISTED;
+
+            // IMIONA STOJĄ WYŁĄCZNIE W MIANOWNIKU — inaczej wychodzi „Masz przelew od Bartek?".
+            // Polskich imion nie da się odmienić regułą (Bartek→Bartka, Ania→Ani, Kuba→Kuby),
+            // a zgadywanie na końcówkach kaleczy część imion w każdej ekipie. Dlatego pytanie
+            // nie zawiera imienia w ogóle: kto pyta, mówi twarz i podpis pod nagłówkiem.
+            //
+            // Z tego samego powodu czasowniki są w formie „zgłosił/a": aplikacja nie zna płci
+            // i nie ma jak jej zgadnąć. Ta konwencja stoi tu od początku, w całej skrzynce.
+            const naglowek = stan === SETTLE_PENDING
+                ? 'Masz ten przelew?'
+                : stan === SETTLE_INSISTED
+                    ? 'Podtrzymuje: wysłał/a na pewno'
+                    : stan === SETTLE_STALLED
+                        ? 'Sprawa czeka na Was'
+                        : 'Sprawdza u siebie';
+            const podpis = `${kto}${kiedy ? ` · ${escapeHtml(kiedy)}` : ''}`;
+
+            // „Nie widzę", nie „Nie mam". To nie ta sama rzecz: „nie mam" orzeka o świecie
+            // i brzmi jak zarzut, a „nie widzę" mówi prawdę — szukałem i nie znalazłem.
+            // Dzięki temu wiadomość, która pójdzie do drugiej strony, nie zaczyna się
+            // od oskarżenia o kłamstwo.
+            const akcje = czeka
+                ? `<button class="settle-yes-btn btn btn-primary flex-grow" data-id="${id}"><i class="fas fa-check mr-1.5"></i>${stan === SETTLE_INSISTED ? 'Jednak mam' : 'Mam'}</button>
+                   <button class="settle-no-btn btn btn-ghost flex-grow" data-id="${id}"><i class="fas fa-xmark mr-1.5"></i>${stan === SETTLE_INSISTED ? 'Nadal nie widzę' : 'Nie widzę'}</button>`
+                : `<button class="settle-yes-btn btn btn-primary flex-grow" data-id="${id}"><i class="fas fa-check mr-1.5"></i>Jednak mam</button>
+                   <button class="nudge-btn btn btn-dark flex-shrink-0" data-nudge-to="${escapeHtml(s.from)}" data-amount-g="${settlementAmountG(s)}" data-currency="${escapeHtml(settlementCurrency(s))}">Przypomnij</button>`;
+
+            // Przy zgłoszeniu czekającym na odpowiedź blok stanu pokazuje RACHUNKI, bo to
+            // jest to, co człowiek sprawdza. Przy sporze — DATY, bo po nich szuka się
+            // przelewu na wyciągu i to jest jedyne narzędzie, jakie aplikacja ma do oddania.
+            const nazwy = billNamesOfSettlement(s);
+            const linie = czeka
+                ? (nazwy.length
+                    ? nazwy.slice(0, 3).map((n, i) => ((i === 2 && nazwy.length > 3)
+                        ? stackLine(`Za co · ${nazwy.length} rachunków <i class="fas fa-chevron-down stack-zaco-chevron ml-1"></i>`, '', 'is-more')
+                        : stackLine(escapeHtml(n), '')))
+                    : [stackLine('Wpłata bez przypisania do rachunków', '', 'is-lead')])
+                : stan === SETTLE_INSISTED
+                    ? [stackLine('Poszukaj jeszcze raz', '', 'is-lead'),
+                       stackLine('Zgłoszone', escapeHtml(kiedy)),
+                       stackLine('Kwota', escapeHtml(kwota))]
+                    : stan === SETTLE_STALLED
+                        ? [stackLine('Dogadajcie się poza aplikacją', '', 'is-lead'),
+                           stackLine('Zgłoszone', escapeHtml(kiedy)),
+                           stackLine('Nie znalazłeś dwa razy', '')]
+                        : [stackLine('Nie znalazłeś tego przelewu', '', 'is-lead'),
+                           stackLine('Zgłoszone', escapeHtml(kiedy)),
+                           stackLine(`${zaCo || 'bez rachunków'}`, '')];
+
+            const flagged = czeka ? '' : ' card-flagged';
+            // Chip TYLKO tam, gdzie nie powtarza nagłówka stosu. W stosie „Do wyjaśnienia"
+            // pigułka „Do wyjaśnienia" byłaby echem tytułu dwa centymetry wyżej.
+            const chip = stan === SETTLE_INSISTED
+                ? `<span class="chip text-info mt-1"><i class="fas fa-eye"></i>Sprawdź jeszcze raz</span>`
+                : '';
+
+            return {
+                flagged,
+                big: `<div class="flex items-center gap-3">
+                        ${settleAvatarBig(s.from)}
+                        <span class="flex-grow min-w-0"><span class="block font-display font-extrabold text-base leading-tight">${escapeHtml(naglowek)}</span><span class="block text-xs text-ink-3 truncate">${podpis}</span>${chip}</span>
+                        <span class="amount text-2xl flex-shrink-0">${escapeHtml(kwota)}</span>
+                      </div>
+                      ${stackStateMaybeZaco(s, linie)}
+                      <div class="mt-3 flex items-center gap-2">${akcje}</div>`,
+                row: `<div class="stack-row">
+                        ${settleAvatarRow(s.from)}
+                        <span class="flex-grow min-w-0">
+                            <span class="stack-row-name truncate block">${kto}</span>
+                            <span class="stack-row-sub"><span class="stack-dot ${czeka ? 'is-info' : 'is-gray'}"></span>${escapeHtml(stampShort(s.createdAt))}${zaCo ? ` · ${escapeHtml(zaCo)}` : ''}</span>
+                        </span>
+                        <span class="amount text-sm flex-shrink-0">${escapeHtml(kwota)}</span>
+                        <button class="settle-no-btn icon-btn-sm is-ghost" data-id="${id}" aria-label="Nie widzę"><i class="fas fa-xmark"></i></button>
+                        <button class="settle-yes-btn icon-btn-sm is-yes" data-id="${id}" aria-label="Mam"><i class="fas fa-check"></i></button>
+                      </div>`,
+            };
+        };
+
+        // KARTA WPŁATY OCZAMI NADAWCY — czyli tego, kto zgłosił przelew i usłyszał „nie widzę".
+        // Nazwy przycisków mówią o tym, co się NAPRAWDĘ stało: człowiek właśnie sprawdził
+        // w banku i odkrył albo że wysłał, albo że nie. „Wycofaj wpłatę" (poprzednia nazwa)
+        // było słownikiem bazy danych — nikt nie myśli o sobie „wycofuję wpłatę".
+        //
+        // „Pomyłka, nie wysłałem" MUSI prowadzić prosto do przelewu, i to nie jest wygoda:
+        // bez tego człowiek wyśle pieniądze teraz i stuknie „Wysłałem na pewno", zostawiając
+        // w mocy stare zgłoszenie ze starą datą. Odbiorca dostanie wtedy tę datę jako
+        // podpowiedź i będzie przeszukiwał wyciąg wokół dnia, w którym nic nie wyszło.
+        const debtorDisputeCard = (s) => {
+            const stan = settlementState(s);
+            const kwota = fmtMoney(settlementAmountG(s), settlementCurrency(s));
+            const kto = escapeHtml(memberName(s.to));
+            const id = escapeHtml(s.id);
+            const czekaNaMnie = stan === SETTLE_DISPUTED || stan === SETTLE_STALLED;
+
+            const naglowek = stan === SETTLE_INSISTED
+                ? `${kto} sprawdza jeszcze raz`
+                : stan === SETTLE_STALLED
+                    ? 'Sprawa czeka na Was'
+                    : `${kto} nie znalazł Twojego przelewu`;
+
+            const akcje = stan === SETTLE_INSISTED
+                ? `<button class="settle-oops-btn btn btn-ghost flex-grow" data-id="${id}">Pomyłka, nie wysłałem</button>`
+                : `<button class="settle-insist-btn btn btn-dark flex-grow" data-id="${id}">Wysłałem na pewno</button>
+                   <button class="settle-oops-btn btn btn-ghost flex-grow" data-id="${id}">Pomyłka, nie wysłałem</button>`;
+
+            const linie = [
+                stackLine(stan === SETTLE_INSISTED ? 'Czeka na jego odpowiedź' : 'Dług wrócił na saldo', '', 'is-lead'),
+                stackLine('Zgłoszone', escapeHtml(stampLong(s.createdAt))),
+                zacoBody(s)
+                    ? stackLine('Za co <i class="fas fa-chevron-down stack-zaco-chevron ml-1"></i>', '', 'is-more')
+                    : stackLine('Kwota', escapeHtml(kwota)),
+            ];
+
+            return {
+                flagged: ' card-flagged',
+                big: `<div class="flex items-center gap-3">
+                        ${settleAvatarBig(s.to)}
+                        <span class="flex-grow min-w-0"><span class="block font-display font-extrabold text-base leading-tight">${escapeHtml(naglowek)}</span><span class="chip mt-1"><i class="fas fa-eye"></i>${stan === SETTLE_STALLED ? 'Do wyjaśnienia' : 'Sprawdzacie'}</span></span>
+                        <span class="amount text-2xl text-owe flex-shrink-0">${escapeHtml(kwota)}</span>
+                      </div>
+                      ${stackStateMaybeZaco(s, linie)}
+                      <div class="mt-3 flex items-center gap-2">${akcje}</div>`,
+                row: `<div class="stack-row">
+                        ${settleAvatarRow(s.to)}
+                        <span class="flex-grow min-w-0">
+                            <span class="stack-row-name truncate block">${kto}</span>
+                            <span class="stack-row-sub"><span class="stack-dot is-gray"></span>${czekaNaMnie ? 'czeka na Ciebie' : 'sprawdza'} · ${escapeHtml(stampShort(s.createdAt))}</span>
+                        </span>
+                        <span class="amount text-sm text-owe flex-shrink-0">${escapeHtml(kwota)}</span>
+                        <button class="settle-oops-btn icon-btn-sm is-ghost" data-id="${id}" aria-label="Pomyłka, nie wysłałem"><i class="fas fa-rotate-left"></i></button>
+                      </div>`,
+            };
+        };
+
         // OTWARTE RACHUNKI ZWINIĘTE NA OSOBIE — podstawa ekranu Rozliczeń w trybie
         // rachunkowym. Zwraca wiersze `{ other, currency, sumaG, rachunki[] }`.
         //
@@ -3217,6 +3543,87 @@
             return [...map.values()].sort((a, b) => b.sumaG - a.sumaG);
         };
 
+        // KARTA OSOBY. Tu nie ma żadnej wpłaty do rozstrzygnięcia — jest człowiek i kwota.
+        // `grupa` to wiersz z `perBillPerPerson`: { other, currency, sumaG, rachunki[] }.
+        //
+        // Suma sporna dopisuje się CICHĄ LINIJKĄ, bez przycisku. Powód: gdy odbiorca
+        // odrzuci przelew, dług wraca na saldo, więc ta sama osoba stoi i w stosie spraw
+        // (z kwotą przelewu), i tutaj (z całym długiem). Bez tej linijki dwie liczby o tej
+        // samej osobie wyglądałyby na sprzeczne; z nią widać, że jedna jest częścią drugiej.
+        // Przycisku tam nie ma świadomie — sprawę załatwia się w stosie spraw, nie w dwóch
+        // miejscach naraz.
+        const personCard = (grupa, { kierunek, sporneG = 0 }) => {
+            // W planie minimalnym przelew nie należy do żadnego rachunku (idzie trasą,
+            // której nie stworzył ani jeden rachunek), więc lista „za co" jest pusta —
+            // i to jest prawda o tym trybie, a nie brak danych.
+            const ile = (grupa.rachunki || []).length;
+            const zaCo = ile ? `${ile} ${plural(ile, 'rachunek', 'rachunki', 'rachunków')}` : '';
+            const kwota = fmtMoney(grupa.sumaG, grupa.currency);
+            const kolor = kierunek === 'owe' ? 'text-owe' : 'text-due';
+            const imie = escapeHtml(memberName(grupa.other));
+            const other = escapeHtml(grupa.other);
+            const cur = escapeHtml(grupa.currency);
+
+            const linie = grupa.rachunki.slice(0, 3).map((r, i) => (
+                (i === 2 && ile > 3)
+                    ? stackLine(`…i ${ile - 2} więcej`, '', 'is-more')
+                    : stackLine(escapeHtml(r.billName || 'Rachunek'), escapeHtml(fmtMoney(r.openG, r.currency)))
+            ));
+
+            const crossref = sporneG > 0
+                ? `<span class="crossref"><i class="fas fa-eye"></i>Z tego ${escapeHtml(fmtMoney(sporneG, grupa.currency))} czeka na wyjaśnienie</span>`
+                : '';
+
+            // „Przypomnij" jest CIEMNY, nie limonkowy, i to jest reguła na całą aplikację:
+            // kolor mówi o rodzaju czynności, nie o jej wadze na danej karcie. Przypomnienie
+            // nie rusza pieniędzy — wysyła wiadomość do człowieka. Limonka zostaje dla tego,
+            // co domyka sprawę pieniędzy, czerwień dla tego, co je wyprowadza.
+            // W trybie rachunkowym „Ureguluj" prowadzi do WYBORU rachunków (bo kwota bierze
+            // się z zaznaczenia), w planie minimalnym wprost do okna wpłaty — tam przelew
+            // nie należy do żadnego rachunku, więc nie ma czego wybierać.
+            const uregulujBtn = ile
+                ? `<button class="pick-bills-btn btn btn-danger flex-grow" data-other="${other}" data-currency="${cur}">Ureguluj ${escapeHtml(kwota)}</button>`
+                : `<button class="settle-btn btn btn-danger flex-grow" data-to="${other}" data-amount-g="${grupa.sumaG}" data-currency="${cur}">Ureguluj ${escapeHtml(kwota)}</button>`;
+            const akcje = kierunek === 'owe'
+                ? uregulujBtn
+                : `<button class="nudge-btn btn btn-dark flex-grow" data-nudge-to="${other}" data-amount-g="${grupa.sumaG}" data-currency="${cur}"><i class="fas fa-bell mr-1.5"></i>Przypomnij</button>`;
+            const cichy = kierunek === 'owe' ? ''
+                : `<button type="button" class="receive-btn quiet-link mt-2" data-from="${other}" data-amount-g="${grupa.sumaG}" data-currency="${cur}">Oddał/a mi już</button>`;
+
+            const ikonaRow = kierunek === 'owe'
+                ? (ile
+                    ? `<button class="pick-bills-btn icon-btn-sm is-danger" data-other="${other}" data-currency="${cur}" aria-label="Ureguluj"><i class="fas fa-arrow-right"></i></button>`
+                    : `<button class="settle-btn icon-btn-sm is-danger" data-to="${other}" data-amount-g="${grupa.sumaG}" data-currency="${cur}" aria-label="Ureguluj"><i class="fas fa-arrow-right"></i></button>`)
+                : `<button class="nudge-btn icon-btn-sm is-dark" data-nudge-to="${other}" data-amount-g="${grupa.sumaG}" data-currency="${cur}" aria-label="Przypomnij"><i class="fas fa-bell"></i></button>`;
+
+            return {
+                flagged: '',
+                big: `<div class="flex items-center gap-3">
+                        ${avatarHtml(memberName(grupa.other), grupa.other, 'w-12 h-12 text-lg')}
+                        <span class="flex-grow min-w-0"><span class="block font-display font-extrabold text-base leading-tight truncate">${imie}</span>${zaCo ? `<span class="block text-xs text-ink-3">${escapeHtml(zaCo)}</span>` : ''}</span>
+                        <span class="amount text-2xl ${kolor} flex-shrink-0">${escapeHtml(kwota)}</span>
+                      </div>
+                      ${stackState(linie)}
+                      ${crossref}
+                      <div class="mt-3 flex items-center gap-2">${akcje}</div>
+                      ${cichy}`,
+                row: `<div class="stack-row">
+                        ${avatarHtml(memberName(grupa.other), grupa.other, 'w-7 h-7 text-xs')}
+                        <span class="flex-grow min-w-0">
+                            <span class="stack-row-name truncate block">${imie}</span>
+                            <span class="stack-row-sub"><span class="stack-dot is-mute"></span>${escapeHtml(zaCo || 'plan przelewów')}</span>
+                        </span>
+                        <span class="amount text-sm ${kolor} flex-shrink-0">${escapeHtml(kwota)}</span>
+                        ${ikonaRow}
+                      </div>`,
+            };
+        };
+
+        // Ile z długu tej osoby wisi w sprawie spornej — do cichej linijki na karcie osoby.
+        const sporneWobec = (spory, otherId, currency) => spory
+            .filter((s) => (s.from === otherId || s.to === otherId) && settlementCurrency(s) === currency)
+            .reduce((sum, s) => sum + settlementAmountG(s), 0);
+
         // Rozpisanie „za co" pod wierszem osoby: nazwa rachunku i kwota, jeden pod drugim.
         const perBillDetailHtml = (grupa) => `
             <details class="mt-1.5"><summary class="text-xs text-ink-2 cursor-pointer select-none">Za co</summary>
@@ -3234,65 +3641,251 @@
         // kolacje kazało odklikiwać trzy wiersze. Rachunki nie znikają — są pod „Za co"
         // i w arkuszu wyboru przy regulowaniu, gdzie da się odznaczyć te, których akurat
         // nie pokrywam.
-        const perBillSettlementsHtml = (myId) => {
-            const per = perBillNow();
-            const doOddania = perBillPerPerson(myBillsToPay(per, myId), 'debtor');
-            const doOdebrania = perBillPerPerson((per.rows || []).filter((r) => r.payer === myId && r.openG > 0), 'payer');
-            const cudze = (per.rows || []).filter((r) => r.payer !== myId && r.debtor !== myId && r.openG > 0);
-            const bez = myUnassigned(per, myId).sent;
-            let html = '';
+        // --- CZTERY ODPOWIEDZI NA ZGŁOSZONY PRZELEW -------------------------------
+        //
+        // Wszystkie cztery piszą do bazy OD RAZU (`fireWrite`, nie `await`), bo aplikacja
+        // działa offline, a obietnica z Firestore bez sieci nie rozwiązuje się nigdy.
+        // Odłożony zapis byłby tu gorszy niż niedoskonałe cofanie: zniknąłby przy
+        // zamknięciu aplikacji, a człowiek byłby przekonany, że odpowiedział.
+        //
+        // TARCIE JEST NIESYMETRYCZNE i to jest świadome. „Mam" to odpowiedź spodziewana
+        // i częsta — dostaje jedno stuknięcie i pasek „Cofnij". „Nie widzę" cofa pieniądze
+        // i budzi drugiego człowieka, więc zatrzymuje się na arkuszu — ale ten arkusz nie
+        // pyta „na pewno?", tylko podaje trzy fakty, których człowiek mógł nie mieć.
+        // Arkusz, który tylko pyta, jest czystym podatkiem; arkusz, który coś mówi, nie jest.
+        const settleDocRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
 
-            if (doOddania.length) {
-                html += `<p class="text-sm font-bold text-owe mb-2">Płacisz</p><div class="settle-rows space-y-2 mb-5">`;
-                doOddania.forEach((g) => {
-                    html += settleRowHtml(memberName(g.other), g.other,
-                        `<span class="amount text-2xl text-owe">${fmtMoney(g.sumaG, g.currency)}</span>`,
-                        `<button class="pick-bills-btn btn btn-danger flex-grow" data-other="${escapeHtml(g.other)}" data-currency="${escapeHtml(g.currency)}">Ureguluj</button>`,
-                        `<p class="text-xs text-ink-3 mt-2">${g.rachunki.length} ${plural(g.rachunki.length, 'rachunek', 'rachunki', 'rachunków')}</p>${perBillDetailHtml(g)}`);
-                });
-                html += `</div>`;
+        const confirmSettlement = (id) => {
+            const s = latestSettlements.find((x) => x.id === id);
+            if (!s) return;
+            // Potwierdzenie ZAWSZE gasi spór — inaczej wpłata zostałaby poza saldem
+            // mimo tego, że odbiorca właśnie powiedział „jednak mam".
+            fireWrite(updateDoc(settleDocRef(id), {
+                confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp(),
+                disputed: false, insisted: false, stalled: false,
+            }), 'Nie udało się potwierdzić wpłaty.');
+            showUndoToast(`Potwierdzono wpłatę od ${memberName(s.from)}`, () => {
+                fireWrite(updateDoc(settleDocRef(id), {
+                    confirmed: false, confirmedBy: null, confirmedAt: null,
+                }), 'Nie udało się cofnąć potwierdzenia.');
+            });
+        };
+
+        const disputeSettlement = (id) => {
+            const s = latestSettlements.find((x) => x.id === id);
+            if (!s) return;
+            // Druga odmowa KOŃCZY ping-ponga. Aplikacja nie rozstrzyga sporu, więc po
+            // dwóch rundach milknie: zostaje zapis obu wypowiedzi i dwa wyjścia, otwarte
+            // bezterminowo. Bez tego progu dwoje ludzi mogłoby się nawzajem budzić w kółko.
+            const drugaRunda = settlementState(s) === SETTLE_INSISTED;
+            fireWrite(updateDoc(settleDocRef(id), {
+                disputed: true, disputedBy: currentUser.uid, disputedAt: serverTimestamp(),
+                confirmed: false,
+                ...(drugaRunda ? { stalled: true } : {}),
+            }), 'Nie udało się zgłosić braku przelewu.');
+            showUndoToast('Zgłoszono brak przelewu', () => {
+                fireWrite(updateDoc(settleDocRef(id), {
+                    disputed: false, disputedBy: null, disputedAt: null,
+                    ...(drugaRunda ? { stalled: false } : {}),
+                }), 'Nie udało się cofnąć zgłoszenia.');
+            });
+        };
+
+        const insistSettlement = (id) => {
+            fireWrite(updateDoc(settleDocRef(id), {
+                insisted: true, insistedAt: serverTimestamp(),
+            }), 'Nie udało się wysłać prośby o sprawdzenie.');
+            showToast('Poprosiliśmy o sprawdzenie jeszcze raz.');
+        };
+
+        // „POMYŁKA, NIE WYSŁAŁEM" — i od razu droga do przelewu.
+        //
+        // To nie jest wygoda, tylko higiena daty. Bez tej ścieżki człowiek idzie do banku,
+        // odkrywa, że nie wysłał, WYSYŁA TERAZ i stuka „Wysłałem na pewno" — a wtedy stoi
+        // w mocy stare zgłoszenie ze starą datą. Odbiorca dostaje tę datę jako podpowiedź
+        // i przeszukuje wyciąg wokół dnia, w którym nic nie wyszło.
+        //
+        // KASUJEMY albo ZNACZAMY, zależnie od tego, czy ktoś już to widział. Świeża pomyłka,
+        // na którą nikt nie zdążył odpowiedzieć, znika bez śladu — tak działa „Usuń wpis"
+        // od 2026-08-15. Ale zgłoszenie, na które druga strona już odpowiedziała, zostaje
+        // w rejestrze jako „wycofana": rejestr ma być dowodem, a dowód z dziurą nim nie jest.
+        const withdrawSettlement = (id) => {
+            const s = latestSettlements.find((x) => x.id === id);
+            if (!s) return;
+            const ktosOdpowiedzial = s.disputed === true || s.confirmed === true;
+            const billIds = Array.isArray(s.billIds) ? s.billIds : (s.billId ? [s.billId] : []);
+            const other = s.to;
+            const currency = settlementCurrency(s);
+
+            if (ktosOdpowiedzial) {
+                fireWrite(updateDoc(settleDocRef(id), {
+                    withdrawn: true, withdrawnAt: serverTimestamp(),
+                }), 'Nie udało się wycofać zgłoszenia.');
+            } else {
+                fireWrite(deleteDoc(settleDocRef(id)), 'Nie udało się usunąć zgłoszenia.');
             }
+            showToast('Poprzednie zgłoszenie zniknęło.');
 
-            html += bez.length ? `<div class="mb-5">${unassignedBlockHtml(bez)}</div>` : '';
+            // Prowadzimy prosto tam, gdzie człowiek i tak zaraz pójdzie: do wyboru rachunków
+            // (tryb rachunkowy) albo do okna wpłaty (plan minimalny).
+            if (groupSettlementMode() === 'perBill' && billIds.length) openPickBills(other, currency);
+            else openSettleModal(other, settlementAmountG(s), currency, 'send', billIds.length ? billIds : null);
+        };
 
-            if (doOdebrania.length) {
-                html += `<p class="text-sm font-bold text-due mb-2">Dostajesz</p><div class="settle-rows space-y-2 mb-5">`;
-                doOdebrania.forEach((g) => {
-                    // Dzwonek liczy SUMĘ tej osoby, nie kwotę jednego rachunku. Przy wierszu
-                    // na rachunek wysyłał przypomnienie o części długu („przypominam o 45,00",
-                    // choć wisi 120,00) i wpadał w blokadę antyspamową przy drugim stuknięciu.
-                    html += settleRowHtml(memberName(g.other), g.other,
-                        `<span class="amount text-2xl text-due">${fmtMoney(g.sumaG, g.currency)}</span>`,
-                        `<button class="receive-btn btn btn-primary flex-grow" data-from="${escapeHtml(g.other)}" data-amount-g="${g.sumaG}" data-currency="${escapeHtml(g.currency)}">Mam wpłatę</button>
-                         <button class="nudge-btn btn btn-quiet flex-shrink-0" data-nudge-to="${escapeHtml(g.other)}" data-amount-g="${g.sumaG}" data-currency="${escapeHtml(g.currency)}" title="Przypomnij o długu"><i class="fas fa-bell"></i></button>`,
-                        `<p class="text-xs text-ink-3 mt-2">${g.rachunki.length} ${plural(g.rachunki.length, 'rachunek', 'rachunki', 'rachunków')}</p>${perBillDetailHtml(g)}`);
-                });
-                html += `</div>`;
+        // Arkusz trzech przyczyn. Trzyma id wpłaty, o którą pytamy — sam arkusz jest
+        // jeden na całą aplikację, bo pytanie jest zawsze to samo.
+        let pendingDisputeId = null;
+        const openNoTransferSheet = (id) => {
+            const s = latestSettlements.find((x) => x.id === id);
+            if (!s) return;
+            pendingDisputeId = id;
+            const lead = document.getElementById('no-transfer-lead');
+            if (lead) {
+                lead.textContent = `${memberName(s.from)} zgłosił przelew ${fmtMoney(settlementAmountG(s), settlementCurrency(s))}`
+                    + `${stampLong(s.createdAt) ? ` — ${stampLong(s.createdAt)}` : ''}. Zanim to zgłosisz, sprawdź trzy najczęstsze przyczyny:`;
             }
+            document.getElementById('no-transfer-modal').classList.add('active');
+        };
 
-            if (cudze.length) {
-                const grupy = perBillPerPerson(cudze, 'payer');
-                html += `<details class="mt-2"><summary class="settle-others-summary">
-                    <span>Jeszcze ${grupy.length} ${plural(grupy.length, 'zwrot', 'zwroty', 'zwrotów')} w grupie</span>
-                    <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
-                </summary><div class="settle-rows space-y-2 mt-2">`;
-                cudze.forEach((r) => {
-                    html += `<div class="block-quiet p-3.5">
-                        <div class="flex items-center justify-between gap-3">
+        // DWIE STRONY EKRANU ROZLICZEŃ, każda z własnymi nazwanymi stosami.
+        //
+        //   Płacisz    → „Do zapłaty" (LUDZIE)  + „Do wyjaśnienia" (SPRAWY)
+        //   Dostajesz  → „Do potwierdzenia" (SPRAWY) + „Do wyjaśnienia" (SPRAWY)
+        //                + „Czekasz na przelew" (LUDZIE)
+        //
+        // Stos trzyma ALBO ludzi, ALBO sprawy — nigdy jedno i drugie w tej samej kupce.
+        // Ludzie odpowiadają na pytanie „ile mi wisi", sprawy na „czy ten przelew doszedł".
+        // Wrzucenie ich razem było pierwszą wersją tego ekranu i właśnie dlatego nie dało
+        // się z niego dowiedzieć, że potwierdziło się już wszystko: stos z przypomnieniami
+        // nigdy się nie opróżnia.
+        //
+        // Zwraca `{ oweHtml, dueHtml, oweCount, dueCount, cudzeHtml }`.
+        const settlementSides = (myId) => {
+            const mode = groupSettlementMode();
+            const doPotwierdzenia = settlementsAwaitingMe(myId);
+            const sporyOdbiorcy = disputesAsPayee(myId);
+            const sporyDluznika = disputesAsDebtor(myId);
+
+            let ludzieOwe = [];
+            let ludzieDue = [];
+            let cudzeHtml = '';
+            let bezHtml = '';
+
+            if (mode === 'perBill') {
+                const per = perBillNow();
+                ludzieOwe = perBillPerPerson(myBillsToPay(per, myId), 'debtor');
+                ludzieDue = perBillPerPerson((per.rows || []).filter((r) => r.payer === myId && r.openG > 0), 'payer');
+                const bez = myUnassigned(per, myId).sent;
+                bezHtml = bez.length ? `<div class="mt-4">${unassignedBlockHtml(bez)}</div>` : '';
+
+                const cudze = (per.rows || []).filter((r) => r.payer !== myId && r.debtor !== myId && r.openG > 0);
+                if (cudze.length) {
+                    const grupy = perBillPerPerson(cudze, 'payer');
+                    cudzeHtml = `<details class="mt-4"><summary class="settle-others-summary">
+                        <span>Jeszcze ${grupy.length} ${plural(grupy.length, 'zwrot', 'zwroty', 'zwrotów')} w grupie</span>
+                        <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
+                    </summary><div class="settle-rows space-y-2 mt-2">${cudze.map((r) => `
+                        <div class="block-quiet p-3.5">
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="flex items-center min-w-0 gap-1.5 text-sm">
+                                    ${avatarHtml(memberName(r.debtor), r.debtor, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(r.debtor))}</span>
+                                    <i class="fas fa-arrow-right text-ink-3 text-xs mx-0.5"></i>
+                                    ${avatarHtml(memberName(r.payer), r.payer, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(r.payer))}</span>
+                                </span>
+                                <span class="amount text-ink-2 flex-shrink-0">${fmtMoney(r.openG, r.currency)}</span>
+                            </div>
+                            <p class="text-xs text-ink-3 mt-1">za „${escapeHtml(r.billName || 'rachunek')}"</p>
+                        </div>`).join('')}</div></details>`;
+                }
+            } else {
+                // Plan minimalny i „kto komu": przelew idzie trasą, której nie stworzył
+                // żaden pojedynczy rachunek, więc karta osoby nie ma listy „za co”.
+                const ledger = buildLedger(ledgerBills(), latestSettlements);
+                const cudzeWiersze = [];
+                Object.keys(ledger).forEach((cur) => {
+                    const transfers = simplifyDebts(ledger[cur].directed);
+                    transfers.forEach((t) => {
+                        const grupa = { currency: cur, sumaG: t.amountG, rachunki: [] };
+                        if (t.from === myId) ludzieOwe.push({ ...grupa, other: t.to });
+                        else if (t.to === myId) ludzieDue.push({ ...grupa, other: t.from });
+                        else cudzeWiersze.push({ ...t, currency: cur });
+                    });
+                });
+                ludzieOwe.sort((a, b) => b.sumaG - a.sumaG);
+                ludzieDue.sort((a, b) => b.sumaG - a.sumaG);
+                if (cudzeWiersze.length) {
+                    cudzeHtml = `<details class="mt-4"><summary class="settle-others-summary">
+                        <span>Jeszcze ${cudzeWiersze.length} ${plural(cudzeWiersze.length, 'przelew', 'przelewy', 'przelewów')} w grupie</span>
+                        <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
+                    </summary><div class="settle-rows space-y-2 mt-2">${cudzeWiersze.map((t) => `
+                        <div class="block-quiet p-3.5 flex items-center justify-between gap-3">
                             <span class="flex items-center min-w-0 gap-1.5 text-sm">
-                                ${avatarHtml(memberName(r.debtor), r.debtor, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(r.debtor))}</span>
+                                ${avatarHtml(memberName(t.from), t.from, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(t.from))}</span>
                                 <i class="fas fa-arrow-right text-ink-3 text-xs mx-0.5"></i>
-                                ${avatarHtml(memberName(r.payer), r.payer, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(r.payer))}</span>
+                                ${avatarHtml(memberName(t.to), t.to, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(t.to))}</span>
                             </span>
-                            <span class="amount text-ink-2 flex-shrink-0">${fmtMoney(r.openG, r.currency)}</span>
-                        </div>
-                        <p class="text-xs text-ink-3 mt-1">za „${escapeHtml(r.billName || 'rachunek')}"</p>
-                    </div>`;
-                });
-                html += `</div></details>`;
+                            <span class="amount text-ink-2 flex-shrink-0">${fmtMoney(t.amountG, t.currency)}</span>
+                        </div>`).join('')}</div></details>`;
+                }
             }
 
-            return html;
+            const kartyOwe = ludzieOwe.map((g) => personCard(g, {
+                kierunek: 'owe',
+                sporneG: sporneWobec(sporyDluznika, g.other, g.currency),
+            }));
+            const kartyDue = ludzieDue.map((g) => personCard(g, {
+                kierunek: 'due',
+                sporneG: sporneWobec(sporyOdbiorcy, g.other, g.currency),
+            }));
+
+            // KOLEJNOŚĆ W STOSIE: najpierw to, co czeka na MÓJ ruch i da się zrobić teraz.
+            // „Najstarsze pierwsze" byłoby tu złym kryterium — sprawa stojąca od tygodnia
+            // wygląda na pilną, ale „Jednak mam" wymaga tego, żeby pieniądze faktycznie
+            // doszły, a nie kolejnego stuknięcia. Świeże pytanie domyka się w sekundę.
+            const odNajstarszych = (a, b) => (tsDate(a.createdAt)?.getTime() || 0) - (tsDate(b.createdAt)?.getTime() || 0);
+            doPotwierdzenia.sort(odNajstarszych);
+            sporyOdbiorcy.sort(odNajstarszych);
+            sporyDluznika.sort(odNajstarszych);
+
+            // Stan pusty ma TYLKO „Do potwierdzenia" — brak przelewów do sprawdzenia jest
+            // dobrą wiadomością i człowiek ma się o niej dowiedzieć. Pozostałe stosy
+            // znikają bez śladu, bo pusta lista „do wyjaśnienia" byłaby zaproszeniem
+            // do szukania problemu, którego nie ma.
+            const potwierdzenia = doPotwierdzenia.length
+                ? stackHtml({
+                    name: 'confirm', title: 'Do potwierdzenia', tone: 'is-info',
+                    items: doPotwierdzenia.map(payeeCard),
+                })
+                : (kartyDue.length || sporyOdbiorcy.length
+                    ? `<div class="stack-done mb-4"><i class="fas fa-check"></i><span>Nie masz przelewów do potwierdzenia</span></div>`
+                    : '');
+
+            const oweHtml = [
+                stackHtml({
+                    name: 'pay', title: 'Do zapłaty', tone: 'is-owe', items: kartyOwe,
+                }),
+                sporyDluznika.length
+                    ? `<div class="mt-4">${stackHtml({ name: 'mydisputes', title: 'Do wyjaśnienia', items: sporyDluznika.map(debtorDisputeCard) })}</div>`
+                    : '',
+                bezHtml,
+            ].filter(Boolean).join('');
+
+            const dueHtml = [
+                potwierdzenia,
+                sporyOdbiorcy.length
+                    ? `<div class="mt-4">${stackHtml({ name: 'disputes', title: 'Do wyjaśnienia', items: sporyOdbiorcy.map(payeeCard) })}</div>`
+                    : '',
+                kartyDue.length
+                    ? `<div class="mt-4">${stackHtml({ name: 'waiting', title: 'Czekasz na przelew', tone: 'is-due', items: kartyDue })}</div>`
+                    : '',
+            ].filter(Boolean).join('');
+
+            return {
+                oweHtml, dueHtml, cudzeHtml,
+                oweCount: kartyOwe.length + sporyDluznika.length,
+                dueCount: doPotwierdzenia.length + sporyOdbiorcy.length + kartyDue.length,
+                akcjiCount: doPotwierdzenia.length,
+            };
         };
 
         // ARKUSZ „ZA CO PŁACISZ". Wybór rachunków, które pokrywa jeden przelew.
@@ -3389,86 +3982,47 @@
             // tłumaczyło też RZECZY NAJWAŻNIEJSZEJ: że w planie minimalnym można nie mieć
             // nic do zapłaty, mimo że w Bilansie stoi „jesteś winien dwóm osobom". Właściciel
             // zobaczył dokładnie tę sprzeczność i nie miał z czego jej wyjaśnić.
-            let html = '';
+            // DWIE STRONY EKRANU: „Płacisz" i „Dostajesz".
+            //
+            // Sam gest przesunięcia jest NIEWIDZIALNY, więc afordancję niesie przełącznik
+            // segmentowy — ten sam wzorzec, którym działa skrzynka („Dla Ciebie"/„Wszystko").
+            // Gest dokłada szybkość tym, którzy już wiedzą, ale nikt nie musi go odkryć,
+            // żeby dojść do drugiej strony.
+            //
+            // Podział idzie po KIERUNKU PIENIĘDZY, bo to jedyna granica, której nikt nie
+            // musi się uczyć: albo coś ode mnie wychodzi, albo do mnie wraca.
             const myOweCount = new Set(
                 Object.keys(ledger).flatMap((c) => ledger[c].net.filter((t) => t.from === myId).map((t) => t.to)),
             ).size;
-            if (groupMode === 'perBill') {
-                html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Każdy przelew idzie do osoby, która wyłożyła pieniądze.</b> Kwota przy imieniu to suma jej rachunków, których jeszcze nie oddałeś — rozwiniesz „Za co", a przy regulowaniu wybierzesz, które z nich pokrywasz.</p>`;
-                html += perBillSettlementsHtml(myId);
-            }
-            else currencies.forEach(cur => {
-                const transfers = simplifyDebts(ledger[cur].directed);
-                if (transfers.length === 0) return;
-                if (cur === currencies[0]) {
-                    html += `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Najkrótsza droga dla całej ekipy.</b> Część długów przechodzi bokiem, za to przelewów jest jak najmniej.${
-                        myOweCount
-                            ? ` Dlatego możesz tu nie mieć nic do zapłaty, choć para po parze jesteś winien ${myOweCount === 1 ? 'jednej osobie' : `${myOweCount} osobom`} — Twój dług spłaca ktoś, kto jest winien Tobie.`
-                            : ''
-                    } Plan przelicza się od nowa po każdym nowym rachunku.</p>`;
-                }
-                const mineOwe = transfers.filter(t => t.from === myId);
-                const mineGet = transfers.filter(t => t.to === myId);
-                const others = transfers.filter(t => t.from !== myId && t.to !== myId);
-                // Plan minimalny to zoptymalizowane przelewy bez odwzorowania 1:1 na rachunki,
-                // więc nie ma czego rozwijać pod kwotą — „za co" mieszka w trybie rachunkowym.
-                const detailOf = () => '';
+            const wstep = groupMode === 'perBill'
+                ? `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Każdy przelew idzie do osoby, która wyłożyła pieniądze.</b> Kwota przy imieniu to suma jej rachunków, których jeszcze nie oddałeś — a przy regulowaniu wybierzesz, które z nich pokrywasz.</p>`
+                : `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Najkrótsza droga dla całej ekipy.</b> Część długów przechodzi bokiem, za to przelewów jest jak najmniej.${
+                    myOweCount
+                        ? ` Dlatego możesz tu nie mieć nic do zapłaty, choć para po parze jesteś winien ${myOweCount === 1 ? 'jednej osobie' : `${myOweCount} osobom`} — Twój dług spłaca ktoś, kto jest winien Tobie.`
+                        : ''
+                } Plan przelicza się od nowa po każdym nowym rachunku.</p>`;
 
-                html += `<div>`;
-                if (currencies.length > 1) html += `<p class="chip mb-2">${cur}</p>`;
+            const strony = settlementSides(myId);
 
-                if (mineOwe.length) {
-                    html += `<p class="text-sm font-bold text-owe mb-2">Płacisz</p><div class="settle-rows space-y-2 mb-5">`;
-                    mineOwe.forEach(t => {
-                        html += settleRowHtml(memberName(t.to), t.to,
-                            `<span class="amount text-2xl text-owe">${fmtMoney(t.amountG, cur)}</span>`,
-                            `<button class="settle-btn btn btn-danger flex-grow" data-to="${t.to}" data-amount-g="${t.amountG}" data-currency="${cur}">Ureguluj</button>`,
-                            detailOf(t));
-                    });
-                    html += `</div>`;
-                }
-                if (mineGet.length) {
-                    html += `<p class="text-sm font-bold text-due mb-2">Dostajesz</p><div class="settle-rows space-y-2 mb-5">`;
-                    mineGet.forEach(t => {
-                        html += settleRowHtml(memberName(t.from), t.from,
-                            `<span class="amount text-2xl text-due">${fmtMoney(t.amountG, cur)}</span>`,
-                            `<button class="receive-btn btn btn-primary flex-grow" data-from="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}">Mam wpłatę</button>
-                             <button class="nudge-btn btn btn-quiet flex-shrink-0" data-nudge-to="${t.from}" data-amount-g="${t.amountG}" data-currency="${cur}" title="Przypomnij o długu"><i class="fas fa-bell"></i></button>`,
-                            detailOf(t));
-                    });
-                    html += `</div>`;
-                }
-                if (others.length) {
-                    // Cudze długi to informacja, nie zadanie — i to informacja dla
-                    // ciekawskich. Przy grupie 12–25 osób ta lista rosła szybciej niż
-                    // wszystko inne na ekranie i topiła dwie rzeczy, które naprawdę
-                    // dotyczą mnie: ile płacę i ile dostaję. Dlatego jest ZWINIĘTA.
-                    const othersLabel = others.length === 1
-                        ? 'Jeszcze jeden przelew w grupie'
-                        : `Jeszcze ${others.length} ${plural(others.length, 'przelew', 'przelewy', 'przelewów')} w grupie`;
-                    html += `<details class="mt-2"><summary class="settle-others-summary">
-                        <span>${othersLabel}</span>
-                        <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
-                    </summary><div class="settle-rows space-y-2 mt-2">`;
-                    others.forEach(t => {
-                        html += `<div class="block-quiet p-3.5">
-                            <div class="flex items-center justify-between gap-3">
-                                <span class="flex items-center min-w-0 gap-1.5 text-sm">
-                                    ${avatarHtml(memberName(t.from), t.from, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(t.from))}</span>
-                                    <i class="fas fa-arrow-right text-ink-3 text-xs mx-0.5"></i>
-                                    ${avatarHtml(memberName(t.to), t.to, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(t.to))}</span>
-                                </span>
-                                <span class="amount text-ink-2 flex-shrink-0">${fmtMoney(t.amountG, cur)}</span>
-                            </div>
-                            ${detailOf(t)}
-                        </div>`;
-                    });
-                    html += `</div></details>`;
-                }
-                html += `</div>`;
-            });
+            // STRONA PUSTA NIE JEST POWODEM, ŻEBY NA NIEJ LĄDOWAĆ. Kto nikomu nic nie jest
+            // winien, ma po wejściu zobaczyć to, co go dotyczy, a nie pustą półkę i domysł,
+            // że gdzieś obok jest druga.
+            if (settleSide === 'owe' && strony.oweCount === 0 && strony.dueCount > 0) settleSide = 'due';
+            if (settleSide === 'due' && strony.dueCount === 0 && strony.oweCount > 0) settleSide = 'owe';
 
-            container.innerHTML = html || nothing;
+            const seg = (id, napis, n) => `<button type="button" class="settle-side-btn seg-btn flex-1" data-side="${id}" aria-pressed="${settleSide === id ? 'true' : 'false'}">${napis}${n ? `<span class="seg-count">${n}</span>` : ''}</button>`;
+            const pusto = (tekst) => `<p class="text-ink-3 text-sm py-8 text-center">${tekst}</p>`;
+
+            container.innerHTML = `
+                ${wstep}
+                <div class="seg mb-3">${seg('owe', 'Płacisz', strony.oweCount)}${seg('due', 'Dostajesz', strony.dueCount)}</div>
+                <div id="settle-panes">
+                    <div class="settle-pane" data-side="owe"${settleSide === 'owe' ? '' : ' hidden'}>${strony.oweHtml || pusto('Nikomu nic nie jesteś winien.')}</div>
+                    <div class="settle-pane" data-side="due"${settleSide === 'due' ? '' : ' hidden'}>${strony.dueHtml || pusto('Nikt Ci nic nie jest winien.')}</div>
+                </div>
+                <div class="settle-dots" aria-hidden="true"><span class="${settleSide === 'owe' ? 'settle-dot is-on' : 'settle-dot'}"></span><span class="${settleSide === 'due' ? 'settle-dot is-on' : 'settle-dot'}"></span></div>
+                ${strony.cudzeHtml}
+            `;
 
             // Wejście do rejestru wpłat. Sam rejestr mieszka w osobnym arkuszu
             // pełnoekranowym — patrz `renderSettlementsLog`.
@@ -8359,8 +8913,58 @@
                 openSettleModal(pickBillsState.other, sumaG, pickBillsState.currency, 'send', wybrane.map((r) => r.billId));
             };
 
-            document.getElementById('settlements-list').addEventListener('click', async (e) => {
+            // GEST PRZESUNIĘCIA MIĘDZY STRONAMI. Nasłuch wisi na stałym rodzicu, bo same
+            // strony przerysowują się przy każdej zmianie w bazie.
+            //
+            // Próg poziomy MUSI być większy od pionowego, inaczej gest kradłby przewijanie
+            // listy — a na tym ekranie przewija się częściej, niż przełącza strony. Gest
+            // jest tu DODATKIEM do przełącznika, nie jedyną drogą: sam byłby niewidzialny.
+            const settlementsList = document.getElementById('settlements-list');
+            let swipeX = null, swipeY = null;
+            settlementsList.addEventListener('touchstart', (e) => {
+                if (e.touches.length !== 1) { swipeX = null; return; }
+                swipeX = e.touches[0].clientX;
+                swipeY = e.touches[0].clientY;
+            }, { passive: true });
+            settlementsList.addEventListener('touchend', (e) => {
+                if (swipeX === null || !e.changedTouches.length) return;
+                const dx = e.changedTouches[0].clientX - swipeX;
+                const dy = e.changedTouches[0].clientY - swipeY;
+                swipeX = null;
+                if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+                const nowa = dx < 0 ? 'due' : 'owe';
+                if (nowa === settleSide) return;
+                settleSide = nowa;
+                renderSettlements();
+            }, { passive: true });
+
+            settlementsList.addEventListener('click', async (e) => {
                 const settleRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
+
+                // Zwinięcie i rozwinięcie stosu. Wybór zapamiętujemy NA URZĄDZENIU, osobno
+                // dla każdego stosu — to sprawa tego telefonu i tego, jak ktoś lubi patrzeć,
+                // a nie fakt o pokoju.
+                const st = e.target.closest('.stack-toggle');
+                if (st) {
+                    setStackOpen(st.dataset.stack, st.dataset.open !== '1');
+                    renderSettlements();
+                    return;
+                }
+
+                const side = e.target.closest('.settle-side-btn');
+                if (side) { settleSide = side.dataset.side; renderSettlements(); return; }
+
+                const yes = e.target.closest('.settle-yes-btn');
+                if (yes) { confirmSettlement(yes.dataset.id); return; }
+
+                const no = e.target.closest('.settle-no-btn');
+                if (no) { openNoTransferSheet(no.dataset.id); return; }
+
+                const ins = e.target.closest('.settle-insist-btn');
+                if (ins) { insistSettlement(ins.dataset.id); return; }
+
+                const oops = e.target.closest('.settle-oops-btn');
+                if (oops) { withdrawSettlement(oops.dataset.id); return; }
 
                 const nb = e.target.closest('.nudge-btn');
                 if (nb) { openNudgeCompose(nb.dataset.nudgeTo, Number(nb.dataset.amountG), nb.dataset.currency); return; }
@@ -8371,28 +8975,23 @@
                 const b = e.target.closest('.settle-btn');
                 if (b) { openSettleModal(b.dataset.to, Number(b.dataset.amountG), b.dataset.currency, 'send'); return; }
 
+                // „ODDAŁ/A MI JUŻ" ROBI TERAZ JEDNĄ RZECZ.
+                //
+                // Do 2026-08-29 ten przycisk („Mam wpłatę") robił DWIE różne rzeczy pod tym
+                // samym napisem: jeśli dłużnik zgłosił wpłatę, po cichu ją potwierdzał,
+                // a jeśli nie — otwierał arkusz. Ten sam napis, dwa różne skutki.
+                //
+                // Zgłoszone przelewy mają dziś własny stos z pytaniem i dwiema odpowiedziami,
+                // więc ta rola stąd znika. Zostaje sytuacja, której nie obsługuje nic innego:
+                // ktoś dał gotówkę przy stole i nie otworzy aplikacji, żeby to odklikać.
+                // Wtedy odnotowuje to odbiorca, u siebie — i taka wpłata jest potwierdzona
+                // od razu, bo potwierdza ją osoba, która trzyma pieniądze.
+                //
+                // I dlatego TU pole kwoty zostaje: gotówka nie przychodzi w kwotach równych
+                // rachunkom, a aplikacja nie ma skąd znać tej liczby.
                 const rb = e.target.closest('.receive-btn');
                 if (rb) {
-                    const myMember = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === currentUser.uid);
-                    if (!myMember) return;
-                    const debtorId = rb.dataset.from;
-                    // jeśli dłużnik już zgłosił niepotwierdzoną wpłatę do mnie — POTWIERDŹ ją (zamiast tworzyć duplikat)
-                    const pending = latestSettlements.filter(s => s.from === debtorId && s.to === myMember.id && !s.confirmed);
-                    if (pending.length) {
-                        // `fireWrite`, nie `await`: offline obietnica z Firestore nie
-                        // rozwiązuje się NIGDY, a potwierdzenie jest zapisane lokalnie
-                        // i widać je od razu. Czekanie na sieć trzymało tu palec na
-                        // przycisku bez żadnej odpowiedzi — dokładnie tam, gdzie ludzie
-                        // tej aplikacji używają. Tryb rachunkowy mnoży te potwierdzenia,
-                        // więc kosztuje to teraz więcej niż wcześniej.
-                        fireWrite(
-                            Promise.all(pending.map(s => updateDoc(settleRef(s.id), { confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp() }))),
-                            'Nie udało się potwierdzić wpłaty.',
-                        );
-                        showToast(pending.length === 1 ? 'Potwierdzono wpłatę.' : 'Potwierdzono wpłaty.');
-                    } else {
-                        openSettleModal(debtorId, Number(rb.dataset.amountG), rb.dataset.currency, 'receive');
-                    }
+                    openSettleModal(rb.dataset.from, Number(rb.dataset.amountG), rb.dataset.currency, 'receive');
                     return;
                 }
 
@@ -8435,6 +9034,18 @@
                     });
                 }
             });
+            // ARKUSZ TRZECH PRZYCZYN. Droga główna to „Jeszcze sprawdzę" — dlatego ma
+            // limonkę, a odpowiedź przecząca sam obrys.
+            const noTransferModal = document.getElementById('no-transfer-modal');
+            const zamknijNoTransfer = () => { noTransferModal.classList.remove('active'); pendingDisputeId = null; };
+            document.getElementById('close-no-transfer').onclick = zamknijNoTransfer;
+            document.getElementById('no-transfer-cancel').onclick = zamknijNoTransfer;
+            document.getElementById('no-transfer-confirm').onclick = () => {
+                const id = pendingDisputeId;
+                zamknijNoTransfer();
+                if (id) disputeSettlement(id);
+            };
+
             const settleModal = document.getElementById('settle-modal');
             document.getElementById('close-settle-modal').onclick = () => settleModal.classList.remove('active');
             settleModal.onclick = (e) => { if (e.target === settleModal) settleModal.classList.remove('active'); };

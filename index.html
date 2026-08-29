@@ -1374,6 +1374,36 @@ the verdict, and DESIGN.md
 
     <!-- URUGULUJ — moment, w którym pieniądze wracają. Kwota stoi tu nominałem,
          bo to ona jest przepisywana do aplikacji bankowej. -->
+    <!-- NIE WIDZĘ PRZELEWU — jedyny arkusz, który zatrzymuje odpowiedź, i jedyny,
+         który na to zasługuje. Nie pyta „na pewno?" (to byłby czysty podatek od
+         każdego stuknięcia), tylko podaje TRZY FAKTY, których człowiek mógł nie mieć.
+         To jest ostatnie miejsce, w którym da się zatrzymać fałszywy alarm, zanim
+         dotrze do drugiej osoby — a brak przelewu to najczęściej nie kłamstwo,
+         tylko pomyłka w szukaniu. Drogą główną jest „Jeszcze sprawdzę". -->
+    <div id="no-transfer-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="sheet w-full max-w-md">
+            <div class="sheet-head">
+                <div class="sheet-grip" aria-hidden="true"></div>
+                <div class="sheet-head-row">
+                    <h3 class="sheet-title">Nie widzisz przelewu?</h3>
+                    <button id="close-no-transfer" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
+                </div>
+            </div>
+            <div class="sheet-body">
+                <p id="no-transfer-lead" class="text-sm text-ink-2 mb-3"></p>
+                <div class="block-quiet p-4 space-y-2.5">
+                    <p class="text-sm"><b>Przelew między bankami</b> idzie nawet do następnego dnia roboczego.</p>
+                    <p class="text-sm"><b>BLIK na telefon</b> bywa widoczny pod pełnym imieniem i nazwiskiem.</p>
+                    <p class="text-sm"><b>Sprawdź to konto</b>, którego numer podałeś w aplikacji.</p>
+                </div>
+            </div>
+            <div class="sheet-foot flex items-center gap-2">
+                <button id="no-transfer-cancel" class="btn btn-primary flex-grow">Jeszcze sprawdzę</button>
+                <button id="no-transfer-confirm" class="btn btn-ghost flex-grow">Nie widzę go</button>
+            </div>
+        </div>
+    </div>
+
     <div id="settle-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
         <div class="sheet w-full max-w-md">
             <div class="sheet-head">
