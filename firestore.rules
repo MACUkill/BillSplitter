@@ -55,11 +55,38 @@ service cloud.firestore {
         // zalogowany — także dłużnik na własnej wpłacie — czyli znaczek „potwierdzona"
         // nie znaczył nic. W aplikacji o cudzych pieniądzach to podważa jedyny mechanizm
         // zaufania, jaki tu jest.
+        //
+        // KAŻDĄ ODPOWIEDŹ PISZE INNA STRONA i to jest tu najważniejsze. Odpowiedź na
+        // zgłoszony przelew ma dwa kierunki („mam" / „nie widzę") i dwie rundy, więc bez
+        // rozdziału ról nadawca mógłby sam sobie potwierdzić wpłatę albo zdjąć cudzy spór —
+        // czyli znaczek znów nie znaczyłby nic.
+        //
+        //   ODBIORCA (`to`)  — confirmed / disputed / stalled: to on trzyma konto i tylko
+        //                      on może powiedzieć, czy pieniądze doszły.
+        //   NADAWCA (`from`) — insisted / withdrawn: to on wie, czy przelew wyszedł.
+        //
+        // Kwoty, stron i rachunków nie rusza NIKT — te pola nie są tu wymienione, więc
+        // każda próba ich zmiany odbija się o `hasOnly`.
         allow update: if request.auth != null
                       && request.resource.data.diff(resource.data)
                             .affectedKeys()
-                            .hasOnly(['confirmed', 'confirmedBy', 'confirmedAt'])
-                      && memberOwner(appId, groupId, resource.data.to) == request.auth.uid;
+                            .hasOnly(['confirmed', 'confirmedBy', 'confirmedAt',
+                                      'disputed', 'disputedBy', 'disputedAt', 'stalled'])
+                      && memberOwner(appId, groupId, resource.data.to) == request.auth.uid
+                      // POTWIERDZONA I SPORNA NARAZ TO STAN NIEMOŻLIWY. Saldo czyta oba pola
+                      // (`settlementCountsInLedger`), więc taki dokument znaczyłby dwie
+                      // sprzeczne rzeczy o tych samych pieniądzach. Interfejs zawsze gasi
+                      // jedno przy zapalaniu drugiego — reguła pilnuje tego samego, żeby
+                      // zapis z konsoli nie mógł stworzyć czegoś, czego ekran nie umie pokazać.
+                      && !(request.resource.data.get('confirmed', false) == true
+                           && request.resource.data.get('disputed', false) == true);
+        // Nadawca odpowiada na spór: podtrzymuje zgłoszenie albo je wycofuje. Nie może
+        // przy tym ruszyć ani potwierdzenia, ani cudzej odmowy — to nie jego pola.
+        allow update: if request.auth != null
+                      && request.resource.data.diff(resource.data)
+                            .affectedKeys()
+                            .hasOnly(['insisted', 'insistedAt', 'withdrawn', 'withdrawnAt'])
+                      && memberOwner(appId, groupId, resource.data.from) == request.auth.uid;
         // Usunąć wpis może TYLKO jego autor i TYLKO dopóki odbiorca go nie potwierdził
         // (decyzja właściciela 2026-08-15). To jest naprawa własnej pomyłki sprzed minuty,
         // a nie kasowanie historii: po potwierdzeniu wpłata jest dowodem dla obu stron

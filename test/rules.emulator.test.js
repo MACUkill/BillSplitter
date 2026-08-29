@@ -154,6 +154,72 @@ describe('reguły Firestore — rejestr wpłat (model wpłat)', () => {
     }));
     await assertFails(deleteDoc(doc(author, s('s-conf'))));
   });
+
+  // --- ODPOWIEDŹ „NIE WIDZĘ" I DROGA POWROTNA (2026-08-29) -------------------
+  //
+  // Każdą odpowiedź pisze INNA STRONA i to jest tu cała rzecz do pilnowania.
+  // Bez rozdziału ról nadawca mógłby sam sobie potwierdzić wpłatę albo zdjąć cudzy
+  // spór — czyli znaczek znów nie znaczyłby nic. W bazie zapisywalnej linkiem to nie
+  // jest teoria: dokument da się ruszyć z konsoli.
+  const sporna = async (id) => {
+    const author = env.authenticatedContext('user-a').firestore();
+    await assertSucceeds(setDoc(doc(author, s(id)), {
+      from: 'm1', to: 'm2', amount: 20, currency: 'PLN', createdBy: 'user-a', confirmed: false,
+    }));
+  };
+
+  it('ODBIORCA może zgłosić brak przelewu', async () => {
+    await sporna('s-disp');
+    const odbiorca = env.authenticatedContext('user-b').firestore();
+    await assertSucceeds(updateDoc(doc(odbiorca, s('s-disp')), {
+      disputed: true, disputedBy: 'user-b',
+    }));
+  });
+
+  it('NADAWCA nie może zgłosić braku przelewu na własnej wpłacie', async () => {
+    await sporna('s-disp-self');
+    const nadawca = env.authenticatedContext('user-a').firestore();
+    await assertFails(updateDoc(doc(nadawca, s('s-disp-self')), { disputed: true }));
+  });
+
+  it('NADAWCA może podtrzymać zgłoszenie i je wycofać', async () => {
+    await sporna('s-insist');
+    const nadawca = env.authenticatedContext('user-a').firestore();
+    await assertSucceeds(updateDoc(doc(nadawca, s('s-insist')), { insisted: true }));
+    await assertSucceeds(updateDoc(doc(nadawca, s('s-insist')), { withdrawn: true }));
+  });
+
+  it('ODBIORCA nie może podtrzymać ani wycofać cudzego zgłoszenia', async () => {
+    await sporna('s-insist-nope');
+    const odbiorca = env.authenticatedContext('user-b').firestore();
+    await assertFails(updateDoc(doc(odbiorca, s('s-insist-nope')), { insisted: true }));
+    await assertFails(updateDoc(doc(odbiorca, s('s-insist-nope')), { withdrawn: true }));
+  });
+
+  it('POTWIERDZONA I SPORNA NARAZ to stan niemożliwy', async () => {
+    // Saldo czyta oba pola, więc taki dokument znaczyłby dwie sprzeczne rzeczy
+    // o tych samych pieniądzach. Ekran nigdy tego nie zapisze — reguła pilnuje,
+    // żeby nie dało się tego zrobić z boku.
+    await sporna('s-oba');
+    const odbiorca = env.authenticatedContext('user-b').firestore();
+    await assertFails(updateDoc(doc(odbiorca, s('s-oba')), { confirmed: true, disputed: true }));
+  });
+
+  it('przy sporze nadal nie da się ruszyć kwoty ani stron', async () => {
+    await sporna('s-kwota');
+    const odbiorca = env.authenticatedContext('user-b').firestore();
+    await assertFails(updateDoc(doc(odbiorca, s('s-kwota')), { disputed: true, amount: 999 }));
+    const nadawca = env.authenticatedContext('user-a').firestore();
+    await assertFails(updateDoc(doc(nadawca, s('s-kwota')), { insisted: true, to: 'hacker' }));
+  });
+
+  it('OBCY (ani nadawca, ani odbiorca) nie ruszy żadnego z tych pól', async () => {
+    await sporna('s-obcy');
+    const obcy = env.authenticatedContext('user-c').firestore();
+    await assertFails(updateDoc(doc(obcy, s('s-obcy')), { disputed: true }));
+    await assertFails(updateDoc(doc(obcy, s('s-obcy')), { insisted: true }));
+    await assertFails(updateDoc(doc(obcy, s('s-obcy')), { confirmed: true }));
+  });
 });
 
 describe('reguły Firestore — przypomnienia (nudge-windykator)', () => {
