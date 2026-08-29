@@ -61,6 +61,20 @@
    gdy pokażą się naraz, drugi stoi już pod wcięciem i dodanie mu tego samego odstępu
    zrobiłoby z niego pasek grubszy o wysokość zegarka. CSS nie umie wskazać „pierwszego
    widocznego", ale kolejność jest znana i stała: „nowa wersja" stoi nad „offline". */
+/* Zasłona pod paskiem stanu — pełne uzasadnienie przy `#status-scrim` w index.html.
+   Wysokość bierze się WYŁĄCZNIE z wcięcia: w przeglądarce z widocznym paskiem adresu
+   wcięcie wynosi zero i zasłony po prostu nie ma, bo nie ma czego zasłaniać. */
+#status-scrim {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top, 0px);
+  z-index: 45;
+  background-color: rgb(var(--bg));
+  pointer-events: none;
+}
+
 #update-banner,
 #offline-banner {
   padding-top: calc(0.5rem + env(safe-area-inset-top));
@@ -525,15 +539,22 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
 
   /* Okrągły przycisk-ikona w zwięzłym wierszu stosu. Ten sam podział znaczeń,
      co przy dużych przyciskach: limonka domyka, obrys zaprzecza, szary jest cichy. */
+  /* 44 px, nie 32 (zgłoszenie właściciela 2026-08-29: „przyciski przy rozwiniętej liście
+     są ciut za małe"). Rozwinięty stos to jedyne miejsce, gdzie „Mam" i „Nie widzę" nie
+     mają przy sobie napisu — czyli jedyne, gdzie cała odpowiedź na cudzy przelew mieści
+     się w kółku. Przy 32 px to było poniżej progu trafienia jednym kciukiem, a pomyłka
+     kosztuje tu potwierdzenie nie tej wpłaty, co trzeba. Wiersz rośnie o te 12 px i to
+     jest cena, którą właściciel wprost zgodził się zapłacić. 44 px to też próg, którego
+     pilnuje tools/audit-layout.mjs — ten sam dla całej aplikacji. */
   .icon-btn-sm {
     flex-shrink: 0;
-    width: 2rem;
-    height: 2rem;
+    width: 2.75rem;
+    height: 2.75rem;
     border-radius: 999px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.8125rem;
+    font-size: 0.9375rem;
     border: none;
     -webkit-tap-highlight-color: transparent;
     transition: transform 130ms cubic-bezier(0.2, 0, 0, 1);
@@ -755,6 +776,38 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
     background-color: rgb(var(--brand-ink) / 0.10);
     color: rgb(var(--brand-ink));
   }
+
+  /* ZNAK ZAPYTANIA PRZY NAGŁÓWKU. Wyjaśnienie, które trzeba przeczytać raz w życiu,
+     nie ma prawa zajmować trzech wierszy przy każdym wejściu na ekran — ale musi być
+     osiągalne jednym stuknięciem i widoczne jako coś, co się otwiera. Stąd kółko, nie
+     napis: napis „Jak to działa?" konkurowałby z nagłówkiem, przy którym stoi.
+     Pole dotyku sięga 44 px przez `::after`, więc kółko może być małe, a trafia się
+     w nie palcem — ta sama sztuczka, co przy `.quiet-link`. */
+  .hint-dot {
+    position: relative;
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: none;
+    background-color: rgb(var(--ink) / 0.10);
+    color: rgb(var(--ink-2));
+    font-size: 0.625rem;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .hint-dot::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 2.75rem;
+    height: 2.75rem;
+    transform: translate(-50%, -50%);
+  }
+  .hint-dot:active { background-color: rgb(var(--ink) / 0.18); }
 
   .chip {
     display: inline-flex;
@@ -1314,6 +1367,91 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
   }
   .filter-pills::-webkit-scrollbar { display: none; }
 
+  /* --- WIERSZ LISTY RACHUNKÓW ------------------------------------------------
+     JEDNA SIATKA NA WSZYSTKIE STANY. Wysokość i położenie każdej rzeczy w wierszu ma
+     nie zależeć od tego, co w nim akurat stoi — inaczej lista, po której się skanuje
+     wzrokiem, faluje przy każdym przewinięciu (zgłoszenie właściciela 2026-08-29).
+     Nazwa: JEDEN wiersz z wielokropkiem. Wcześniej zawijała się bez ograniczeń „żeby
+     nie ucinać nazw" — ale wtedy konkurowała o szerokość z kwotą po prawej, więc i tak
+     się łamała, tylko na dwa albo trzy wiersze. Teraz ma całą szerokość kolumny (znaczek
+     stanu zszedł piętro niżej), więc ucięcie zdarza się rzadziej niż zawijanie kiedyś. */
+  .bill-row { display: flex; align-items: center; gap: 0.75rem; min-height: 3.25rem; }
+  .bill-row-name {
+    font-weight: 700;
+    font-size: 1.0625rem;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .bill-row-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.375rem;
+    min-height: 1.5rem;
+  }
+  /* Znaczek i godzina trzymają się razem po lewej; nadmiar ucina się na znaczku,
+     bo godzina jest krótka i stała, a znaczek bywa długi („2 przelewy do sprawdzenia"). */
+  .bill-row-state { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+  .bill-row-state .chip { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; }
+
+  /* SZUKANIE W REJESTRZE. Lupa siedzi W POLU, nie obok niego: rejestr otwiera się po to,
+     żeby czegoś poszukać, więc pole stoi otwarte od razu i nie chowa się pod przyciskiem
+     (inaczej niż lista pozycji paragonu, gdzie szukanie jest wyjątkiem, nie regułą). */
+  .log-search { position: relative; }
+  .log-search-icon {
+    position: absolute;
+    left: 0.9375rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.8125rem;
+    color: rgb(var(--ink-3));
+    pointer-events: none;
+  }
+  .log-search-input { padding-left: 2.5rem; padding-right: 2.75rem; }
+  /* Krzyżyk przeglądarki w polu `type=search` wygląda w każdej z nich inaczej i na iOS
+     nie ma go wcale — stąd własny. */
+  .log-search-input::-webkit-search-cancel-button { display: none; }
+  .log-search-clear {
+    position: absolute;
+    right: 0.375rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: rgb(var(--ink-3));
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* LICZBA W PIGUŁCE FILTRA. Nie nawias w napisie, tylko własny znak: przy pigułce
+     zaznaczonej napis robi się ciemny i nawias ginął w nim razem z liczbą. */
+  .filter-pill-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.125rem;
+    height: 1.125rem;
+    margin-left: 0.375rem;
+    padding: 0 0.3125rem;
+    border-radius: 999px;
+    font-size: 0.6875rem;
+    font-weight: 800;
+    background-color: rgb(var(--ink) / 0.10);
+    color: rgb(var(--ink-2));
+  }
+  .filter-pill-count:empty { display: none; }
+  .filter-pill[aria-pressed='true'] .filter-pill-count {
+    background-color: rgb(var(--surface) / 0.22);
+    color: inherit;
+  }
+
   .filter-pill {
     flex-shrink: 0;
     min-height: 2.75rem;
@@ -1452,22 +1590,56 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
   .stack-title.is-due { color: rgb(var(--due)); }
   .stack-title.is-due .stack-count { background-color: rgb(var(--due)); color: #fff; }
 
-  .stack { position: relative; padding-bottom: 1rem; }
-  .stack-top { position: relative; z-index: 3; }
-  /* KRAWĘDZIE MAJĄ WŁASNY OBRYS, nie tylko cień. W ciemnym motywie karta (#181A20)
-     na tle (#0C0D11) odcina się na tyle słabo, że sam cień gubił cały efekt stosu —
-     a obrys jest widoczny na każdym tle, bo nie zależy od kontrastu powierzchni. */
+  /* POJEMNIK, KTÓRY ZMIENIA WYSOKOŚĆ. Trzyma albo zwinięty stos, albo rozwiniętą listę,
+     a przejście między nimi jest animowaną zmianą jego wysokości (patrz `applyStackMorph`
+     w main.js). `overflow` nakładamy TYLKO na czas ruchu — na stałe przycinałby cienie kart.
+     Ta pułapka wraca w tym pliku po raz trzeci, więc dla porządku: cień wychodzi POZA
+     obrys elementu, a `overflow: hidden` na rodzicu obcina go bez śladu w konsoli. */
+  .stack-body.is-morphing { overflow: hidden; }
+  .stack-body.is-morphing > * { animation: stack-swap 300ms cubic-bezier(0.2, 0, 0, 1) both; }
+
+  @keyframes stack-swap {
+    0%   { opacity: 0.25; transform: scale(0.985); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+
+  .stack { position: relative; padding-bottom: 1.125rem; }
+  /* ODSTĘP WEWNĘTRZNY NALEŻY DO KLASY, NIE DO ZNACZNIKÓW. `.card` sam z siebie nie ma
+     żadnego — niesie wyłącznie tło, promień i cień — a wierzch stosu składa się
+     w `stackHtml` bez klas Tailwinda. Przez to treść siadała wprost na krawędzi: kwota
+     dotykała brzegu karty, przyciski rozlewały się na całą szerokość kolumny i cały stos
+     wyglądał na rozwalony (zgłoszenie właściciela 2026-08-29). Odstęp stoi tutaj, bo
+     `.stack-top` jest jedynym miejscem, w którym ta karta powstaje. */
+  .stack-top { position: relative; z-index: 3; padding: 1rem; }
+  /* KRAWĘDZIE STOSU — PEŁNE KARTY, NIE DOKLEJONE PASKI (przeprojektowane 2026-08-29
+     po zgłoszeniu właściciela: „jakoś brzydko wygląda, gdy przelewy są zwinięte w stos").
+     Poprzednia wersja rysowała pod kartą dwa prostokąty z twardą kreską dookoła i płaskim
+     wypełnieniem. Kreska na dole karty czytała się jak obrys tabelki, a nie jak przedmiot
+     leżący niżej — bo w tym systemie NIC nie ma obrysu; głębokość niosą wyłącznie cień
+     i szerokość.
+     Teraz to są PEŁNE prostokąty w kolorze karty, zwężane `scaleX` i przesuwane w dół,
+     każdy głębszy bledszy — czyli dokładnie to, co widać, patrząc na stos kartek z góry.
+     `scaleX` zamiast lewego i prawego odstępu ma dwa powody: zwężenie jest proporcjonalne
+     do szerokości ekranu, a przy zwijaniu i rozwijaniu da się je animować bez przeliczania
+     układu.
+     W ciemnym motywie karta na tle odcina się słabo, więc głębsze warstwy dostają jeszcze
+     wewnętrzną kreskę — nie jako ozdobę, tylko dlatego, że sam cień tam nie wystarcza. */
   .stack-edge {
     position: absolute;
-    height: 1.375rem;
-    border-radius: 0 0 theme('borderRadius.card') theme('borderRadius.card');
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2rem;
+    border-radius: theme('borderRadius.card');
     background-color: rgb(var(--surface));
-    border: 1px solid rgb(var(--ink) / 0.14);
-    border-top: none;
+    transform-origin: 50% 100%;
+    box-shadow: 0 1px 2px rgb(var(--shadow) / 0.05), 0 6px 16px rgb(var(--shadow) / 0.07);
   }
-  :root[data-theme='dark'] .stack-edge { border-color: rgb(var(--ink) / 0.22); }
-  .stack-edge-1 { left: 0.5rem; right: 0.5rem; bottom: 0.5rem; z-index: 2; }
-  .stack-edge-2 { left: 1.0625rem; right: 1.0625rem; bottom: 0; z-index: 1; }
+  :root[data-theme='dark'] .stack-edge {
+    box-shadow: inset 0 0 0 1px rgb(var(--ink) / 0.10), 0 4px 14px rgb(0 0 0 / 0.35);
+  }
+  .stack-edge-1 { z-index: 2; transform: translateY(-0.5rem) scaleX(0.945); }
+  .stack-edge-2 { z-index: 1; transform: scaleX(0.885); opacity: 0.75; }
 
   /* BLOK STANU O STAŁEJ WYSOKOŚCI — trzy wiersze, zawsze.
      To nie jest kwestia estetyki. Stos przeklikuje się po kolei, więc gdyby karta
@@ -1499,27 +1671,101 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
   /* WIERSZ ROZWINIĘTEJ LISTY. 52 px to nie liczba z sufitu: przy tej wysokości
      na ekranie telefonu mieści się dwanaście spraw zamiast trzech, a wiersz nadal
      niesie wszystko, co niesie duża karta — imię, stan, kwotę, datę i „za co”. */
+  .stack-list { padding: 0.25rem 0.75rem; margin-bottom: 0.25rem; }
+  .stack-item + .stack-item { border-top: 1px solid rgb(var(--ink) / 0.08); }
+  .stack-row-line { display: flex; align-items: center; gap: 0.25rem; }
+  .stack-row-line > .stack-row { flex: 1 1 auto; min-width: 0; }
   .stack-row {
     display: flex;
     align-items: center;
-    gap: 0.5625rem;
+    gap: 0.5rem;
     padding: 0.4375rem 0;
-    min-height: 3.25rem;
+    min-height: 3.5rem;
   }
   .stack-row + .stack-row { border-top: 1px solid rgb(var(--ink) / 0.08); }
-  .stack-row-name { font-size: 0.8125rem; font-weight: 800; line-height: 1.2; }
-  .stack-row-sub {
+
+  /* ROZWINIĘCIE POJEDYNCZEGO WIERSZA. Rozwinięty stos jest z założenia uboższy od karty
+     na wierzchu — ale „uboższy" nie może znaczyć „niedostępny": po rozwinięciu nie dało
+     się już sprawdzić, jakie rachunki pokrywa dany przelew (zgłoszenie właściciela
+     2026-08-29). Strzałka jest cicha i wąska, bo to trzecia rzecz na wierszu, a nie druga. */
+  .stack-row-more {
+    flex-shrink: 0;
+    width: 1.5rem;
+    height: 2.75rem;
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: rgb(var(--ink-3));
+    font-size: 0.75rem;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 200ms cubic-bezier(0.2, 0, 0, 1), color 160ms ease-out;
+  }
+  .stack-row-more[aria-expanded='true'] { transform: rotate(180deg); color: rgb(var(--ink-2)); }
+
+  .stack-row-detail { padding: 0 0 0.625rem 2.25rem; }
+
+  .stack-detail {
+    padding-left: 0.625rem;
+    border-left: 1.5px solid rgb(var(--ink) / 0.15);
+  }
+  .detail-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 1.375rem;
+    font-size: 0.75rem;
+    color: rgb(var(--ink-3));
+  }
+  .detail-line b { color: rgb(var(--ink-2)); font-weight: 700; }
+  .detail-line.is-lead { color: rgb(var(--ink)); font-weight: 700; }
+  /* Podnagłówek wewnątrz szczegółów („Pokrywa 3 rachunki") — wersaliki tym samym krojem
+     co nagłówki stosów, żeby lista pod nim czytała się jako jego zawartość. */
+  .detail-line.is-head {
+    margin-top: 0.25rem;
+    font-size: 0.6875rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgb(var(--ink-2));
+  }
+  /* IMIĘ I KWOTA W JEDNEJ LINII, PODPIS POD NIMI. Do 2026-08-29 kwota stała osobną
+     kolumną obok podpisu — i to ona, a nie przyciski, zjadała szerokość: „2015,23 PLN"
+     zabierało jedną trzecią wiersza, więc na „dziś · 2 rachunki" zostawało tyle, że
+     tekst łamał się na trzy linijki. Teraz kwota dzieli linię z imieniem (nikt nie ma
+     imienia szerokiego na pół ekranu), a podpis dostaje całą szerokość kolumny.
+     Kwoty nadal stoją w jednej pionowej linii — po prostu przy krawędzi przycisków. */
+  .stack-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+  .stack-row-name { flex: 0 1 auto; min-width: 0; font-size: 0.8125rem; font-weight: 800; line-height: 1.2; }
+  .stack-row-amount { flex-shrink: 0; font-size: 0.8125rem; }
+  /* PODPIS WIERSZA NIE ŁAMIE SIĘ NIGDY. Wiersz rozwiniętej listy ma stałą wysokość i to
+     jest jego cały sens — a „dziś · 2 rachunki" łamane na trzy linijki rozpychało go
+     dwukrotnie, i to tym mocniej, im więcej rzeczy stało obok (odkąd przyciski urosły
+     do 44 px, miejsca na tekst jest realnie mniej). Nadmiar ucinamy wielokropkiem:
+     w tej gęstości podpis jest wskazówką, a pełne dane siedzą pod strzałką rozwinięcia. */
+  .stack-row-sub {
+    display: block;
     margin-top: 0.0625rem;
     font-size: 0.6875rem;
     font-weight: 600;
     color: rgb(var(--ink-3));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   /* Kropka stanu niesie w zwięzłym wierszu to, co w dużej karcie niesie pigułka.
      Jeden nośnik mniej, ale nie zero — a nagłówek stosu nazwał już całą grupę. */
-  .stack-dot { width: 0.4375rem; height: 0.4375rem; border-radius: 999px; flex-shrink: 0; }
+  .stack-dot {
+    display: inline-block;
+    vertical-align: 0.05em;
+    margin-right: 0.3125rem;
+    width: 0.4375rem;
+    height: 0.4375rem;
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
   .stack-dot.is-info { background-color: rgb(var(--info)); }
   .stack-dot.is-mute { background-color: rgb(var(--ink-3)); }
   .stack-dot.is-gray { background-color: rgb(var(--ink-2)); }
@@ -1566,18 +1812,115 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
     color: rgb(var(--brand-ink));
   }
 
-  /* Kropki są WTÓRNYM nośnikiem tego, co mówi przełącznik — dla kogoś, kto właśnie
-     przesunął palcem i patrzy na treść, a nie na nagłówek ekranu. */
-  .settle-dots { display: flex; gap: 0.3125rem; justify-content: center; padding-top: 0.875rem; }
-  .settle-dot {
-    width: 0.3125rem;
-    height: 0.3125rem;
+  /* KROPKI POD LISTĄ ZNIKNĘŁY (zgłoszenie właściciela 2026-08-29). Stały na SAMYM DOLE
+     strony, czyli za wszystkim, co na niej jest — przy trzech stosach trzeba było
+     przewinąć pół ekranu, żeby je zobaczyć. Wskaźnik, który mówi „są dwie strony", ma
+     jakikolwiek sens wyłącznie wtedy, gdy widać go razem ze stroną.
+     Rolę przejmuje w całości przełącznik na górze: jest na całą szerokość, a jego pigułka
+     jedzie za palcem w czasie gestu — czyli pokazuje i ŻE są dwie strony, i GDZIE jesteś
+     między nimi. Do tego strzałka przy nieaktywnym segmencie (patrz `.seg-wide`). */
+
+  /* --- PRZEŁĄCZNIK NA CAŁĄ SZEROKOŚĆ ----------------------------------------
+     Wariant dla dwóch stron ekranu: rozpycha się na całą kolumnę i dzieli ją równo,
+     bo tu przełącznik jest GŁÓWNYM sterownikiem widoku, a nie filtrem obok treści.
+     Zaznaczenie rysuje osobna pigułka, nie tło przycisku — tylko wtedy da się je
+     przesuwać płynnie razem z taśmą stron. */
+  .seg-wide { display: flex; width: 100%; position: relative; }
+  .seg-wide .seg-btn { flex: 1 1 0; position: relative; z-index: 1; justify-content: center; display: inline-flex; align-items: center; }
+  .seg-wide .seg-btn[aria-pressed='true'] { background: none; box-shadow: none; }
+  :root[data-theme='dark'] .seg-wide .seg-btn[aria-pressed='true'] { background: none; }
+
+  .seg-thumb {
+    position: absolute;
+    top: 0.25rem;
+    bottom: 0.25rem;
+    left: 0.25rem;
+    width: calc(50% - 0.25rem);
     border-radius: 999px;
-    background-color: rgb(var(--ink-3));
-    opacity: 0.3;
-    transition: width 200ms cubic-bezier(0.2, 0, 0, 1), opacity 200ms ease-out;
+    background-color: rgb(var(--surface));
+    box-shadow: 0 1px 2px rgb(var(--shadow) / 0.10);
+    /* Ta sama liczba, co przesunięcie taśmy — stąd wrażenie jednego urządzenia.
+       `clamp` odcina opór krawędzi: taśmie wolno wyjść poza zakres, pigułce nie,
+       bo wyjechałaby poza swój tor. */
+    transform: translate3d(calc(clamp(0, var(--settle-p, 0), 1) * 100%), 0, 0);
+    z-index: 0;
   }
-  .settle-dot.is-on { width: 0.875rem; opacity: 0.75; }
+  :root[data-theme='dark'] .seg-thumb { background-color: rgb(var(--ink) / 0.14); }
+
+  /* STRZAŁKA MÓWI, ŻE OBOK COŚ JEST. Widoczna wyłącznie przy stronie, na której nie
+     stoisz — przy własnej byłaby szumem. To jedyny STAŁY znak, że gest w bok ma sens;
+     ruch pigułki działa dopiero wtedy, gdy ktoś już spróbował. */
+  .seg-wide .seg-btn[aria-pressed='false']::before {
+    content: '\f053';
+    font-family: 'Font Awesome 7 Free', 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: 0.5625rem;
+    opacity: 0.45;
+    margin-right: 0.4375rem;
+  }
+  .seg-wide .seg-btn[aria-pressed='false']:last-child::before { content: none; }
+  .seg-wide .seg-btn[aria-pressed='false']:last-child::after {
+    content: '\f054';
+    font-family: 'Font Awesome 7 Free', 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: 0.5625rem;
+    opacity: 0.45;
+    margin-left: 0.4375rem;
+  }
+
+  /* --- TAŚMA DWÓCH STRON ----------------------------------------------------
+     Obie strony leżą obok siebie i przesuwają się razem. Ujemne marginesy z odstępem
+     tej samej wielkości robią miejsce na cienie kart: `overflow: hidden` przycina przy
+     krawędzi ODSTĘPU, więc cień mieści się w całości, a treść stoi tam, gdzie stała.
+     Wysokość ustawia kod (patrz `settlePanesSync`), bo strony są różnej długości. */
+  .settle-swipe {
+    overflow: hidden;
+    margin: 0 -1rem;
+    padding: 0 1rem;
+  }
+  .settle-swipe.is-animated { transition: height 260ms cubic-bezier(0.2, 0, 0, 1); }
+  .settle-swipe.is-animated .settle-track { transition: transform 260ms cubic-bezier(0.2, 0, 0, 1); }
+  .settle-track {
+    display: flex;
+    align-items: flex-start;
+    /* PRZERWA MIĘDZY STRONAMI JEST DOKŁADNIE SZEROKOŚCI ODSTĘPU NA CIENIE.
+       Bez niej sąsiednia strona wystawała zza krawędzi: `overflow` przycina przy brzegu
+       ODSTĘPU (1 rem poza treścią), więc strona odsunięta o własną szerokość kończy się
+       centymetr ZA WCZEŚNIE i widać jej róg. Przerwa 2 rem odsuwa ją o te dwa brzegi
+       naraz — a przy przesuwaniu palcem wygląda jak naturalny odstęp między stronami. */
+    gap: 2rem;
+    /* `touch-action: pan-y` oddaje przeglądarce przewijanie w pionie, a poziom zostawia
+       nam. NIE wolno tego postawić na korzeniu dokumentu — tam zabiera iOS gest cofania
+       (patrz uwaga przy `html`). Na jednym pojemniku jest bezpieczne. */
+    touch-action: pan-y;
+    transform: translate3d(calc(var(--settle-p, 0) * -100% + var(--settle-p, 0) * -2rem), 0, 0);
+  }
+  .settle-pane { flex: 0 0 100%; min-width: 0; }
+
+  /* Strona bez spraw MÓWI, że jest pusta. Pusty prostokąt czyta się jak niedowczytana
+     treść, a na ekranie o cudzych pieniądzach to najgorszy możliwy domysł. */
+  .settle-empty {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1.25rem;
+    border-radius: theme('borderRadius.block');
+    background-color: rgb(var(--surface-2));
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: rgb(var(--ink-2));
+  }
+  .settle-empty-icon {
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgb(var(--due) / 0.14);
+    color: rgb(var(--due));
+  }
 
   /* RZADKA DROGA BOCZNA. „Oddał/a mi już" służy sytuacji, w której ktoś dał gotówkę
      przy stole i nie otworzy aplikacji — więc odnotowuje to odbiorca, u siebie.
@@ -2560,20 +2903,33 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
     .toast-dock { left: auto; right: 1.25rem; max-width: 24rem; }
   }
 
-  /* PASEK „COFNIJ" MA STAŁE BARWY W OBU MOTYWACH.
-     Do 2026-08-29 brał tło z `bg-ink`, czyli z tokenu TEKSTU — a ten w motywie ciemnym
-     (domyślnym w tej aplikacji) jest prawie bielą. Pasek odwracał się więc na jasny,
-     a wszystko, co na nim stało, liczyło na ciemne tło. To jest ta sama pułapka, którą
-     kod opisuje już przy znaku firmowym: kolor, który nie zna motywu.
-     Nakładka nie jest powierzchnią — nie idzie za motywem, tylko zostaje ciemna. */
+  /* DYMEK JEST ODWROTNOŚCIĄ TŁA, W OBU MOTYWACH (zgłoszenie właściciela 2026-08-29:
+     „na ciemnym motywie popup ledwo widać").
+     Dzień wcześniej pasek „Cofnij" dostał barwy PRZYPIĘTE NA STAŁE do ciemnych — i to
+     był błąd w drugą stronę: w motywie ciemnym, czyli domyślnym, ciemny prostokąt
+     na ciemnym tle znika. Komunikat, który ma przerwać to, co się właśnie robi, musi
+     odcinać się od WSZYSTKIEGO, na czym może stanąć.
+     Reguła jest więc jedna i wspólna dla obu dymków: tło z `--ink`, tekst z `--surface`.
+     W motywie jasnym wychodzi z tego czarny dymek, w ciemnym — biały. Do tego cienka
+     obwódka w kolorze powierzchni i mocniejszy cień: obwódka ratuje sytuację, gdy dymek
+     stanie akurat na karcie o tej samej jasności, co on sam. */
+  .toast-dock {
+    box-shadow:
+      0 0 0 1px rgb(var(--surface) / 0.55),
+      0 6px 16px rgb(0 0 0 / 0.22),
+      0 22px 48px rgb(0 0 0 / 0.28);
+  }
+
   .toast-bar {
-    background-color: #16181E;
-    color: #F5F6F8;
+    background-color: rgb(var(--ink));
+    color: rgb(var(--surface));
   }
   /* „Cofnij" jest CZERWONE i to jest zgodne ze znaczeniem czerwieni w tej aplikacji:
-     cofnięcie potwierdzenia PRZYWRACA DŁUG, czyli pieniądze znów wychodzą. Odcień
-     jest rozjaśniony (ten z motywu ciemnego), bo tło paska jest ciemne zawsze. */
+     cofnięcie potwierdzenia PRZYWRACA DŁUG, czyli pieniądze znów wychodzą. Odcień idzie
+     ODWROTNIE DO MOTYWU, bo tło dymka też jest odwrotnością tła aplikacji: na białym
+     dymku (motyw ciemny) czerwień musi być ciemna, na czarnym (motyw jasny) — jasna. */
   .toast-undo { color: #FF6A7A; }
+  :root[data-theme='dark'] .toast-undo { color: #C81436; }
 
   /* Toast wjeżdża od dołu i wychodzi tą samą drogą. */
   @keyframes toast-in {

@@ -157,6 +157,15 @@ the verdict, and DESIGN.md
          wykrywa brak sieci od razu, a na zdychającym wifi twierdzi, że wszystko gra.
          Trzeci stan („połączenie jest, ale serwer milczy") czytamy z metadanych
          nasłuchów Firestore — patrz `noteSnapshot` w main.js. -->
+    <!-- ZASŁONA POD ZEGARKIEM. `viewport-fit=cover` razem z `black-translucent` wpuszcza
+         treść POD pasek stanu iPhone'a — i o ile na samej górze ekranu odstęp w
+         `#app-container` trzyma ją niżej, o tyle PO PRZEWINIĘCIU nazwy rachunków i kwoty
+         przejeżdżają przez zegarek i wskaźnik baterii. Ten pasek maluje tam tło aplikacji,
+         więc treść wjeżdża pod niego i znika, zamiast się z nim zderzać.
+         Warstwa 45: nad treścią i nad pływającą nawigacją (40), pod paskami systemowymi
+         i oknami (50), bo te niosą własny odstęp na wcięcie. -->
+    <div id="status-scrim" aria-hidden="true"></div>
+
     <!-- PASKI SYSTEMOWE STOJĄ W JEDNYM STOSIE. Oba są przypięte do góry ekranu, więc bez
          wspólnego rodzica nachodziłyby na siebie w chwili, gdy pokażą się naraz (nowa
          wersja doszła, a potem zniknęła sieć). Kolumna układa je jeden pod drugim sama. -->
@@ -444,8 +453,13 @@ the verdict, and DESIGN.md
                      przycisk doklejony pod jedną z nich znikał wraz z nią. -->
                 <div class="mb-3 flex items-center justify-between gap-3">
                     <h3 class="view-title">Rozliczenia</h3>
+                    <!-- IKONA MÓWI „HISTORIA", NIE „LISTA" (zgłoszenie właściciela 2026-08-29).
+                         Trzy kreski z kropkami czyta się w każdej aplikacji jako sortowanie
+                         albo widok listy — czyli jako coś, co zmienia to, na co właśnie patrzę.
+                         Rejestr niczego nie zmienia: pokazuje, co się już wydarzyło. Strzałka
+                         zawracająca wokół zegara niesie dokładnie to i nic ponadto. -->
                     <button id="open-settlements-log" class="icon-btn-sm is-quiet hidden" title="Rejestr" aria-label="Rejestr">
-                        <i class="fas fa-list"></i>
+                        <i class="fas fa-clock-rotate-left"></i>
                     </button>
                 </div>
                 <div id="settlements-content">
@@ -470,21 +484,29 @@ the verdict, and DESIGN.md
                      („Wszystkie / Ukryte") nie mieści czterech wymiarów, a chowanie
                      filtrów w arkuszu kosztuje jedno stuknięcie za dużo przy stole. -->
                 <div id="bill-filters" class="filter-pills mb-3">
-                    <button data-filter="all" class="bill-filter-btn filter-pill" aria-pressed="true" title="Rachunki, które Cię dotyczą">Wszystkie</button>
-                    <button data-filter="waiting" class="bill-filter-btn filter-pill" aria-pressed="false" title="Czekają na Twój ruch">Czekają na Ciebie</button>
+                    <button data-filter="all" class="bill-filter-btn filter-pill" aria-pressed="true" title="Rachunki, które Cię dotyczą">Wszystkie<span class="filter-pill-count"></span></button>
+                    <button data-filter="waiting" class="bill-filter-btn filter-pill" aria-pressed="false" title="Czekają na Twój ruch">Czekają na Ciebie<span class="filter-pill-count"></span></button>
+                    <!-- DO POTWIERDZENIA — rachunki, przy których ktoś zgłosił przelew i czeka
+                         na Twoje „Mam". Pigułka pojawia się WYŁĄCZNIE wtedy, gdy taki rachunek
+                         istnieje (patrz `renderBillsList`): to jedyny stan na tej liście,
+                         w którym czekają cudze pieniądze, więc ma znaczyć coś zawsze, gdy
+                         się pokaże. Ludzie, którzy rozliczają się rachunek po rachunku,
+                         mogą dzięki temu w ogóle nie odwiedzać zakładki Rozliczenia. -->
+                    <button data-filter="confirm" class="bill-filter-btn filter-pill hidden" aria-pressed="false" title="Ktoś zgłosił przelew i czeka na Twoje potwierdzenie">Do potwierdzenia<span class="filter-pill-count"></span></button>
                     <!-- DO ODDANIA — rachunki, za które wciąż jestem winien płatnikowi.
                          Filtr, nie osobny ekran: lista rachunków już umie wszystko, czego
                          tryb „Rachunek po rachunku" potrzebuje, a druga lista tych samych
                          rachunków w innym miejscu byłaby drugą prawdą o tym samym.
-                         Liczba w nawiasie dopisuje się z kodu (`bill-filter-owed-count`). -->
-                    <button data-filter="owed" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które jeszcze nie oddałeś/aś">Do oddania<span id="bill-filter-owed-count"></span></button>
-                    <button data-filter="mine" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które wyłożyłeś pieniądze">Moje</button>
-                    <button data-filter="others" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki grupy, które Cię nie dotyczą">Reszta grupy</button>
-                    <!-- Licznik przy „Ukryte" (2026-08-26). Ukrycie jest jedynym filtrem,
-                         który człowiek sam na siebie nakłada — i jedynym, po którym rachunek
-                         znika mu z oczu. Bez liczby nie ma jak zauważyć, że coś się tam
-                         odłożyło; pigułka wygląda tak samo przy zerze i przy dwunastu. -->
-                    <button data-filter="hidden" class="bill-filter-btn filter-pill" aria-pressed="false" title="Ukryte przez Ciebie">Ukryte<span id="bill-filter-hidden-count"></span></button>
+                         Liczbę dopisuje `renderBillsList` do `.filter-pill-count`. -->
+                    <button data-filter="owed" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które jeszcze nie oddałeś/aś">Do oddania<span class="filter-pill-count"></span></button>
+                    <button data-filter="mine" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które wyłożyłeś pieniądze">Moje<span class="filter-pill-count"></span></button>
+                    <button data-filter="others" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki grupy, które Cię nie dotyczą">Reszta grupy<span class="filter-pill-count"></span></button>
+                    <!-- Licznik ma teraz KAŻDA pigułka (2026-08-29, na wniosek właściciela).
+                         Zaczęło się od „Ukryte": to jedyny filtr, który człowiek sam na siebie
+                         nakłada, i jedyny, po którym rachunek znika mu z oczu. Reszta ma go
+                         z tego samego powodu — pigułka bez liczby wygląda tak samo przy zerze
+                         i przy dwunastu, więc trzeba ją odwiedzić, żeby się dowiedzieć. -->
+                    <button data-filter="hidden" class="bill-filter-btn filter-pill" aria-pressed="false" title="Ukryte przez Ciebie">Ukryte<span class="filter-pill-count"></span></button>
                 </div>
                 <div id="bills-history-list"></div>
             </section>
@@ -565,10 +587,23 @@ the verdict, and DESIGN.md
         </div>
 
 
-        <div id="join-screen" class="hidden text-center">
-            <h2 class="font-display text-3xl font-bold mb-2">Dołącz do <span id="join-group-name"></span></h2>
-            <p class="text-ink-2 mb-6">Wybierz swoje imię z listy.</p>
-            <div id="name-selection-list" class="space-y-2 max-w-md mx-auto text-left"></div>
+        <div id="join-screen" class="hidden">
+            <!-- DROGA POWROTNA (zgłoszenie właściciela 2026-08-29). Ekran wyboru imienia był
+                 jedynym w aplikacji BEZ wyjścia: kto wszedł w cudzy pokój z listy albo
+                 z linku i zorientował się, że to nie ten, zostawał tu na dobre — jedyną
+                 drogą było wyczyszczenie adresu, czyli rzecz niedostępna w aplikacji
+                 uruchomionej z ikony. Strzałka w lewo znaczy w tej aplikacji zawsze to samo:
+                 „o poziom wyżej", a poziom wyżej od pokoju to lista Twoich pokoi. -->
+            <header class="flex items-center gap-2 mb-5">
+                <button id="join-back-btn" class="tap w-12 h-12 -ml-2 rounded-full flex items-center justify-center text-ink-2 flex-shrink-0" title="Twoje pokoje" aria-label="Wróć do listy pokoi">
+                    <i class="fas fa-arrow-left text-lg"></i>
+                </button>
+            </header>
+            <div class="text-center">
+                <h2 class="font-display text-3xl font-bold mb-2">Dołącz do <span id="join-group-name"></span></h2>
+                <p class="text-ink-2 mb-6">Wybierz swoje imię z listy.</p>
+                <div id="name-selection-list" class="space-y-2 max-w-md mx-auto text-left"></div>
+            </div>
         </div>
 
         <!-- EKRAN RACHUNKU — to jest miejsce, w którym cała ekipa pracuje RÓWNOCZEŚNIE.
@@ -677,8 +712,17 @@ the verdict, and DESIGN.md
                  „Nie dotyczy" też odpadło: od wypisania kogoś z rachunku jest edycja
                  składu, a dwie drogi do tego samego znaczyły dwa różne stany w bazie. -->
             <section class="card p-5 mb-3">
+                <!-- OPIS OBU SPOSOBÓW ZSZEDŁ POD ZNAK ZAPYTANIA (zgłoszenie właściciela
+                     2026-08-29). Pod przełącznikiem stały dwa–trzy wiersze tłumaczące, co
+                     robi wybrany tryb — na karcie, którą przewija się przy KAŻDYM wejściu
+                     w rachunek, a przeczytać trzeba raz w życiu. Znak zapytania tłumaczy
+                     teraz OBA sposoby naraz, czyli więcej niż tamten opis, i nie zabiera
+                     ani jednego wiersza ekranu.
+                     Pod przełącznikiem zostaje wyłącznie POWÓD, dla którego akurat teraz
+                     nie da się go przestawić — a to nie jest wykład, tylko fakt o tym
+                     jednym rachunku. -->
                 <div class="flex items-baseline justify-between gap-3 mb-2">
-                    <p class="font-bold">Jak dzielimy</p>
+                    <p class="font-bold flex items-baseline gap-2">Jak dzielimy<button id="bill-mode-help" type="button" class="hint-dot" title="Jak działają oba sposoby?" aria-label="Jak działają oba sposoby?"><i class="fas fa-question"></i></button></p>
                     <span id="bill-mode-note" class="text-sm text-ink-3 text-right min-w-0 truncate"></span>
                 </div>
                 <div class="seg w-full">
@@ -1484,6 +1528,25 @@ the verdict, and DESIGN.md
                 <div class="seg mt-3">
                     <button data-log="mine" class="log-mode-btn seg-btn" aria-pressed="true">Moje</button>
                     <button data-log="all" class="log-mode-btn seg-btn" aria-pressed="false">Cała grupa</button>
+                </div>
+                <!-- SZUKANIE I FILTRY (zgłoszenie właściciela 2026-08-29: „w rejestrze nie ma
+                     wyszukiwarki żadnej i formy jakiegokolwiek filtrowania").
+                     Rejestr jest DOWODEM, a dowodu szuka się pod konkretne pytanie: „czy
+                     oddałem Pawłowi za tę kolację", „co wisi niepotwierdzone". Po tygodniu
+                     wyjazdu przewinięcie czterdziestu wpisów do tego nie wystarcza.
+                     Pole szuka po imionach obu stron, nazwach rachunków i kwocie — czyli
+                     po wszystkim, co człowiek pamięta. Pigułki filtrują po STANIE i noszą
+                     liczby, bo pytanie „ile jeszcze wisi" pada częściej niż samo filtrowanie. -->
+                <div class="log-search mt-3">
+                    <i class="fas fa-magnifying-glass log-search-icon" aria-hidden="true"></i>
+                    <input id="log-search" type="search" class="field log-search-input" placeholder="Szukaj: imię, rachunek, kwota" autocomplete="off" spellcheck="false" aria-label="Szukaj w rejestrze">
+                    <button id="log-search-clear" class="log-search-clear hidden" type="button" title="Wyczyść" aria-label="Wyczyść szukanie"><i class="fas fa-xmark"></i></button>
+                </div>
+                <div id="log-filters" class="filter-pills mt-2">
+                    <button data-log-filter="all" class="log-filter-btn filter-pill" aria-pressed="true">Wszystkie<span class="filter-pill-count"></span></button>
+                    <button data-log-filter="pending" class="log-filter-btn filter-pill" aria-pressed="false" title="Zgłoszone, jeszcze bez odpowiedzi">Czekają<span class="filter-pill-count"></span></button>
+                    <button data-log-filter="confirmed" class="log-filter-btn filter-pill" aria-pressed="false" title="Potwierdzone przez odbiorcę">Potwierdzone<span class="filter-pill-count"></span></button>
+                    <button data-log-filter="issue" class="log-filter-btn filter-pill" aria-pressed="false" title="Nieznalezione, sporne i wycofane">Do wyjaśnienia<span class="filter-pill-count"></span></button>
                 </div>
             </div>
             <div class="sheet-body">

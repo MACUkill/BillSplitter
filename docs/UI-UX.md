@@ -2279,6 +2279,10 @@ Ekran rozliczeń ma dwie strony (Płacisz / Dostajesz) z przełącznikiem segmen
 i gestem przesunięcia. Sam gest jest niewidzialny, więc afordancję niesie przełącznik —
 ten sam wzorzec, którym działa skrzynka.
 
+> **Uzupełnione 2026-08-29 (§24.2).** Gest nie jest już niewidzialny: strony leżą na
+> jednej taśmie i jadą za palcem razem z pigułką przełącznika, a nieaktywny segment nosi
+> strzałkę. Kropki pod listą zniknęły.
+
 Wewnątrz stron stoją **nazwane stosy**. Stos zajmuje wysokość jednej karty niezależnie
 od tego, czy leży w nim dwie sprawy, czy czterdzieści — piętnaście osób i trzy osoby dają
 ten sam pierwszy ekran.
@@ -2297,6 +2301,11 @@ już przelał, sprawdź", drugie „jeszcze nie przelał, poganiaj".
 na jedną sprawę, chcesz szczegółu; gdy skanujesz czterdzieści — gęstości. Zwinięty:
 twarz 46 px, przyciski z napisami, pełne daty. Rozwinięty: wiersz 52 px, ikony, kropka
 stanu zamiast pigułki.
+
+> **Poprawione 2026-08-29 (§24.4).** Wiersz rozwinięty ma dziś 56 px i przyciski 44 px,
+> a szczegóły są OSIĄGALNE pod strzałką przy wierszu — „uboższy" nie może znaczyć
+> „niedostępny". Blok stanu o stałej wysokości nie powstaje wcale, gdy nie ma czego w nim
+> pokazać (plan minimalny), bo wtedy puste są WSZYSTKIE karty stosu i nic nie skacze.
 
 **BLOK STANU MA STAŁĄ WYSOKOŚĆ TRZECH WIERSZY.** To nie jest estetyka. Stos przeklikuje
 się po kolei, więc gdyby karta rosła i malała z liczbą rachunków, przyciski skakałyby
@@ -2343,9 +2352,15 @@ mówi „ile wynosi mój udział", stos „kto mi przelał". Przy okazji znika p
 na limonce nie istnieje ani limonkowy przycisk, ani ciemny (w motywie ciemnym `--ink`
 jest prawie bielą), więc karty musiałyby mieć własną paletę.
 
-**Brak stosu „Czekasz na przelew"** i to jest ta sama reguła, co przy dzwonku:
+~~**Brak stosu „Czekasz na przelew"** i to jest ta sama reguła, co przy dzwonku:
 przypomnienie idzie DO OSOBY, na całą jej zaległość, a nie do rachunku. Ci ludzie są
-widoczni tam, gdzie już są — jako chip przy imieniu w „Ekipie".
+widoczni tam, gdzie już są — jako chip przy imieniu w „Ekipie".~~
+
+> **COFNIĘTE 2026-08-29 (§24.9).** Stos „Czekasz na przelew" stoi na rachunku, ale tylko
+> w trybie rachunkowym. Powód: część ekipy rozlicza się rachunek po rachunku i do zakładki
+> Rozliczenia nie zagląda, więc płatnik widział, kto nie oddał, i nie mógł z tym zrobić nic
+> bez wyjścia na inną zakładkę. Zarzut o trzy przypomnienia do tej samej osoby rozbija się
+> o bramkę czasową w `sendNudge`, która działa per osoba.
 
 **Potwierdzenie jest niepodzielne.** Jeden przelew bywa zapłatą za pięć rachunków,
 a potwierdza się PRZELEW, nie rachunek — więc karta mówi wprost „Pokrywa też N innych
@@ -2398,3 +2413,300 @@ które pada przy każdym większym wyjeździe.
 
 **Reguły i funkcje NIE są wdrożone** — to osobna decyzja i osobne wdrożenie. Bez wdrożenia
 reguł przycisk „Nie widzę" nie zadziała, a bez wdrożenia funkcji spór nie wyśle pusha.
+
+---
+
+## 24. DWADZIEŚCIA ZGŁOSZEŃ Z TELEFONU (2026-08-29, wieczór)
+
+Etap 5 poszedł na telefon właściciela i wrócił z listą dwudziestu punktów. Nie jest to
+lista życzeń — to protokół z użycia: co jest zepsute, co brzydkie, czego nie da się
+zrobić. Rozdział opisuje, co z każdym z nich zrobiliśmy i dlaczego akurat tak.
+
+### 24.1 Regresja, od której trzeba było zacząć
+
+**Karty stosu straciły odstęp wewnętrzny.** `stackHtml` składa wierzch stosu z klasy
+`card` — a `.card` niesie wyłącznie tło, promień i cień, ŻADNEGO odstępu; dawały go
+zawsze klasy Tailwinda w znacznikach. Tu ich nie było, więc kwota dotykała krawędzi
+karty, przyciski rozlewały się na całą szerokość kolumny i cały ekran wyglądał
+na rozwalony („zepsułeś formatowanie całkowicie, wywaliły się krawędzie i kafelki").
+
+Odstęp należy teraz do klasy `.stack-top`, nie do znaczników — bo `.stack-top` jest
+jedynym miejscem, w którym ta karta powstaje.
+
+**Przy okazji: zasłona pod paskiem stanu.** `viewport-fit=cover` razem
+z `apple-mobile-web-app-status-bar-style: black-translucent` wpuszcza treść pod zegarek
+iPhone'a. Odstęp w `#app-container` trzyma ją niżej na SAMEJ GÓRZE ekranu, ale
+po przewinięciu nazwy rachunków i kwoty przejeżdżały przez zegarek i wskaźnik baterii.
+`#status-scrim` maluje tam tło aplikacji (warstwa 45: nad treścią i nawigacją, pod
+paskami systemowymi i oknami), więc treść wjeżdża pod niego i znika, zamiast się z nim
+zderzać. W przeglądarce z paskiem adresu wcięcie wynosi zero i zasłony po prostu nie ma.
+
+### 24.2 Gest między stronami idzie za palcem
+
+Do tej pory gest był „machnięciem": aplikacja mierzyła odległość dopiero po oderwaniu
+palca i podmieniała stronę skokiem. Nie było więc widać ANI ŻE gest istnieje, ANI że
+właśnie działa — a machnięcie, które nie odpowiada w trakcie, czyta się jak przypadek,
+nie jak sterowanie.
+
+**Obie strony leżą teraz na jednej taśmie** (`.settle-track`) i przesuwają się razem.
+`--settle-p` to postęp od 0 (Płacisz) do 1 (Dostajesz) — JEDNA liczba, z której bierze
+się i przesunięcie taśmy, i położenie pigułki w przełączniku. Dzięki temu w trakcie gestu
+oba elementy jadą za palcem i widać, że to jedno urządzenie, a nie dwa niezależne.
+
+Szczegóły, które wyszły dopiero na sondzie w przeglądarce:
+
+- **Przerwa 2 rem między stronami.** `overflow: hidden` przycina przy brzegu ODSTĘPU
+  (1 rem poza treścią, robionego pod cienie kart), więc strona odsunięta dokładnie
+  o własną szerokość kończy się centymetr za wcześnie i widać jej róg. Przerwa odsuwa
+  ją o oba brzegi naraz.
+- **Na czas gestu okno ma wysokość DŁUŻSZEJ ze stron.** Bez tego strona wjeżdżająca
+  zza krawędzi była przycinana do wysokości tej, z której się wychodzi — przy jednej
+  sprawie po lewej i sześciu po prawej wyglądało to jak wjeżdżanie treści do szpary.
+- **Próg jest podwójny:** ćwierć szerokości ekranu ALBO szybki rzut (ponad 0,4 px/ms)
+  na co najmniej 40 px. Sam próg odległości kazałby przeciągać stronę do połowy ekranu
+  przy każdym przełączeniu.
+- **Oś ustala się raz**, na pierwszych ośmiu pikselach ruchu, i nie zmienia do końca
+  gestu. Bez tego gest ukośny raz przewijałby listę, raz przesuwał stronę.
+- `touch-action: pan-y` stoi na `.settle-track`, NIE na korzeniu dokumentu — tam
+  zabrałby iOS gest cofania (patrz komentarz przy `html` w tailwind.css).
+
+**Przełącznik jest na całą szerokość** i zaznaczenie rysuje osobna pigułka (`.seg-thumb`),
+nie tło przycisku: tylko wtedy da się je przesuwać płynnie razem z taśmą.
+
+**Kropki pod listą zniknęły.** Stały na SAMYM DOLE strony, czyli za wszystkim, co na niej
+jest — przy trzech stosach trzeba było przewinąć pół ekranu, żeby je zobaczyć. Wskaźnik
+„są dwie strony" ma sens wyłącznie wtedy, gdy widać go razem ze stroną. Rolę przejmuje
+przełącznik plus **strzałka przy nieaktywnym segmencie** — jedyny STAŁY znak, że gest
+w bok ma sens (ruch pigułki działa dopiero wtedy, gdy ktoś już spróbował).
+
+**Strona pusta jest osiągalna.** Reguła „nie ląduj na pustej stronie" robiła wcześniej
+dwie rzeczy naraz i odbijała także wtedy, gdy człowiek SAM przesunął palcem — więc gest
+wyglądał na zepsuty. Podpowiedź działa teraz tylko przy pierwszym wejściu
+(`settleSideChosen`), a pusta strona mówi, że jest pusta (`.settle-empty`), zamiast
+pokazywać pusty prostokąt, który czyta się jak niedowczytana treść.
+
+### 24.3 Cofanie z rachunku — własny gest zamiast cudzego
+
+„Czasem na iOS przesunięcie z rachunku nie wraca do listy — czasem działa, czasem nie."
+
+Aplikacja liczyła na gest SYSTEMOWY. On jednak nie jest obietnicą: w aplikacji
+uruchomionej z ikony (a tak jej używa ekipa właściciela) iOS raz go daje, raz nie,
+a kiedy treść przewija się w kontenerze `#app-scroll` i akurat wybrzmiewa rozpęd
+przewijania, gest przepada bez śladu.
+
+`setupEdgeBack` robi ten sam gest u nas: start w pasie 28 px od lewej krawędzi, próg
+72 px, oś ustalana raz. **Gdy przeglądarka przejmie gest u siebie, strona dostaje
+`touchcancel` — i wtedy nasz milknie.** Dzięki temu cofnięcie nie wykona się dwa razy,
+a wykona się zawsze. Strzałka w nagłówku i gest wołają tę samą funkcję
+(`leaveBillScreen`), bo ta sama czynność nie ma prawa zachowywać się różnie zależnie
+od tego, czym się ją wykonało.
+
+Pas jest wąski świadomie: szerszy kradłby stukanie w lewą kolumnę ekranu rachunku,
+gdzie stoją znaki uczestników przy pozycjach paragonu.
+
+### 24.4 Stos: wygląd, ruch i osiągalne szczegóły
+
+**Krawędzie to teraz PEŁNE KARTY, nie doklejone paski.** Poprzednia wersja rysowała pod
+kartą dwa prostokąty z twardą kreską dookoła. Kreska na dole karty czytała się jak obrys
+tabelki, a nie jak przedmiot leżący niżej — bo w tym systemie NIC nie ma obrysu;
+głębokość niosą wyłącznie cień i szerokość. Teraz to pełne prostokąty w kolorze karty,
+zwężane `scaleX` i przesuwane w dół, każdy głębszy bledszy. `scaleX` zamiast odstępów
+z dwóch powodów: zwężenie jest proporcjonalne do szerokości ekranu i da się je animować
+bez przeliczania układu.
+
+**Zwijanie i rozwijanie jest ruchem, nie podmianą.** Obie gęstości powstają z `innerHTML`,
+więc przejścia nie da się zrobić samym CSS: stary układ znika, zanim nowy istnieje.
+`noteStackHeight` mierzy wysokość PRZED przerysowaniem, `applyStackMorph` dojeżdża
+do nowej po nim. To jedyne dwie liczby, jakich potrzeba, a ruch jest zwykłą zmianą
+wysokości i przezroczystości — tanią i taką samą wszędzie. Strażnik na `setTimeout`
+domyka animację, gdyby `transitionend` nie doszedł (przerysowanie z bazy w trakcie ruchu);
+bez niego stos zostałby na stałe przycięty do starej wysokości.
+
+**Wiersz rozwiniętej listy da się rozwinąć osobno.** To była realna dziura: po rozwinięciu
+stosu nie dało się sprawdzić, jakie rachunki pokrywa dany przelew. Odwrotna gęstość
+(§23.3) mówi, że rozwinięty wiersz jest UBOŻSZY — ale „uboższy" nie może znaczyć
+„niedostępny". Strzałka przy wierszu otwiera blok `.stack-detail` z pełnymi danymi.
+Stan siedzi wyłącznie w DOM: po przerysowaniu z bazy szczegóły wracają do zwiniętych
+i to jest w porządku, bo to podgląd, a nie ustawienie.
+
+**Przyciski w wierszu urosły z 32 px do 44 px.** Rozwinięty stos to jedyne miejsce, gdzie
+„Mam" i „Nie widzę" nie mają przy sobie napisu — czyli jedyne, gdzie cała odpowiedź
+na cudzy przelew mieści się w kółku. 44 px to próg, którego pilnuje `tools/audit-layout.mjs`.
+
+Wiersz musiał się przez to przebudować: **imię i kwota dzielą pierwszą linię, podpis stoi
+pod nimi**. Wcześniej kwota była osobną kolumną i to ona, nie przyciski, zjadała
+szerokość — „2015,23 PLN" zabierało jedną trzecią wiersza, więc „dziś · 2 rachunki"
+łamało się na trzy linijki. Teraz podpis dostaje całą szerokość kolumny i nie łamie się
+nigdy (nadmiar wielokropkiem).
+
+**Pusty blok stanu nie powstaje w ogóle.** Stała wysokość trzech wierszy (§23.3) ma sens
+tam, gdzie karty stosu RÓŻNIĄ się liczbą wierszy. W planie „Najmniej przelewów" przelew
+nie należy do żadnego rachunku, więc bez wyjątku każda karta osoby ma zero wierszy —
+i rezerwowanie na nie trzech pustych linijek dawało kartę z pionową kreską i pasem
+pustki pod imieniem. Wysokość kart w takim stosie zostaje równa, bo puste są wszystkie.
+
+**Ikona zamiast napisu „Zwiń"/„Rozwiń"** w nagłówku stosu; słowo zostaje w `aria-label`.
+
+**Ikona „Ureguluj" w wierszu** przestała być zwykłą strzałką w prawo — tą samą, którą
+w całej aplikacji znaczy „przejdź dalej". Na przycisku, który otwiera regulowanie długu,
+czytała się jako nawigacja, a nie jako zapłata. `fa-money-bill-transfer` nie zostawia
+wątpliwości.
+
+### 24.5 Rejestr: szukanie, filtry, ikona
+
+Rejestr jest DOWODEM, a dowodu szuka się pod konkretne pytanie: „czy oddałem Pawłowi
+za tę kolację", „co wisi niepotwierdzone". Po tygodniu wyjazdu przewinięcie czterdziestu
+wpisów do tego nie wystarcza.
+
+- **Pole szuka** po imionach obu stron, nazwach rachunków i kwocie — po wszystkim,
+  co człowiek pamięta. Nikt nie pamięta identyfikatora wpisu.
+- **Cztery pigułki stanu** (Wszystkie / Czekają / Potwierdzone / Do wyjaśnienia) z liczbami.
+  Liczby liczą się PO szukaniu: pigułka ma mówić, ile dostaniesz po jej stuknięciu.
+- **Zmiany kwot** schodzą z listy pod filtrem stanu — nie mają stanu wpłaty, więc nie
+  mają czego pokazać w żadnym kubełku.
+- **Pusty rejestr to co innego niż pusty wynik szukania** i mówimy o tym osobno: pierwsze
+  znaczy „nic się jeszcze nie wydarzyło", drugie „szukaj inaczej".
+- Każde otwarcie zaczyna od pełnej listy. Szukanie jest pytaniem na teraz, a nie
+  ustawieniem — wczorajsze słowo ukrywałoby dziś połowę dowodów.
+- **Ikona wejścia** to zegar ze strzałką, nie trzy kreski z kropkami: te ostatnie czyta
+  się w każdej aplikacji jako sortowanie, czyli jako coś, co ZMIENIA to, na co patrzę.
+  Rejestr niczego nie zmienia — pokazuje, co się już wydarzyło.
+
+### 24.6 Co zniknęło z Rozliczeń
+
+**Akapit wstępny** („Każdy przelew idzie do osoby, która wyłożyła pieniądze…") zszedł
+pod znak zapytania w nagłówku pokoju. To odpowiedź na pytanie zadawane RAZ, postawiona
+na górze ekranu, po który przychodzi się codziennie. Pomoc zna teraz zakładkę, nie tylko
+ekran (`HELP_CONTENT['group-dashboard:view-settle']`), więc „?" na Rozliczeniach otwiera
+rozliczenia, a nie ogólny opis pokoju — i wolno tam napisać WIĘCEJ, niż mieściło się
+w akapicie.
+
+Zostaje jedno zdanie, i to wyłącznie w planie minimalnym i wyłącznie wtedy, gdy realnie
+zachodzi sprzeczność: „jesteś winien dwóm osobom" na Bilansie obok pustej strony
+„Płacisz" tutaj. To nie jest wykład o trybie, tylko fakt o TWOICH liczbach.
+
+**„Jeszcze N zwrotów w grupie"** — spis długów MIĘDZY INNYMI LUDŹMI — zniknął bez
+zamiennika. Nie dawało się z nim zrobić nic: nie mój przelew, nie moje przypomnienie,
+nie moje potwierdzenie. Zajmował ostatni wiersz ekranu, na którym wszystko inne jest
+czynnością do wykonania, a przy piętnastu osobach rozwijał się w listę dłuższą niż moje
+własne rozliczenia.
+
+**Do rejestru NIE trafił** i to nie jest przeoczenie: rejestr przyjmuje wyłącznie to,
+co RUSZYŁO pieniądze („czy po tym zdarzeniu ktoś jest komuś winien inną kwotę"),
+a cudzy niezapłacony dług niczym jeszcze nie ruszył. Kto ile wydał w pokoju, widać
+w ustawieniach pokoju.
+
+### 24.7 Dymek jest odwrotnością tła — w OBU motywach
+
+Dzień wcześniej pasek „Cofnij" dostał barwy przypięte na stałe do ciemnych (§23.9)
+i to był błąd w drugą stronę: w motywie ciemnym, czyli DOMYŚLNYM, ciemny prostokąt
+na ciemnym tle znika. Komunikat, który ma przerwać to, co się właśnie robi, musi odcinać
+się od wszystkiego, na czym może stanąć.
+
+Reguła jest więc jedna i wspólna dla obu dymków: **tło z `--ink`, tekst z `--surface`**.
+W motywie jasnym wychodzi czarny dymek, w ciemnym — biały. Do tego cienka obwódka
+w kolorze powierzchni i mocniejszy cień (na `.toast-dock`, nie klasą narzędziową:
+`shadow-lift` z warstwy `utilities` wygrywałby z regułą komponentu). Czerwień „Cofnij"
+idzie odwrotnie do motywu, bo tło dymka też jest odwrotnością tła aplikacji.
+
+### 24.8 Lista rachunków: jedna siatka, jeden znaczek, liczby przy filtrach
+
+**Imię płatnika zniknęło ze statusów.** „Płaci Mikołaj" stało obok znaku Mikołaja — czyli
+było DRUGIM nośnikiem tej samej informacji, a przy „Bartłomiej" zjadało pół kolumny
+i to nazwa rachunku, czyli tożsamość wiersza, musiała się skracać. Statusy mówią teraz
+o STANIE („Do oddania", „Czeka na płatnika", „Czeka na kwotę"), a kto — mówi twarz.
+
+**Jeden znaczek stanu na wiersz.** W trybie rachunkowym wiersz niósł dwa naraz („Płaci
+Ala" + „Nieopłacone"). Po zdjęciu imion zostałoby „Do oddania" obok „Nieopłacone", czyli
+dwa napisy o tym samym. Kolejność pierwszeństwa, od najpilniejszego:
+
+1. cudzy przelew czeka na moje sprawdzenie (mój ruch, cudze pieniądze),
+2. sprawa sporna wokół tego rachunku,
+3. stan rozliczenia w trybie rachunkowym (nieopłacone / czeka na zwrot / domknięte),
+4. status ogólny rachunku (uzupełnianie, kwota, płatnik).
+
+Pierwszy z nich dostaje też błękit stanu na kafelku, także przy domkniętym statusie —
+to jedyne miejsce na tej liście, gdzie CUDZE pieniądze czekają na moje jedno stuknięcie.
+
+**Siatka wiersza jest niezmienna:**
+
+```
+[ znak ]  nazwa rachunku (jeden wiersz, nadmiar wielokropkiem)
+          [znaczek stanu] · godzina                        kwota
+```
+
+Nazwa łamała się wcześniej na dowolną liczbę wierszy „żeby jej nie ucinać" — ale
+konkurowała o szerokość z kwotą po prawej, więc i tak się łamała, tylko na dwa albo trzy
+wiersze. Teraz ma CAŁĄ szerokość kolumny (znaczek zszedł piętro niżej), więc ucięcie
+zdarza się rzadziej niż zawijanie kiedyś, a kafelek ma jedną wysokość niezależnie
+od treści.
+
+**Liczba przy KAŻDEJ pigułce filtra.** Wcześniej miały ją dwie, bo warunek przynależności
+był pisany osobno dla listy i osobno dla licznika — i nikomu nie chciało się powtarzać
+go po raz trzeci. `pasujeDoFiltru` jest teraz jedną regułą dla obu, więc żaden licznik
+nie może się rozjechać z tym, co filtr realnie pokaże.
+
+**Filtr „Do potwierdzenia"** pojawia się WYŁĄCZNIE wtedy, gdy ma co pokazać. Pigułka,
+która przez większość życia pokoju stoi pusta, uczy omijać wzrokiem cały pasek — a ta
+niesie jedyną rzecz na tym ekranie, przy której czekają cudze pieniądze.
+
+### 24.9 Stos „Czekasz na przelew" wraca na rachunek
+
+§23.6 mówił: **brak** tego stosu na ekranie rachunku, bo przypomnienie idzie DO OSOBY,
+na całą jej zaległość, a nie do rachunku. **Ta decyzja zostaje cofnięta** i powód jest
+mocniejszy od poprzedniego: część ekipy właściciela rozlicza się rachunek po rachunku
+i do zakładki Rozliczenia praktycznie nie zagląda. Wszystko, co da się zrobić
+w Rozliczeniach, musi więc być osiągalne z rachunku.
+
+Brakowało dokładnie jednej rzeczy. Dłużnik miał limonkową kartę „Twój udział"
+z przyciskiem „Ureguluj", a płatnik widział wyłącznie zwinięty spis „Ekipa: 14 osób ·
+oddało 2 z 14" — czyli wiedział, kto nie oddał, i nie mógł z tym zrobić nic bez wyjścia
+na inną zakładkę.
+
+Dawny zarzut („trzy rachunki, trzy przypomnienia do tej samej osoby") rozbija się
+o bramkę czasową w `sendNudge`, która działa PER OSOBA: druga i trzecia wysyłka pod rząd
+po prostu nie wychodzi. Kwota w przypomnieniu dotyczy tego rachunku i jest prawdziwa —
+mniejsza od całości, ale nie fałszywa.
+
+**Wyłącznie w trybie rachunkowym.** W planie „Najmniej przelewów" pieniądze idą trasami,
+których ten rachunek nie stworzył, więc „czekasz na przelew ZA TEN rachunek" byłoby
+zdaniem nie do obronienia, a „Oddał/a mi już" zapisałoby wpłatę, która niczego tam nie
+gasi. Wpłata zapisana z tego miejsca niesie `billId` tego rachunku — inaczej gotówka
+wzięta przy stole zgasiłaby dług „gdzieś", a rachunek dalej stałby jako nieopłacony.
+
+### 24.10 Karta rachunku i Bilans
+
+- **Opis obu sposobów podziału zszedł pod „?"** obok nagłówka „Jak dzielimy". Pod
+  przełącznikiem stały dwa–trzy wiersze tłumaczące WYBRANY tryb — na karcie, którą
+  przewija się przy każdym wejściu, a przeczytać trzeba raz w życiu. Znak zapytania
+  tłumaczy teraz OBA sposoby naraz, czyli więcej niż tamten opis. Pod przełącznikiem
+  zostaje wyłącznie POWÓD, dla którego akurat teraz nie da się go przestawić — a to nie
+  jest wykład, tylko fakt o tym jednym rachunku.
+- **„Kto wyłożył pieniądze" pokazuje twarz.** Było jedynym miejscem w aplikacji, gdzie
+  zostawało samo imię, więc czytało się inaczej niż wszędzie indziej.
+- **W trybie „po równo" milknie linijka „Nierozpisane X, czyli po Y na osobę".** Opisuje
+  dokładnie to, co mówi nazwa trybu dwa centymetry niżej, i robi to słowem
+  „nierozpisane", które brzmi jak zaległość do załatwienia. Zdanie zostaje tam, gdzie
+  niesie wiadomość: w trybie ze swoimi kosztami.
+- **Bilans dostał jedno przypomnienie do wszystkich**, którzy nie stuknęli swoich pozycji
+  na MOICH rachunkach (czyli tych, na których to ja wyłożyłem pieniądze — to jedyna
+  definicja, która daje prawo poganiać). Jedna osoba dostaje jedno przypomnienie, nawet
+  gdy zalega na czterech rachunkach; przy jednym rachunku niesie odnośnik prosto do niego,
+  przy kilku nie ma odnośnika, bo nie da się wskazać jednego miejsca, które załatwia
+  sprawę. Adresat może więc nieść WŁASNY rachunek (`lista[].billId`) — przypomnienie
+  z karty rachunku dotyczy jednego, zbiorcze z Bilansu obejmuje kilka naraz.
+
+### 24.11 Ekran wyboru imienia miał wyjście donikąd
+
+Był jedynym ekranem w aplikacji BEZ drogi powrotnej: kto wszedł w cudzy pokój z listy albo
+z linku i zorientował się, że to nie ten, zostawał tam na dobre — jedyną drogą było
+wyczyszczenie adresu, czyli rzecz niedostępna w aplikacji uruchomionej z ikony.
+Strzałka woła `goToRoomsList`, czyli dokładnie to, co strzałka w pokoju.
+
+### 24.12 Stan testów po etapie
+
+**381 testów jednostkowych, wszystko zielone.** Dwa nowe wpisy w `RUNTIME_CREATED_IDS`
+(`settle-panes`, `remind-fill-all-btn`). Przebieg `tools/audit-layout.mjs` przy 390 px
+i 360 px: zero wyjazdów poza ekran, zero nachodzeń, zero przewijania w poziomie —
+zostają dwa znane i świadome wyjątki celu dotykowego (ołówek przy nazwie rachunku
+i cichy odnośnik „Oddał/a mi już").

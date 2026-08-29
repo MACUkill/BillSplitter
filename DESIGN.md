@@ -397,8 +397,21 @@ Głębokość robi jasność i miękki cień, nie kreska. Karta odcina się od p
 obramowania używamy tylko tam, gdzie karta leży na karcie.
 
 - **card**: `0 1px 2px rgb(ink / .04), 0 8px 24px rgb(ink / .06)`
-- **lift** (arkusz, toast): `0 2px 6px rgb(ink / .08), 0 18px 40px rgb(ink / .12)`
+- **lift** (arkusz): `0 2px 6px rgb(ink / .08), 0 18px 40px rgb(ink / .12)`
 - Motyw ciemny: cienie czarne i mocniejsze, bo tło nie ma czego przyciemniać.
+
+**Dymek ma własny cień i obwódkę** (`.toast-dock`, od 2026-08-29). Tło dymka jest
+ODWROTNOŚCIĄ powierzchni — `--ink` pod tekstem `--surface`, czyli czarny dymek w motywie
+jasnym i biały w ciemnym — więc może stanąć na karcie o tej samej jasności, co on sam.
+Cienka obwódka w kolorze powierzchni jest jedynym miejscem w tym systemie, gdzie kreska
+niesie głębokość: komunikat, który przerywa to, co się właśnie robi, musi odcinać się
+od WSZYSTKIEGO. `shadow-lift` z warstwy `utilities` wygrywałby z regułą komponentu,
+więc dymki go nie noszą.
+
+**Stos kart ma głębokość z szerokości, nie z kreski.** Warstwy pod wierzchnią kartą
+(`.stack-edge`) to pełne prostokąty w kolorze karty, zwężane `scaleX` i przesuwane
+w dół — każda głębsza węższa i bledsza. Obrys pojawia się wyłącznie w motywie ciemnym
+i wyłącznie jako `inset`, bo tam sam cień nie wystarcza do odcięcia karty od tła.
 
 ## Shapes
 
@@ -598,6 +611,18 @@ Jedna krzywa: `cubic-bezier(0.2, 0, 0, 1)`. Trzy dozwolone role i nic poza nimi:
    wyjazd usuwanego, toast, potrząśnięcie przy błędzie, **odzew wciśnięcia**.
 
 Wszystko znika przy `prefers-reduced-motion`. Ozdobnik bez jednej z trzech ról nie wchodzi.
+
+**Dwa ruchy dopisane 2026-08-29, oba w roli 1 (wejście):**
+
+- **Taśma dwóch stron rozliczeń.** Strona jedzie ZA PALCEM, nie po oderwaniu go — razem
+  z pigułką przełącznika, bo obie biorą położenie z tej samej liczby (`--settle-p`).
+  Po puszczeniu dojeżdża do najbliższej krawędzi z uwzględnieniem prędkości. Ciągnięcie
+  poza pierwszą i ostatnią stronę zwalnia do jednej trzeciej: palec dostaje odpowiedź
+  „dalej nic nie ma" zamiast trafiać w ścianę bez reakcji.
+- **Zwijanie i rozwijanie stosu.** Zmiana wysokości pojemnika (300 ms) plus wejście nowej
+  treści z 25 % krycia. Obie gęstości powstają z `innerHTML`, więc wysokość mierzymy
+  PRZED przerysowaniem i dojeżdżamy do nowej po nim — samym CSS się tego nie da, bo stary
+  układ znika, zanim nowy istnieje.
 
 **Reguła dwóch nośników przy wciśnięciu.** Odzew dotknięcia niesie i skala (0,97),
 i przyciemnienie wypełnienia (4 %). Sama skala nie wystarcza: palec zasłania środek

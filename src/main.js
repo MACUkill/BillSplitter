@@ -109,6 +109,10 @@
         // Która strona Rozliczeń jest na wierzchu: 'owe' (Płacisz) albo 'due' (Dostajesz).
         // Stan jest ULOTNY i tak ma zostać — to wybór na teraz, nie ustawienie pokoju.
         let settleSide = 'owe';
+        // Czy stronę wybrał CZŁOWIEK (stuknięciem albo gestem), czy tylko podpowiedź przy
+        // wejściu. Rozróżnienie jest potrzebne dokładnie w jednym miejscu: podpowiedź wolno
+        // odbić z pustej strony, cudzy wybór — nie (patrz `renderSettlements`).
+        let settleSideChosen = false;
         let paymentEditMethods = [];
         let paymentEditMemberId = null;
         let newBillState = { name: '', type: null, participantIds: [] };
@@ -204,7 +208,10 @@
             // Błąd dostaje `role="alert"`, żeby czytnik ekranu przeczytał go od razu;
             // potwierdzenie idzie łagodniej i nie przerywa czytania.
             toast.setAttribute('role', isError ? 'alert' : 'status');
-            toast.className = `toast-in toast-dock px-4 py-3 rounded-block font-semibold shadow-lift transition-opacity duration-300 ${isError ? 'bg-owe text-white' : 'bg-ink text-surface'}`;
+            // Bez `shadow-lift`: cień i obwódkę niesie teraz `.toast-dock`, bo muszą być
+            // te same dla obu dymków (patrz uwaga przy `.toast-dock` w tailwind.css),
+            // a klasa narzędziowa Tailwinda i tak wygrywałaby z regułą komponentu.
+            toast.className = `toast-in toast-dock px-4 py-3 rounded-block font-semibold transition-opacity duration-300 ${isError ? 'bg-owe text-white' : 'bg-ink text-surface'}`;
             document.body.appendChild(toast);
             setTimeout(() => {
                 toast.style.opacity = '0';
@@ -659,6 +666,7 @@
             setupGlobalModalListeners();
             setupPwaInstallButton();
             setupDeckNav();
+            setupEdgeBack();
             watchKeyboardForDeck();
             setupPersonSearch();
             registerServiceWorker();
@@ -849,6 +857,21 @@
                     <p><b>Nazwa pokoju u góry</b> otwiera ustawienia pokoju: kod, link, kod QR, waluta domyślna, skład grupy i wyjście z pokoju.</p>
                     <p><b>Strzałka w lewo</b> obok nazwy wraca do listy Twoich pokoi. Nie zwalnia imienia, tylko wychodzi z pokoju.</p>`
             },
+            // ROZLICZENIA MAJĄ WŁASNĄ POMOC, bo z ich ekranu zszedł 2026-08-29 akapit
+            // wstępny. Wyjaśnienie nie zniknęło — przeniosło się tam, gdzie wolno mu być
+            // dłuższe i gdzie nikt go nie czyta drugi raz wbrew sobie.
+            'group-dashboard:view-settle': {
+                title: 'Rozliczenia: kto komu oddaje',
+                html: `<p><b>Ekran ma dwie strony.</b> „Płacisz" to Twoje długi, „Dostajesz" to cudze wobec Ciebie. Przełączasz je stuknięciem albo przesunięciem palcem w bok.</p>
+                    <p>Sprawy zbierają się w <b>stosy</b>. Zwinięty stos pokazuje jedną sprawę z pełnymi szczegółami i ma zawsze tę samą wysokość — czy leżą w nim dwie sprawy, czy czterdzieści. Strzałka przy nazwie stosu rozwija go w listę; wtedy każdy wiersz da się rozwinąć osobno, żeby zobaczyć, za jakie rachunki jest ten przelew.</p>
+                    <p><b>Sposób rozliczania wybiera się raz, w ustawieniach pokoju</b>, i to on decyduje, jak wyglądają te strony:</p>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li><b>Rachunek po rachunku</b>: każdy przelew idzie do osoby, która wyłożyła pieniądze. Kwota przy imieniu to suma jej rachunków, których jeszcze nie oddałeś — przy regulowaniu wybierasz, które z nich pokrywasz.</li>
+                        <li><b>Najmniej przelewów</b>: aplikacja szuka najkrótszej drogi dla całej ekipy, więc część długów przechodzi bokiem. Możesz tu nie mieć nic do zapłaty, mimo że para po parze jesteś komuś winien — Twój dług spłaca ktoś, kto jest winien Tobie. Plan przelicza się od nowa po każdym nowym rachunku.</li>
+                    </ul>
+                    <p><b>Wpłata ma dwie strony.</b> „Ureguluj" zapisuje, że wysłałeś pieniądze; odbiorca dostaje pytanie „masz ten przelew?" i odpowiada „Mam" albo „Nie widzę". Dopóki nie odpowie, dług wisi dalej — a po odmowie wraca na saldo i sprawa trafia do stosu „Do wyjaśnienia".</p>
+                    <p><b>Rejestr</b> (zegar w nagłówku) to spis wszystkiego, co ruszyło pieniądze: wpłaty i zmiany kwot, od najnowszego.</p>`
+            },
             'profile': {
                 title: 'Ty i aplikacja',
                 html: `<ul class="list-disc pl-5 space-y-1">
@@ -895,8 +918,12 @@
             document.getElementById('help-modal').classList.add('active');
         };
 
+        // POMOC ZNA ZAKŁADKĘ, NIE TYLKO EKRAN (2026-08-29). Pulpit to trzy różne miejsca
+        // pod jednym „?", a wykład o rozliczeniach zszedł z ekranu Rozliczeń właśnie tutaj
+        // — więc musi się otwierać wtedy, gdy stoję na Rozliczeniach, a nie na Bilansie.
+        // Klucz szczegółowy wygrywa, ogólny jest zapasem dla zakładek, które własnego nie mają.
         const showHelp = () => {
-            const content = HELP_CONTENT[currentScreenName];
+            const content = HELP_CONTENT[`${currentScreenName}:${currentDeckView}`] || HELP_CONTENT[currentScreenName];
             if (!content) return;
             showInfo(content.title, content.html);
         };
@@ -1019,6 +1046,11 @@
             // wyglądał na zepsuty — „jest przesunięty, choć go nie ruszałem".
             zamknijWiersz();
             refreshDeckPin();
+            // Taśma rozliczeń dostaje wysokość Z KODU, a element ukryty ma wysokość zero —
+            // więc gdy przerysowanie z bazy trafiło w moment, w którym stoimy na innej
+            // zakładce, taśma zapamiętałaby zero i po powrocie strona byłaby pusta.
+            // Dopinamy ją w chwili, gdy zakładka realnie staje się widoczna.
+            if (viewId === 'view-settle') settlePanesSync({ animate: false });
         };
 
         const setupDeckNav = () => {
@@ -1047,6 +1079,13 @@
             // z „Opuść pokój": tam zwalniamy imię, tu tylko wychodzimy.
             const roomsBtn = document.getElementById('back-to-rooms-btn');
             if (roomsBtn) roomsBtn.onclick = () => goToRoomsList();
+
+            // TA SAMA DROGA Z EKRANU WYBORU IMIENIA. Ten ekran nie ma jeszcze pokoju
+            // w rozumieniu „mojego", ale ma dokładnie to samo wyjście: `goToRoomsList`
+            // zrywa nasłuchy, czyści adres i stawia znacznik „człowiek chciał być na
+            // liście pokoi", więc aplikacja nie wciągnie go z powrotem samoczynnie.
+            const joinBackBtn = document.getElementById('join-back-btn');
+            if (joinBackBtn) joinBackBtn.onclick = () => goToRoomsList();
         };
 
         // --- PASEK NAWIGACJI A KLAWIATURA -------------------------------------------
@@ -2291,18 +2330,26 @@
             //
             // Chip zostaje w każdym z tych przypadków: informacja jest, tylko przestaje być
             // wezwaniem. Ton `wait` nie zapala ani kropki, ani wiersza „czeka na Ciebie".
+            // IMIĘ PŁATNIKA ZNIKNĘŁO ZE STATUSÓW (zgłoszenie właściciela 2026-08-29:
+            // „jest napisane «Płaci Mikołaj» i jest jego avatar — może wystarczy sam avatar").
+            // Miał rację i to nie jest tylko oszczędność miejsca: znaczek płatnika stoi
+            // w tym samym wierszu, dwa centymetry w lewo, więc imię było DRUGIM nośnikiem
+            // tej samej informacji — a przy „Bartłomiej" zjadało pół kolumny, przez co nazwa
+            // rachunku, czyli tożsamość wiersza, musiała się skracać. Pełne imię stoi na
+            // karcie rachunku, gdzie jest miejsce i gdzie ktoś realnie o nie pyta.
+            // Statusy mówią teraz o STANIE, a kto — mówi twarz.
             if (!bill.payerId) return make('wait', 'Wskaż, kto płacił');
             if (!bill.payerConfirmed) {
                 return myMember.id === bill.payerId
                     ? make('action', 'Potwierdź, że zapłaciłeś/aś')
-                    : make('wait', `Czeka na ${escapeHtml(memberName(bill.payerId))}`);
+                    : make('wait', 'Czeka na płatnika');
             }
             // Patrz uwaga wyżej: dla niepłatnika to nie jest zadanie, tylko oczekiwanie.
             // Ton 'action' zapala kropkę i wciąga rachunek do „Czeka na Ciebie", więc dawał
             // sygnał o czynności, której ta osoba nie może wykonać.
             if (!bill.totalAmount || bill.totalAmount <= 0) {
                 return (bill.payerConfirmed && myMember.id !== bill.payerId)
-                    ? make('wait', `Czeka na kwotę: ${escapeHtml(memberName(bill.payerId))}`)
+                    ? make('wait', 'Czeka na kwotę')
                     : make('action', 'Uzupełnij kwotę');
             }
             // W trybie „po równo" nikt niczego nie uzupełnia, więc ten stan tam nie
@@ -2345,7 +2392,7 @@
                 const outstanding = Math.max(0, calculations.controlSum - myTotal);
                 return make('due', 'Wyłożyłeś/aś', money(outstanding));
             }
-            return make('owe', `Płaci ${escapeHtml(memberName(bill.payerId))}`, money(myTotal));
+            return make('owe', 'Do oddania', money(myTotal));
         };
 
         // --- Tożsamość uczestnika: zdjęcie, a bez zdjęcia kolor z literą ---
@@ -3336,30 +3383,131 @@
         // Bez tego przyciski skakałyby pod palcem przy przeklikiwaniu stosu.
         const stackLine = (lewo, prawo = '', klasa = '') =>
             `<span class="stack-state-line ${klasa}"><span class="truncate">${lewo}</span>${prawo ? `<b class="flex-shrink-0">${prawo}</b>` : '<span></span>'}</span>`;
+        // PUSTY BLOK STANU NIE POWSTAJE W OGÓLE. Stała wysokość ma sens tam, gdzie karty
+        // stosu RÓŻNIĄ się liczbą wierszy — ale w planie „Najmniej przelewów" przelew nie
+        // należy do żadnego rachunku, więc BEZ WYJĄTKU każda karta osoby ma zero wierszy.
+        // Rezerwowanie na nie trzech pustych linijek dawało kartę z pionową kreską i pasem
+        // pustki pod imieniem (widoczne na zrzucie audytu 2026-08-29). Wysokość kart w takim
+        // stosie i tak zostaje równa, bo puste są wszystkie.
         const stackState = (linie) =>
-            `<div class="stack-state">${[...linie, '', ''].slice(0, 3).map((l) => l || '<span class="stack-state-line"></span>').join('')}</div>`;
+            (linie || []).filter(Boolean).length === 0
+                ? ''
+                : `<div class="stack-state">${[...linie, '', ''].slice(0, 3).map((l) => l || '<span class="stack-state-line"></span>').join('')}</div>`;
 
-        // `items` to pary { big, row } — ta sama sprawa w dwóch gęstościach.
+        // ZWIJANIE I ROZWIJANIE JEST RUCHEM, NIE PODMIANĄ (zgłoszenie właściciela 2026-08-29).
+        //
+        // Obie gęstości powstają z `innerHTML`, więc przejścia nie da się zrobić samym CSS:
+        // stary układ znika, zanim nowy istnieje. Mierzymy więc wysokość PRZED przerysowaniem
+        // i dojeżdżamy do nowej po nim. To jedyne dwie liczby, jakich potrzeba, a ruch jest
+        // zwykłą zmianą wysokości i przezroczystości — czyli tanią i taką samą wszędzie.
+        //
+        // Kto ma wyłączone animacje w systemie, dostaje podmianę natychmiastową.
+        let stackMorphFrom = null;
+
+        const stackBodyEl = (name) =>
+            [...document.querySelectorAll('.stack-body')].find((el) => el.dataset.stack === name) || null;
+
+        // Wołane TUŻ PRZED przerysowaniem stosu o tej nazwie.
+        const noteStackHeight = (name) => {
+            const el = stackBodyEl(name);
+            stackMorphFrom = el ? { name, h: el.getBoundingClientRect().height } : null;
+        };
+
+        // Wołane na końcu funkcji rysującej, gdy nowy układ już stoi w dokumencie.
+        const applyStackMorph = () => {
+            const from = stackMorphFrom;
+            stackMorphFrom = null;
+            if (!from || prefersReducedMotion()) return;
+            const el = stackBodyEl(from.name);
+            if (!el) return;
+            const to = el.getBoundingClientRect().height;
+            if (Math.abs(to - from.h) < 2) return;
+            el.classList.add('is-morphing');
+            el.style.height = `${from.h}px`;
+            void el.offsetHeight; // wymuszenie przeliczenia — bez tego obie wysokości skleją się w jedną klatkę
+            el.style.transition = 'height 300ms cubic-bezier(0.2, 0, 0, 1)';
+            el.style.height = `${to}px`;
+            let straznik = null;
+            const koniec = () => {
+                clearTimeout(straznik);
+                el.removeEventListener('transitionend', koniec);
+                el.style.transition = '';
+                el.style.height = '';
+                el.classList.remove('is-morphing');
+            };
+            // Strażnik na wypadek, gdyby `transitionend` nie doszedł (przerysowanie z bazy
+            // w trakcie ruchu). Bez niego stos zostałby na stałe przycięty do starej wysokości.
+            straznik = setTimeout(koniec, 450);
+            el.addEventListener('transitionend', koniec);
+        };
+
+        // `items` to trójki { big, row, details } — ta sama sprawa w trzech gęstościach.
+        // `details` jest opcjonalne: to rozwinięcie POJEDYNCZEGO wiersza rozwiniętej listy.
         const stackHtml = ({ name, title, tone = '', items, otwartyDomyslnie = false }) => {
             if (!items || !items.length) return '';
             const open = items.length > 1 && stackIsOpen(name, otwartyDomyslnie);
+            // IKONA ZAMIAST NAPISU „ZWIŃ"/„ROZWIŃ" (zgłoszenie właściciela 2026-08-29).
+            // Strzałka mówi to samo bez czytania, a nagłówek stosu przestaje mieć dwa
+            // napisy walczące o wzrok. Słowo zostaje w `aria-label` dla czytnika ekranu.
             const head = `<div class="stack-head">
                 <span class="stack-title ${tone}">${escapeHtml(title)}<span class="stack-count">${items.length}</span></span>
                 ${items.length > 1
-                    ? `<button type="button" class="stack-toggle chip" data-stack="${escapeHtml(name)}" data-open="${open ? '1' : '0'}">${open ? 'Zwiń' : 'Rozwiń'}</button>`
+                    ? `<button type="button" class="stack-toggle icon-btn-sm is-quiet" data-stack="${escapeHtml(name)}" data-open="${open ? '1' : '0'}" aria-label="${open ? 'Zwiń stos' : 'Rozwiń stos'}"><i class="fas ${open ? 'fa-chevron-up' : 'fa-chevron-down'}"></i></button>`
                     : ''}
             </div>`;
-            if (open) return `${head}<div class="card p-3 mb-1">${items.map((x) => x.row).join('')}</div>`;
-            // Krawędzie rysujemy TYLKO wtedy, gdy pod spodem coś jest — przy jednej sprawie
-            // stos sam z siebie wygląda jak zwykła karta i nie trzeba na to żadnego progu.
+            // Identyfikatory rozwinięć składamy PRZED szablonem, żeby nazwa stosu nie
+            // pojawiła się surowa w znacznikach — pilnuje tego render.safety.test.js,
+            // a reguła jest słuszna także tutaj: nazwa bywa sklejona z identyfikatorem
+            // rachunku, czyli z danymi z bazy.
+            const ids = items.map((_, i) => `${name}-${i}`);
+            const body = open
+                ? `<div class="card stack-list">${items.map((x, i) => stackItemHtml(x, ids[i])).join('')}</div>`
+                : stackCollapsedHtml(items);
+            return `${head}<div class="stack-body" data-stack="${escapeHtml(name)}">${body}</div>`;
+        };
+
+        // Wiersz rozwiniętej listy razem ze swoim rozwinięciem. Szczegóły są ZWINIĘTE
+        // domyślnie i to jest cały sens tej gęstości — ale mają być OSIĄGALNE, bo inaczej
+        // rozwinięcie stosu odbiera informację zamiast ją porządkować (zgłoszenie
+        // właściciela 2026-08-29: po rozwinięciu nie dało się sprawdzić, jakie rachunki
+        // pokrywa dany przelew).
+        const stackItemHtml = (x, id) => {
+            if (!x.details) return `<div class="stack-item">${x.row}</div>`;
+            return `<div class="stack-item">
+                <div class="stack-row-line">
+                    ${x.row}
+                    <button type="button" class="stack-row-more" data-detail="${escapeHtml(id)}" aria-expanded="false" aria-label="Szczegóły"><i class="fas fa-chevron-down"></i></button>
+                </div>
+                <div class="stack-row-detail" id="detail-${escapeHtml(id)}" hidden>${x.details}</div>
+            </div>`;
+        };
+
+        // STOS ZWINIĘTY. Pod wierzchnią kartą leżą dwie warstwy — nie więcej, bo trzecia
+        // niczego już nie dodaje, a zjada wysokość. Każda głębsza jest węższa i bledsza,
+        // czyli dokładnie tak, jak wygląda stos kartek widziany z góry.
+        const stackCollapsedHtml = (items) => {
             const edges = items.length > 2
                 ? `<div class="stack-edge stack-edge-2"></div><div class="stack-edge stack-edge-1"></div>`
                 : items.length > 1 ? `<div class="stack-edge stack-edge-1"></div>` : '';
             // Klasa składana W CAŁOŚCI przed wstawieniem — skaner Tailwinda znajduje
             // wtedy każdą nazwę jako pełny tekst (patrz selectors.contract.test.js).
             const topClass = `card stack-top${items[0].flagged || ''}`;
-            return `${head}<div class="stack">${edges}<div class="${topClass}">${items[0].big}</div></div>`;
+            return `<div class="stack">${edges}<div class="${topClass}">${items[0].big}</div></div>`;
         };
+
+        // Rozwijanie POJEDYNCZEGO wiersza. Jedna delegacja na cały dokument, bo wiersze
+        // stoją w trzech miejscach (dwie strony rozliczeń i ekran rachunku), a każde z nich
+        // przerysowuje się osobno. Stan jest wyłącznie w DOM — po przerysowaniu z bazy
+        // szczegóły wracają do zwiniętych i to jest w porządku: to podgląd, nie ustawienie.
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('.stack-row-more');
+            if (!btn) return;
+            const box = document.getElementById(`detail-${btn.dataset.detail}`);
+            if (!box) return;
+            const otwarte = box.hidden;
+            box.hidden = !otwarte;
+            btn.setAttribute('aria-expanded', otwarte ? 'true' : 'false');
+        });
 
         // --- KARTY SPRAW ---------------------------------------------------------
         //
@@ -3388,6 +3536,13 @@
 
         const settleAvatarBig = (id) => avatarHtml(memberName(id), id, 'w-12 h-12 text-lg');
         const settleAvatarRow = (id) => avatarHtml(memberName(id), id, 'w-7 h-7 text-xs');
+
+        // SZCZEGÓŁY POD WIERSZEM. Ta sama treść, co blok stanu dużej karty, tylko bez
+        // sztywnej wysokości: tutaj nic nie skacze pod palcem, bo rozwinięcie jest ruchem
+        // świadomym, a nie stanem, przez który się przeklikuje.
+        const detailRow = (lewo, prawo = '', klasa = '') =>
+            `<span class="detail-line ${klasa}"><span class="truncate">${lewo}</span>${prawo ? `<b class="flex-shrink-0">${prawo}</b>` : ''}</span>`;
+        const detailBlock = (linie) => `<div class="stack-detail">${linie.filter(Boolean).join('')}</div>`;
 
         // Ile rachunków pokrywa ta wpłata — jedna fraza, używana w obu gęstościach.
         const ileRachunkow = (s) => {
@@ -3488,13 +3643,21 @@
                 row: `<div class="stack-row">
                         ${settleAvatarRow(s.from)}
                         <span class="flex-grow min-w-0">
-                            <span class="stack-row-name truncate block">${kto}</span>
+                            <span class="stack-row-top"><span class="stack-row-name truncate">${kto}</span><span class="amount stack-row-amount">${escapeHtml(kwota)}</span></span>
                             <span class="stack-row-sub"><span class="stack-dot ${czeka ? 'is-info' : 'is-gray'}"></span>${escapeHtml(stampShort(s.createdAt))}${zaCo ? ` · ${escapeHtml(zaCo)}` : ''}</span>
                         </span>
-                        <span class="amount text-sm flex-shrink-0">${escapeHtml(kwota)}</span>
                         <button class="settle-no-btn icon-btn-sm is-ghost" data-id="${id}" aria-label="Nie widzę"><i class="fas fa-xmark"></i></button>
                         <button class="settle-yes-btn icon-btn-sm is-yes" data-id="${id}" aria-label="Mam"><i class="fas fa-check"></i></button>
                       </div>`,
+                details: detailBlock([
+                    detailRow(escapeHtml(naglowek), '', 'is-lead'),
+                    detailRow('Kwota', escapeHtml(kwota)),
+                    detailRow('Zgłoszone', escapeHtml(kiedy)),
+                    billCtx ? detailRow('Udział w tym rachunku', escapeHtml(fmtMoney(billCtx.udzialG, billCtx.currency))) : '',
+                    nazwy.length
+                        ? `${detailRow(`Pokrywa ${nazwy.length} ${plural(nazwy.length, 'rachunek', 'rachunki', 'rachunków')}`, '', 'is-head')}${nazwy.map((n) => detailRow(escapeHtml(n))).join('')}`
+                        : detailRow('Wpłata bez przypisania do rachunków'),
+                ]),
             };
         };
 
@@ -3545,12 +3708,22 @@
                 row: `<div class="stack-row">
                         ${settleAvatarRow(s.to)}
                         <span class="flex-grow min-w-0">
-                            <span class="stack-row-name truncate block">${kto}</span>
+                            <span class="stack-row-top"><span class="stack-row-name truncate">${kto}</span><span class="amount stack-row-amount text-owe">${escapeHtml(kwota)}</span></span>
                             <span class="stack-row-sub"><span class="stack-dot is-gray"></span>${czekaNaMnie ? 'czeka na Ciebie' : 'sprawdza'} · ${escapeHtml(stampShort(s.createdAt))}</span>
                         </span>
-                        <span class="amount text-sm text-owe flex-shrink-0">${escapeHtml(kwota)}</span>
                         <button class="settle-oops-btn icon-btn-sm is-ghost" data-id="${id}" aria-label="Pomyłka, nie wysłałem"><i class="fas fa-rotate-left"></i></button>
                       </div>`,
+                details: detailBlock([
+                    detailRow(escapeHtml(naglowek), '', 'is-lead'),
+                    detailRow('Kwota', escapeHtml(kwota)),
+                    detailRow('Zgłoszone', escapeHtml(stampLong(s.createdAt))),
+                    (() => {
+                        const nazwy = billNamesOfSettlement(s);
+                        return nazwy.length
+                            ? `${detailRow(`Pokrywa ${nazwy.length} ${plural(nazwy.length, 'rachunek', 'rachunki', 'rachunków')}`, '', 'is-head')}${nazwy.map((n) => detailRow(escapeHtml(n))).join('')}`
+                            : detailRow('Wpłata bez przypisania do rachunków');
+                    })(),
+                ]),
             };
         };
 
@@ -3623,10 +3796,15 @@
             const cichy = kierunek === 'owe' ? ''
                 : `<button type="button" class="receive-btn quiet-link mt-2" data-from="${other}" data-amount-g="${grupa.sumaG}" data-currency="${cur}">Oddał/a mi już</button>`;
 
+            // IKONA MÓWI O PIENIĄDZACH, NIE O KIERUNKU (zgłoszenie właściciela 2026-08-29).
+            // Stała tu zwykła strzałka w prawo — ta sama, którą w całej aplikacji znaczy
+            // „przejdź dalej". Na przycisku, który otwiera regulowanie długu, czytała się
+            // więc jako nawigacja, a nie jako zapłata. Banknoty ze strzałkami nie zostawiają
+            // wątpliwości: stąd wychodzą pieniądze.
             const ikonaRow = kierunek === 'owe'
                 ? (ile
-                    ? `<button class="pick-bills-btn icon-btn-sm is-danger" data-other="${other}" data-currency="${cur}" aria-label="Ureguluj"><i class="fas fa-arrow-right"></i></button>`
-                    : `<button class="settle-btn icon-btn-sm is-danger" data-to="${other}" data-amount-g="${grupa.sumaG}" data-currency="${cur}" aria-label="Ureguluj"><i class="fas fa-arrow-right"></i></button>`)
+                    ? `<button class="pick-bills-btn icon-btn-sm is-danger" data-other="${other}" data-currency="${cur}" aria-label="Ureguluj"><i class="fas fa-money-bill-transfer"></i></button>`
+                    : `<button class="settle-btn icon-btn-sm is-danger" data-to="${other}" data-amount-g="${grupa.sumaG}" data-currency="${cur}" aria-label="Ureguluj"><i class="fas fa-money-bill-transfer"></i></button>`)
                 : `<button class="nudge-btn icon-btn-sm is-dark" data-nudge-to="${other}" data-amount-g="${grupa.sumaG}" data-currency="${cur}" aria-label="Przypomnij"><i class="fas fa-bell"></i></button>`;
 
             return {
@@ -3643,12 +3821,20 @@
                 row: `<div class="stack-row">
                         ${avatarHtml(memberName(grupa.other), grupa.other, 'w-7 h-7 text-xs')}
                         <span class="flex-grow min-w-0">
-                            <span class="stack-row-name truncate block">${imie}</span>
+                            <span class="stack-row-top"><span class="stack-row-name truncate">${imie}</span><span class="amount stack-row-amount ${kolor}">${escapeHtml(kwota)}</span></span>
                             <span class="stack-row-sub"><span class="stack-dot is-mute"></span>${escapeHtml(zaCo || 'plan przelewów')}</span>
                         </span>
-                        <span class="amount text-sm ${kolor} flex-shrink-0">${escapeHtml(kwota)}</span>
                         ${ikonaRow}
                       </div>`,
+                details: detailBlock([
+                    detailRow('Razem', escapeHtml(kwota), 'is-lead'),
+                    ile
+                        ? `${detailRow(`${ile} ${plural(ile, 'rachunek', 'rachunki', 'rachunków')}`, '', 'is-head')}${grupa.rachunki
+                            .map((r) => detailRow(escapeHtml(r.billName || 'Rachunek'), escapeHtml(fmtMoney(r.openG, r.currency))))
+                            .join('')}`
+                        : detailRow('Przelew z planu — nie należy do żadnego rachunku'),
+                    sporneG > 0 ? detailRow('Czeka na wyjaśnienie', escapeHtml(fmtMoney(sporneG, grupa.currency))) : '',
+                ]),
             };
         };
 
@@ -3809,7 +3995,20 @@
         // się z niego dowiedzieć, że potwierdziło się już wszystko: stos z przypomnieniami
         // nigdy się nie opróżnia.
         //
-        // Zwraca `{ oweHtml, dueHtml, oweCount, dueCount, cudzeHtml }`.
+        // CUDZE DŁUGI ZNIKNĘŁY Z TEGO EKRANU (decyzja właściciela 2026-08-29).
+        //
+        // Stała pod stronami rozwijana linijka „Jeszcze N zwrotów w grupie" — spis długów
+        // MIĘDZY INNYMI LUDŹMI. Nie dawało się z nią zrobić nic: nie mój przelew, nie moje
+        // przypomnienie, nie moje potwierdzenie. Zajmowała ostatni wiersz ekranu, na którym
+        // wszystko inne jest czynnością do wykonania, i przy piętnastu osobach rozwijała się
+        // w listę dłuższą niż moje własne rozliczenia.
+        //
+        // Do rejestru NIE TRAFIA i to nie jest przeoczenie: rejestr przyjmuje wyłącznie to,
+        // co RUSZYŁO pieniądze („czy po tym zdarzeniu ktoś jest komuś winien inną kwotę"),
+        // a cudzy niezapłacony dług niczym jeszcze nie ruszył. Kto ile wydał w pokoju, widać
+        // w ustawieniach pokoju.
+        //
+        // Zwraca `{ oweHtml, dueHtml, oweCount, dueCount }`.
         const settlementSides = (myId) => {
             const mode = groupSettlementMode();
             const doPotwierdzenia = settlementsAwaitingMe(myId);
@@ -3818,7 +4017,6 @@
 
             let ludzieOwe = [];
             let ludzieDue = [];
-            let cudzeHtml = '';
             let bezHtml = '';
 
             if (mode === 'perBill') {
@@ -3827,56 +4025,20 @@
                 ludzieDue = perBillPerPerson((per.rows || []).filter((r) => r.payer === myId && r.openG > 0), 'payer');
                 const bez = myUnassigned(per, myId).sent;
                 bezHtml = bez.length ? `<div class="mt-4">${unassignedBlockHtml(bez)}</div>` : '';
-
-                const cudze = (per.rows || []).filter((r) => r.payer !== myId && r.debtor !== myId && r.openG > 0);
-                if (cudze.length) {
-                    const grupy = perBillPerPerson(cudze, 'payer');
-                    cudzeHtml = `<details class="mt-4"><summary class="settle-others-summary">
-                        <span>Jeszcze ${grupy.length} ${plural(grupy.length, 'zwrot', 'zwroty', 'zwrotów')} w grupie</span>
-                        <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
-                    </summary><div class="settle-rows space-y-2 mt-2">${cudze.map((r) => `
-                        <div class="block-quiet p-3.5">
-                            <div class="flex items-center justify-between gap-3">
-                                <span class="flex items-center min-w-0 gap-1.5 text-sm">
-                                    ${avatarHtml(memberName(r.debtor), r.debtor, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(r.debtor))}</span>
-                                    <i class="fas fa-arrow-right text-ink-3 text-xs mx-0.5"></i>
-                                    ${avatarHtml(memberName(r.payer), r.payer, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(r.payer))}</span>
-                                </span>
-                                <span class="amount text-ink-2 flex-shrink-0">${fmtMoney(r.openG, r.currency)}</span>
-                            </div>
-                            <p class="text-xs text-ink-3 mt-1">za „${escapeHtml(r.billName || 'rachunek')}"</p>
-                        </div>`).join('')}</div></details>`;
-                }
             } else {
                 // Plan minimalny i „kto komu": przelew idzie trasą, której nie stworzył
                 // żaden pojedynczy rachunek, więc karta osoby nie ma listy „za co”.
                 const ledger = buildLedger(ledgerBills(), latestSettlements);
-                const cudzeWiersze = [];
                 Object.keys(ledger).forEach((cur) => {
                     const transfers = simplifyDebts(ledger[cur].directed);
                     transfers.forEach((t) => {
                         const grupa = { currency: cur, sumaG: t.amountG, rachunki: [] };
                         if (t.from === myId) ludzieOwe.push({ ...grupa, other: t.to });
                         else if (t.to === myId) ludzieDue.push({ ...grupa, other: t.from });
-                        else cudzeWiersze.push({ ...t, currency: cur });
                     });
                 });
                 ludzieOwe.sort((a, b) => b.sumaG - a.sumaG);
                 ludzieDue.sort((a, b) => b.sumaG - a.sumaG);
-                if (cudzeWiersze.length) {
-                    cudzeHtml = `<details class="mt-4"><summary class="settle-others-summary">
-                        <span>Jeszcze ${cudzeWiersze.length} ${plural(cudzeWiersze.length, 'przelew', 'przelewy', 'przelewów')} w grupie</span>
-                        <i class="fas fa-chevron-down settle-others-chevron ml-auto" aria-hidden="true"></i>
-                    </summary><div class="settle-rows space-y-2 mt-2">${cudzeWiersze.map((t) => `
-                        <div class="block-quiet p-3.5 flex items-center justify-between gap-3">
-                            <span class="flex items-center min-w-0 gap-1.5 text-sm">
-                                ${avatarHtml(memberName(t.from), t.from, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(t.from))}</span>
-                                <i class="fas fa-arrow-right text-ink-3 text-xs mx-0.5"></i>
-                                ${avatarHtml(memberName(t.to), t.to, 'w-7 h-7 text-xs')}<span class="truncate font-semibold">${escapeHtml(memberName(t.to))}</span>
-                            </span>
-                            <span class="amount text-ink-2 flex-shrink-0">${fmtMoney(t.amountG, t.currency)}</span>
-                        </div>`).join('')}</div></details>`;
-                }
             }
 
             const kartyOwe = ludzieOwe.map((g) => personCard(g, {
@@ -3931,10 +4093,9 @@
             ].filter(Boolean).join('');
 
             return {
-                oweHtml, dueHtml, cudzeHtml,
+                oweHtml, dueHtml,
                 oweCount: kartyOwe.length + sporyDluznika.length,
                 dueCount: doPotwierdzenia.length + sporyOdbiorcy.length + kartyDue.length,
-                akcjiCount: doPotwierdzenia.length,
             };
         };
 
@@ -4025,59 +4186,119 @@
                 return;
             }
 
-            // WYJAŚNIENIE RÓŻNICY MIĘDZY TRYBAMI, NIE NAZWA Z KODU (zgłoszenie właściciela
-            // 2026-08-17). Wisiało tu zdanie „Do bieżących spłat pewniejsze jest netto" —
-            // słowo „netto" nie pada nigdzie w interfejsie, zakładka nazywa się „Kto komu",
-            // więc była to nazwa techniczna wyjęta wprost z kodu (`ledger.net`). Zdanie nie
-            // tłumaczyło też RZECZY NAJWAŻNIEJSZEJ: że w planie minimalnym można nie mieć
-            // nic do zapłaty, mimo że w Bilansie stoi „jesteś winien dwóm osobom". Właściciel
-            // zobaczył dokładnie tę sprzeczność i nie miał z czego jej wyjaśnić.
-            // DWIE STRONY EKRANU: „Płacisz" i „Dostajesz".
+            // WYKŁAD ZSZEDŁ POD ZNAK ZAPYTANIA (decyzja właściciela 2026-08-29).
             //
-            // Sam gest przesunięcia jest NIEWIDZIALNY, więc afordancję niesie przełącznik
-            // segmentowy — ten sam wzorzec, którym działa skrzynka („Dla Ciebie"/„Wszystko").
-            // Gest dokłada szybkość tym, którzy już wiedzą, ale nikt nie musi go odkryć,
-            // żeby dojść do drugiej strony.
+            // Stał tu czterowierszowy akapit tłumaczący tryb rozliczania — na górze ekranu,
+            // nad wszystkim, co się na nim robi, i tak samo długi przy setnym wejściu jak
+            // przy pierwszym. To jest odpowiedź na pytanie zadawane RAZ, więc mieszka teraz
+            // w pomocy pod „?" w nagłówku pokoju (HELP_CONTENT), gdzie wolno jej być
+            // dłuższą i pełniejszą.
             //
-            // Podział idzie po KIERUNKU PIENIĘDZY, bo to jedyna granica, której nikt nie
-            // musi się uczyć: albo coś ode mnie wychodzi, albo do mnie wraca.
+            // JEDNO ZDANIE ZOSTAJE, ale wyłącznie w planie minimalnym i wyłącznie wtedy,
+            // gdy realnie zachodzi sprzeczność: „jesteś winien dwóm osobom" na Bilansie
+            // obok pustej strony „Płacisz" tutaj. To nie jest wykład o trybie, tylko fakt
+            // o TWOICH liczbach — a fakt, którego bez wyjaśnienia nie da się pogodzić
+            // z sąsiednim ekranem, musi stać tam, gdzie się go zobaczy.
             const myOweCount = new Set(
                 Object.keys(ledger).flatMap((c) => ledger[c].net.filter((t) => t.from === myId).map((t) => t.to)),
             ).size;
-            const wstep = groupMode === 'perBill'
-                ? `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Każdy przelew idzie do osoby, która wyłożyła pieniądze.</b> Kwota przy imieniu to suma jej rachunków, których jeszcze nie oddałeś — a przy regulowaniu wybierzesz, które z nich pokrywasz.</p>`
-                : `<p class="block-quiet p-4 text-sm text-ink-2 mb-3"><b class="text-ink">Najkrótsza droga dla całej ekipy.</b> Część długów przechodzi bokiem, za to przelewów jest jak najmniej.${
-                    myOweCount
-                        ? ` Dlatego możesz tu nie mieć nic do zapłaty, choć para po parze jesteś winien ${myOweCount === 1 ? 'jednej osobie' : `${myOweCount} osobom`} — Twój dług spłaca ktoś, kto jest winien Tobie.`
-                        : ''
-                } Plan przelicza się od nowa po każdym nowym rachunku.</p>`;
 
             const strony = settlementSides(myId);
 
-            // STRONA PUSTA NIE JEST POWODEM, ŻEBY NA NIEJ LĄDOWAĆ. Kto nikomu nic nie jest
-            // winien, ma po wejściu zobaczyć to, co go dotyczy, a nie pustą półkę i domysł,
-            // że gdzieś obok jest druga.
-            if (settleSide === 'owe' && strony.oweCount === 0 && strony.dueCount > 0) settleSide = 'due';
-            if (settleSide === 'due' && strony.dueCount === 0 && strony.oweCount > 0) settleSide = 'owe';
+            const wstep = (groupMode !== 'perBill' && myOweCount > 0 && strony.oweCount === 0)
+                ? `<p class="block-quiet p-3.5 text-xs text-ink-2 mb-3">Nie masz tu nic do zapłaty, choć para po parze jesteś winien ${myOweCount === 1 ? 'jednej osobie' : `${myOweCount} osobom`}. Twój dług spłaca ktoś, kto jest winien Tobie — na tym polega plan „Najmniej przelewów".</p>`
+                : '';
 
-            const seg = (id, napis, n) => `<button type="button" class="settle-side-btn seg-btn flex-1" data-side="${id}" aria-pressed="${settleSide === id ? 'true' : 'false'}">${napis}${n ? `<span class="seg-count">${n}</span>` : ''}</button>`;
-            const pusto = (tekst) => `<p class="text-ink-3 text-sm py-8 text-center">${tekst}</p>`;
+            // STRONA PUSTA NIE JEST POWODEM, ŻEBY NA NIEJ LĄDOWAĆ — ale też nie jest powodem,
+            // ŻEBY NIE DAŁO SIĘ NA NIĄ WEJŚĆ (zgłoszenie właściciela 2026-08-29). Do tej pory
+            // ta sama reguła robiła obie rzeczy: odbijała z powrotem także wtedy, gdy człowiek
+            // sam przesunął palcem na pustą stronę, więc gest wyglądał na zepsuty. Teraz
+            // podpowiedź działa TYLKO przy pierwszym wejściu, zanim ktokolwiek wybrał stronę.
+            if (!settleSideChosen) {
+                if (settleSide === 'owe' && strony.oweCount === 0 && strony.dueCount > 0) settleSide = 'due';
+                if (settleSide === 'due' && strony.dueCount === 0 && strony.oweCount > 0) settleSide = 'owe';
+            }
+
+            const seg = (id, napis, n) => `<button type="button" class="settle-side-btn seg-btn" data-side="${id}" aria-pressed="${settleSide === id ? 'true' : 'false'}">${napis}${n ? `<span class="seg-count">${n}</span>` : ''}</button>`;
+            // STAN PUSTY STRONY JEST ODPOWIEDZIĄ, NIE MILCZENIEM. Kto przesunął palcem
+            // na „Dostajesz" i nie ma tam nic, ma przeczytać, że nie czeka na żadną wpłatę
+            // — inaczej pusty ekran czyta się jak usterka wczytywania.
+            const pusto = (ikona, tekst) => `<div class="settle-empty"><span class="settle-empty-icon"><i class="fas ${ikona}"></i></span><span>${tekst}</span></div>`;
 
             container.innerHTML = `
                 ${wstep}
-                <div class="seg mb-3">${seg('owe', 'Płacisz', strony.oweCount)}${seg('due', 'Dostajesz', strony.dueCount)}</div>
-                <div id="settle-panes">
-                    <div class="settle-pane" data-side="owe"${settleSide === 'owe' ? '' : ' hidden'}>${strony.oweHtml || pusto('Nikomu nic nie jesteś winien.')}</div>
-                    <div class="settle-pane" data-side="due"${settleSide === 'due' ? '' : ' hidden'}>${strony.dueHtml || pusto('Nikt Ci nic nie jest winien.')}</div>
+                <div class="seg seg-wide mb-3" id="settle-seg"><span class="seg-thumb" aria-hidden="true"></span>${seg('owe', 'Płacisz', strony.oweCount)}${seg('due', 'Dostajesz', strony.dueCount)}</div>
+                <div id="settle-panes" class="settle-swipe">
+                    <div class="settle-track">
+                        <div class="settle-pane" data-side="owe">${strony.oweHtml || pusto('fa-check', 'Nikomu nic nie jesteś winien.')}</div>
+                        <div class="settle-pane" data-side="due">${strony.dueHtml || pusto('fa-check', 'Nie czekasz na żadną wpłatę.')}</div>
+                    </div>
                 </div>
-                <div class="settle-dots" aria-hidden="true"><span class="${settleSide === 'owe' ? 'settle-dot is-on' : 'settle-dot'}"></span><span class="${settleSide === 'due' ? 'settle-dot is-on' : 'settle-dot'}"></span></div>
-                ${strony.cudzeHtml}
             `;
+
+            // Obie strony stoją teraz w dokumencie ZAWSZE — przełącznik i gest tylko
+            // przesuwają taśmę. Dzięki temu przejście da się animować, a strona pusta
+            // jest osiągalna tak samo jak pełna.
+            settlePanesSync({ animate: false });
+            applyStackMorph();
 
             // Wejście do rejestru wpłat. Sam rejestr mieszka w osobnym arkuszu
             // pełnoekranowym — patrz `renderSettlementsLog`.
             const logBtn = document.getElementById('open-settlements-log');
             if (logBtn) logBtn.classList.toggle('hidden', latestSettlements.length === 0 && !(latestEvents || []).some((ev) => ev && ev.type === 'bill-amount'));
+        };
+
+        // --- TAŚMA DWÓCH STRON ----------------------------------------------------
+        //
+        // Obie strony leżą obok siebie na jednej taśmie, a widać tę, na którą taśma jest
+        // przesunięta. `--settle-p` to POSTĘP od 0 (Płacisz) do 1 (Dostajesz) — jedna liczba,
+        // z której bierze się i przesunięcie taśmy, i położenie pigułki w przełączniku.
+        // Dzięki temu w trakcie gestu OBA elementy jadą za palcem i widać, że to jedno
+        // urządzenie, a nie dwa niezależne.
+        //
+        // WYSOKOŚĆ USTAWIAMY Z KODU, bo strony są różnej długości. Bez tego taśma miałaby
+        // zawsze wysokość dłuższej i pod krótszą zostawałby pas pustki na pół ekranu.
+        let settleObserver = null;
+
+        const settlePanesSync = ({ animate = true } = {}) => {
+            const list = document.getElementById('settlements-list');
+            const box = document.getElementById('settle-panes');
+            if (!list || !box) return;
+            const pane = box.querySelector(`.settle-pane[data-side="${settleSide}"]`);
+            if (!pane) return;
+            list.style.setProperty('--settle-p', settleSide === 'due' ? '1' : '0');
+            list.querySelectorAll('.settle-side-btn').forEach((b) => {
+                b.setAttribute('aria-pressed', b.dataset.side === settleSide ? 'true' : 'false');
+            });
+            box.classList.toggle('is-animated', animate && !prefersReducedMotion());
+            // WYSOKOŚĆ ZERO ZNACZY „JESTEM UKRYTY", NIE „JESTEM PUSTY". Ekran rozliczeń
+            // przerysowuje się przy każdej zmianie w bazie, także wtedy, gdy stoimy
+            // na Bilansie albo Rachunkach — a element w ukrytej zakładce ma zerową
+            // wysokość. Zapisanie jej na sztywno zostawiłoby po powrocie pustą stronę.
+            // Wtedy zdejmujemy wysokość w ogóle: taśma bierze ją z dłuższej strony,
+            // a `showDeckView` dopina właściwą w chwili, gdy zakładka się pokazuje.
+            const wysokosc = pane.offsetHeight;
+            box.style.height = wysokosc > 0 ? `${wysokosc}px` : '';
+            // Rozwinięcie „Za co", zwinięcie stosu, dopisany wiersz z bazy — wszystko
+            // to zmienia wysokość strony bez przerysowania całego ekranu. Obserwator
+            // dopina wysokość taśmy do tego, co realnie stoi na wierzchu.
+            if (settleObserver) settleObserver.disconnect();
+            if (typeof ResizeObserver === 'function') {
+                settleObserver = new ResizeObserver(() => {
+                    const teraz = box.querySelector(`.settle-pane[data-side="${settleSide}"]`);
+                    // Ta sama reguła, co wyżej: zero znaczy „ukryty", a nie „pusty".
+                    if (teraz && teraz.offsetHeight > 0) box.style.height = `${teraz.offsetHeight}px`;
+                });
+                settleObserver.observe(pane);
+            }
+        };
+
+        const setSettleSide = (side) => {
+            if (side !== 'owe' && side !== 'due') return;
+            settleSideChosen = true;
+            if (side === settleSide) { settlePanesSync(); return; }
+            settleSide = side;
+            settlePanesSync();
         };
 
         // --- REJESTR WPŁAT ----------------------------------------------------------
@@ -4102,6 +4323,28 @@
         // stuknięcia pozycji i zmiany nazw nie przechodzą tego testu — bez tej reguły
         // rejestr po tygodniu wyjazdu przestaje być dowodem i staje się szumem.
         let logMode = 'mine';
+        // Stan szukania i filtra stanu. Ulotny jak `settleSide`: to pytanie na teraz,
+        // a nie ustawienie — po zamknięciu arkusza rejestr wraca do pełnej listy.
+        let logQuery = '';
+        let logFilter = 'all';
+
+        // Do której pigułki należy ta wpłata. Cztery kubełki, bo tyle jest realnych pytań:
+        // „co jeszcze wisi", „co domknięte", „co poszło nie tak" i „wszystko".
+        const logBucket = (s) => {
+            const stan = settlementState(s);
+            if (stan === SETTLE_CONFIRMED) return 'confirmed';
+            if (stan === SETTLE_PENDING || stan === SETTLE_INSISTED) return 'pending';
+            return 'issue';
+        };
+
+        // Po czym szukamy: imiona OBU stron, nazwy rachunków i kwota. Czyli po wszystkim,
+        // co człowiek pamięta, gdy szuka dowodu — nikt nie pamięta identyfikatora wpisu.
+        const logHaystack = (s) => [
+            memberName(s.from),
+            memberName(s.to),
+            ...billNamesOfSettlement(s),
+            fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN'),
+        ].join(' ').toLowerCase();
 
         const renderSettlementsLog = () => {
             const list = document.getElementById('settlements-log-list');
@@ -4111,18 +4354,53 @@
             document.querySelectorAll('.log-mode-btn').forEach((btn) => {
                 btn.setAttribute('aria-pressed', String(btn.dataset.log === logMode));
             });
+            document.querySelectorAll('.log-filter-btn').forEach((btn) => {
+                btn.setAttribute('aria-pressed', String(btn.dataset.logFilter === logFilter));
+            });
 
             const moje = (s) => s && (s.from === myId || s.to === myId);
-            const wplaty = logMode === 'mine' ? latestSettlements.filter(moje) : latestSettlements;
+            const wszystkieMoje = logMode === 'mine' ? latestSettlements.filter(moje) : latestSettlements;
             // Zmiana kwoty rachunku to jedyne zdarzenie spoza wpłat, które przechodzi test
             // „czy ktoś jest teraz winien inną kwotę" — i odpowiada na pytanie, które pada
             // zawsze: czemu nagle jestem winien więcej.
-            const zmianyKwot = (latestEvents || []).filter((ev) => ev && ev.type === 'bill-amount');
+            const wszystkieZmiany = (latestEvents || []).filter((ev) => ev && ev.type === 'bill-amount');
 
-            if (wplaty.length === 0 && zmianyKwot.length === 0) {
+            // PUSTY REJESTR TO CO INNEGO NIŻ PUSTY WYNIK SZUKANIA — i mówimy o tym osobno,
+            // bo pierwsze znaczy „nic się jeszcze nie wydarzyło", a drugie „szukaj inaczej".
+            if (wszystkieMoje.length === 0 && wszystkieZmiany.length === 0) {
+                document.getElementById('log-filters').classList.add('hidden');
+                document.querySelector('.log-search').classList.add('hidden');
                 list.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">${logMode === 'mine'
                     ? 'Nie masz jeszcze żadnych wpłat ani zmian kwot.'
                     : 'Nikt jeszcze nie zapisał żadnej wpłaty.'}</p>`;
+                return;
+            }
+            document.getElementById('log-filters').classList.remove('hidden');
+            document.querySelector('.log-search').classList.remove('hidden');
+
+            const szukane = logQuery.trim().toLowerCase();
+            const pasuje = (s) => !szukane || logHaystack(s).includes(szukane);
+            const znalezione = wszystkieMoje.filter(pasuje);
+
+            // Liczby przy pigułkach liczą się PO szukaniu: pigułka ma mówić, ile dostaniesz
+            // po jej stuknięciu, a nie ile było przed wpisaniem słowa.
+            document.querySelectorAll('.log-filter-btn').forEach((btn) => {
+                const k = btn.dataset.logFilter;
+                const ile = k === 'all' ? znalezione.length : znalezione.filter((s) => logBucket(s) === k).length;
+                const licznik = btn.querySelector('.filter-pill-count');
+                if (licznik) licznik.textContent = ile ? String(ile) : '';
+            });
+
+            const wplaty = logFilter === 'all' ? znalezione : znalezione.filter((s) => logBucket(s) === logFilter);
+            // Zmiany kwot nie mają stanu wpłaty, więc pod filtrem stanu nie mają czego
+            // pokazać — schodzą z listy zamiast udawać, że pasują do każdego kubełka.
+            const zmianyKwot = logFilter !== 'all'
+                ? []
+                : wszystkieZmiany.filter((ev) => !szukane
+                    || `${ev.byName || memberName(ev.by)} ${ev.label || ''}`.toLowerCase().includes(szukane));
+
+            if (wplaty.length === 0 && zmianyKwot.length === 0) {
+                list.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">Nic nie pasuje do tego, czego szukasz.</p>`;
                 return;
             }
 
@@ -4223,6 +4501,14 @@
         };
 
         const openSettlementsLog = () => {
+            // Każde otwarcie zaczyna się od pełnej listy. Szukanie jest pytaniem na teraz,
+            // a nie ustawieniem — wczorajsze słowo ukrywałoby dziś połowę dowodów.
+            logQuery = '';
+            logFilter = 'all';
+            const pole = document.getElementById('log-search');
+            if (pole) pole.value = '';
+            const czysc = document.getElementById('log-search-clear');
+            if (czysc) czysc.classList.add('hidden');
             renderSettlementsLog();
             document.getElementById('settlements-log-modal').classList.add('active');
         };
@@ -4457,9 +4743,18 @@
         const openNudgeCompose = (adresaci, amountGlubCurrency, currency, opcje = {}) => {
             const my = myMemberNow();
             if (!my) { showToast('Najpierw dołącz do grupy.', true); return; }
+            // Adresat może NIEŚĆ WŁASNY RACHUNEK. Przy przypomnieniu z karty rachunku
+            // wszyscy dotyczą tego samego, ale przypomnienie zbiorcze z Bilansu obejmuje
+            // kilka rachunków naraz — a odnośnik w powiadomieniu ma prowadzić tam, gdzie
+            // TA osoba ma coś do zrobienia, nie tam, gdzie ma ktoś inny.
             const lista = (Array.isArray(adresaci)
-                ? adresaci.map((a) => ({ toId: a.toId, amountG: Number(a.amountG) || 0 }))
-                : [{ toId: adresaci, amountG: Number(amountGlubCurrency) || 0 }]
+                ? adresaci.map((a) => ({
+                    toId: a.toId,
+                    amountG: Number(a.amountG) || 0,
+                    billId: a.billId || null,
+                    billName: a.billName || '',
+                }))
+                : [{ toId: adresaci, amountG: Number(amountGlubCurrency) || 0, billId: null, billName: '' }]
             ).filter((a) => a.toId && a.toId !== my.id);
             if (lista.length === 0) return;
             const waluta = (Array.isArray(adresaci) ? amountGlubCurrency : currency) || 'PLN';
@@ -4485,8 +4780,14 @@
             const razemG = lista.reduce((s, a) => s + a.amountG, 0);
             // Przy prośbie o uzupełnienie kwota nie ma sensu — nikt nikomu nic nie jest winien.
             // W to miejsce idzie nazwa rachunku, bo to ona mówi, o co chodzi.
+            const jedenRachunek = nudgeDraft.billName || (lista.length === 1 ? lista[0].billName : '');
+            const ileRachunkowWLiscie = new Set(lista.map((a) => a.billId).filter(Boolean)).size;
             const podpis = kind === 'fill'
-                ? (nudgeDraft.billName ? `rachunek „${nudgeDraft.billName}"` : 'ten rachunek')
+                ? (jedenRachunek
+                    ? `rachunek „${jedenRachunek}"`
+                    : (ileRachunkowWLiscie > 1
+                        ? `${ileRachunkowWLiscie} ${plural(ileRachunkowWLiscie, 'rachunek', 'rachunki', 'rachunków')}`
+                        : 'Twoje rachunki'))
                 : (razemG > 0 ? `zaległość ${fmtMoney(razemG, waluta)}` : '');
             if (lista.length === 1) {
                 nameEl.textContent = memberName(lista[0].toId);
@@ -4815,12 +5116,88 @@
             renderBillsList();
         });
 
+        // KTO NIE STUKNĄŁ SWOJEGO NA MOICH RACHUNKACH — CAŁA GRUPA NARAZ.
+        //
+        // Na karcie rachunku „Przypomnij" istnieje od dawna, ale działa w obrębie JEDNEGO
+        // rachunku. Kto wyłożył pieniądze za trzy kolacje, musiał wejść w każdą z osobna
+        // i wysłać trzy razy — a spóźnialscy się powtarzają, więc ta sama osoba dostawała
+        // trzy powiadomienia pod rząd. Właściciel poprosił o jedno miejsce, z którego leci
+        // to do wszystkich (2026-08-29).
+        //
+        // „Moje rachunki" znaczy TE, NA KTÓRYCH JA WYŁOŻYŁEM PIENIĄDZE. To jedyna definicja,
+        // która daje prawo poganiać: czekam na swoje. Rachunek cudzy, nawet założony przeze
+        // mnie, poganiania nie uzasadnia — od tego jest jego płatnik.
+        //
+        // JEDNA OSOBA DOSTAJE JEDNO PRZYPOMNIENIE, nawet gdy zalega na czterech rachunkach.
+        // Gdy zalega na jednym, przypomnienie niesie odnośnik prosto do niego; przy kilku
+        // odnośnika nie ma, bo nie da się wskazać jednego miejsca, które załatwia sprawę.
+        const czekajaNaUzupelnienie = () => {
+            const my = myMemberNow();
+            if (!my) return [];
+            const moje = latestBills
+                .map(({ id, data }) => ({ ...data, id }))
+                .filter((b) => b.payerId === my.id
+                    && toGrosze(b.totalAmount || 0) > 0
+                    && !billSettleGate(b).open);
+            const mapa = new Map();
+            moje.forEach((b) => {
+                Object.values(b.participants || {})
+                    .filter((p) => p.status !== PARTICIPANT_OUT && p.id !== my.id && !participantReady(b, p.id))
+                    .forEach((p) => {
+                        const wpis = mapa.get(p.id) || { toId: p.id, amountG: 0, rachunki: [] };
+                        wpis.rachunki.push({ id: b.id, name: b.billName || '' });
+                        mapa.set(p.id, wpis);
+                    });
+            });
+            return [...mapa.values()];
+        };
+
+        const remindFillAllHtml = () => {
+            const ludzie = czekajaNaUzupelnienie();
+            if (!ludzie.length) return '';
+            const n = ludzie.length;
+            const twarze = ludzie.slice(0, 5);
+            // BLOK JEST CICHY (`block-quiet`), NIE KARTĄ. `card` znaczy w tym systemie
+            // PIENIĄDZE („Do oddania", „Czekasz na zwrot"), a tu nikt nikomu jeszcze nic
+            // nie jest winien — te rachunki nie weszły nawet do salda. Przycisk jest ciemny,
+            // bo budzi do dwudziestu pięciu cudzych telefonów: limonka znaczy „domykam
+            // sprawę, którą ktoś mi postawił", a tę zaczynam sam.
+            return `<div class="block-quiet p-4">
+                <div class="flex items-center gap-3">
+                    <span class="flex -space-x-2 flex-shrink-0">${twarze
+                        .map((a) => avatarHtml(memberName(a.toId), a.toId, 'w-8 h-8 text-xs'))
+                        .join('')}${n > twarze.length ? `<span class="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold bg-surface text-ink-2">+${n - twarze.length}</span>` : ''}</span>
+                    <span class="text-sm text-ink-2 min-w-0"><b class="text-ink">${n === 1 ? '1 osoba nie stuknęła' : `${n} ${plural(n, 'osoba nie stuknęła', 'osoby nie stuknęły', 'osób nie stuknęło')}`} swoich pozycji</b> na Twoich rachunkach.</span>
+                </div>
+                <button id="remind-fill-all-btn" class="btn btn-dark w-full mt-3"><i class="fas fa-bell mr-1.5"></i>Przypomnij ${n} ${plural(n, 'osobie', 'osobom', 'osobom')}</button>
+            </div>`;
+        };
+
         const renderBalanceFilling = () => {
             const wrap = document.getElementById('balance-filling');
             if (!wrap) return;
-            const html = billsAsideHtml();
+            const przypomnij = remindFillAllHtml();
+            const html = [billsAsideHtml(), przypomnij ? `<div class="mt-2">${przypomnij}</div>` : ''].filter(Boolean).join('');
             wrap.innerHTML = html;
             wrap.classList.toggle('hidden', !html);
+            const btn = document.getElementById('remind-fill-all-btn');
+            if (btn) btn.onclick = () => {
+                const ludzie = czekajaNaUzupelnienie();
+                if (!ludzie.length) { showToast('Wszyscy już coś stuknęli.'); return; }
+                // Waluta jest tu bez znaczenia (kwota to zero — prosimy o ruch, nie o pieniądze),
+                // ale kompozytor jej wymaga, więc bierzemy domyślną walutę pokoju.
+                openNudgeCompose(
+                    ludzie.map((a) => ({
+                        toId: a.toId,
+                        amountG: 0,
+                        billId: a.rachunki.length === 1 ? a.rachunki[0].id : null,
+                        billName: a.rachunki.length === 1 ? a.rachunki[0].name : '',
+                    })),
+                    (groupData && groupData.defaultCurrency) || 'PLN',
+                    null,
+                    { kind: 'fill' },
+                );
+            };
         };
 
         // BILANS JEST DROGOWSKAZEM, NIE DRUGĄ SKRZYNKĄ (decyzja właściciela 2026-08-29).
@@ -6112,6 +6489,21 @@
             });
             const perBillActive = groupSettlementMode() === 'perBill';
 
+            // KTÓRE RACHUNKI MAJĄ SPRAWY PRZELEWOWE — liczone RAZ na przerysowanie.
+            // Jeden przelew bywa zapłatą za pięć rachunków, więc pytanie brzmi „czy ten
+            // rachunek jest wśród nich", a nie „czy przelew ma ten identyfikator".
+            const rachunkiWplaty = (s) => (Array.isArray(s.billIds) && s.billIds.length)
+                ? s.billIds
+                : (s.billId ? [s.billId] : []);
+            const doPotwierdzeniaRachunki = new Map();
+            settlementsAwaitingMe(myMember.id).forEach((s) => {
+                rachunkiWplaty(s).forEach((b) => doPotwierdzeniaRachunki.set(b, (doPotwierdzeniaRachunki.get(b) || 0) + 1));
+            });
+            const sporneRachunki = new Set();
+            [...disputesAsPayee(myMember.id), ...disputesAsDebtor(myMember.id)].forEach((s) => {
+                rachunkiWplaty(s).forEach((b) => sporneRachunki.add(b));
+            });
+
             // FILTR „DO ODDANIA" ISTNIEJE TYLKO W TRYBIE RACHUNKOWYM (decyzja właściciela
             // 2026-08-26). W planie minimalnym wpłaty idą trasami, których żaden rachunek
             // nie stworzył, więc nie da się uczciwie powiedzieć, czy TEN rachunek został
@@ -6127,39 +6519,48 @@
             // filtra i dla błękitu na kafelku. „Moje" to te, za które wyłożyłem pieniądze.
             // „Do oddania" — te, za które wciąż jestem winien płatnikowi; działa w KAŻDYM
             // trybie, bo pytanie „co jeszcze wisi" nie zależy od tego, jak grupa się umówiła.
-            const visible = latestBills.filter(({ id, data }) => {
+            // JEDNA REGUŁA PRZYNALEŻNOŚCI, dwa zastosowania: lista i liczby przy pigułkach.
+            // Do 2026-08-29 liczby miały własne, osobno pisane warunki — i były tylko dwie,
+            // bo trzeciej nikomu nie chciało się powtarzać po raz trzeci. Teraz reguła jest
+            // jedna, więc każdy filtr może mieć licznik i żaden nie może się rozjechać
+            // z tym, co realnie pokaże po stuknięciu.
+            const pasujeDoFiltru = (filtr, id, data) => {
                 const state = getBillUserState(data, myMember);
-                if (currentBillFilter === 'hidden') return state === 'hidden';
-                if (currentBillFilter === 'others') return state === 'others';
+                if (filtr === 'hidden') return state === 'hidden';
+                if (filtr === 'others') return state === 'others';
                 // Reszta filtrów pracuje wyłącznie na rachunkach, które MNIE dotyczą
                 // i których sam nie schowałem — to jest domyślny świat tej listy.
                 if (state !== 'visible') return false;
-                if (currentBillFilter === 'waiting') {
+                if (filtr === 'confirm') return doPotwierdzeniaRachunki.has(id);
+                if (filtr === 'waiting') {
                     const p = data.participants ? data.participants[myMember.id] : null;
-                    return billStatus(data, myMember, p).tone === 'action';
+                    return doPotwierdzeniaRachunki.has(id) || billStatus(data, myMember, p).tone === 'action';
                 }
-                if (currentBillFilter === 'owed') return mojeDoOddania.has(id);
-                if (currentBillFilter === 'mine') return data.payerId === myMember.id;
+                if (filtr === 'owed') return mojeDoOddania.has(id);
+                if (filtr === 'mine') return data.payerId === myMember.id;
                 return true;
-            });
+            };
 
-            // Liczba przy pigułce „Do oddania" — jedyna liczba na tym pasku, bo to jedyny
-            // filtr, którego zawartość jest zadaniem, a nie widokiem. Zero chowa nawias
-            // zamiast pisać „(0)": pusty nawias wygląda jak awaria licznika.
-            const owedCountEl = document.getElementById('bill-filter-owed-count');
-            if (owedCountEl) {
-                const ile = latestBills.filter(({ id, data }) =>
-                    getBillUserState(data, myMember) === 'visible' && mojeDoOddania.has(id)).length;
-                owedCountEl.textContent = ile ? ` (${ile})` : '';
-            }
-            // Ukrycie to jedyny filtr, który człowiek nakłada sam na siebie, i jedyny,
-            // po którym rachunek znika mu z oczu. Bez liczby nie ma jak zauważyć, że coś
-            // się tam odłożyło — pigułka wygląda tak samo przy zerze i przy dwunastu.
-            const hiddenCountEl = document.getElementById('bill-filter-hidden-count');
-            if (hiddenCountEl) {
-                const ile = latestBills.filter(({ data }) => getBillUserState(data, myMember) === 'hidden').length;
-                hiddenCountEl.textContent = ile ? ` (${ile})` : '';
-            }
+            // FILTR „DO POTWIERDZENIA" POJAWIA SIĘ TYLKO WTEDY, GDY MA CO POKAZAĆ.
+            // Pigułka, która przez większość życia pokoju stoi pusta, uczy omijać wzrokiem
+            // cały pasek — a ta niesie jedyną rzecz na tym ekranie, przy której czekają
+            // CUDZE pieniądze. Lepiej, żeby pojawiała się rzadko i znaczyła coś zawsze.
+            const confirmBtn = document.querySelector('.bill-filter-btn[data-filter="confirm"]');
+            if (confirmBtn) confirmBtn.classList.toggle('hidden', doPotwierdzeniaRachunki.size === 0);
+            if (doPotwierdzeniaRachunki.size === 0 && currentBillFilter === 'confirm') currentBillFilter = 'all';
+
+            const visible = latestBills.filter(({ id, data }) => pasujeDoFiltru(currentBillFilter, id, data));
+
+            // LICZBA PRZY KAŻDEJ PIGUŁCE (zgłoszenie właściciela 2026-08-29). Bez niej filtr
+            // trzeba odwiedzić, żeby się dowiedzieć, czy coś w nim jest — a przy sześciu
+            // pigułkach to sześć stuknięć, żeby zobaczyć jedną liczbę. Zero chowa licznik
+            // zamiast pisać „0": pusty filtr ma wyglądać na pusty, a nie na zepsuty.
+            document.querySelectorAll('.bill-filter-btn').forEach((btn) => {
+                const licznik = btn.querySelector('.filter-pill-count');
+                if (!licznik) return;
+                const ile = latestBills.filter(({ id, data }) => pasujeDoFiltru(btn.dataset.filter, id, data)).length;
+                licznik.textContent = ile ? String(ile) : '';
+            });
 
             renderBillsCount(visible);
 
@@ -6232,31 +6633,51 @@
                 // DWIE PARY SŁÓW, BO DWIE ROLE. Dłużnik ma coś do zapłacenia („Nieopłacone"),
                 // ale płatnik już zapłacił — z jego strony rachunek nie jest „nieopłacony",
                 // tylko czeka na zwroty. Jedno słowo na obie role kłamałoby jednej z nich.
+                // JEDEN ZNACZEK STANU NA WIERSZ (przeprojektowane 2026-08-29).
+                //
+                // Do tej pory w trybie rachunkowym wiersz niósł DWA znaczki naraz: status
+                // ogólny („Płaci Ala") i stan rozliczenia („Nieopłacone"). Po zdjęciu imion
+                // ze statusów zostałoby „Do oddania" obok „Nieopłacone", czyli dwa napisy
+                // o tym samym. Znaczek jest więc jeden i wygrywa ten BLIŻSZY pieniądzom.
+                //
+                // KOLEJNOŚĆ PIERWSZEŃSTWA, od najpilniejszego:
+                //   1. cudzy przelew czeka na moje sprawdzenie   (mój ruch, cudze pieniądze)
+                //   2. sprawa sporna wokół tego rachunku          (stoi, dopóki się nie dogadamy)
+                //   3. stan rozliczenia w trybie rachunkowym      (nieopłacone / czeka na zwrot / domknięte)
+                //   4. status ogólny rachunku                     (uzupełnianie, kwota, płatnik)
                 const mojDlug = mojeDoOddania.get(id);
                 const doMnie = doMnieZRachunku.get(id);
                 const statusChip = (klasa, ikona, tekst) =>
                     `<span class="chip ${klasa} flex-shrink-0"><i class="fas ${ikona}"></i>${tekst}</span>`;
-                let kwotaHtml = `<span class="${status.amountClass}">${status.amount}</span>`;
-                // Chip płatnika wycisza się, gdy obok stoi status. Inaczej wiersz niesie
-                // DWA czerwone znaczki naraz („Płaci Ala" i „Nieopłacone"), które mówią
-                // to samo — a czerwień, która powtarza samą siebie, przestaje cokolwiek
-                // znaczyć. Kto wyłożył pieniądze, jest tu informacją, nie ostrzeżeniem.
-                let chipClass = status.chipClass;
-                // Czy prawa kolumna niesie ZNACZEK (schodzi do rzędu podpisów), czy LICZBĘ
-                // (zostaje po prawej, wyrównana). Patrz uwaga przy budowie wiersza niżej.
-                let statusWWierszu = false;
+                let kwotaHtml = status.amount ? `<span class="${status.amountClass}">${status.amount}</span>` : '';
+                let chipHtml = `<span class="${status.chipClass}">${status.labelHtml}</span>`;
+                // Czy ten wiersz woła o MÓJ ruch — stąd błękitne tło kafelka i kropka.
+                let wolaMnie = status.tone === 'action';
+
                 if (perBillActive && status.tone === 'owe') {
-                    kwotaHtml = mojDlug
+                    chipHtml = mojDlug
                         ? statusChip('text-owe', 'fa-circle-exclamation', 'Nieopłacone')
                         : statusChip('text-due', 'fa-check', 'Opłacone');
-                    chipClass = 'chip';
-                    statusWWierszu = true;
                 } else if (perBillActive && status.tone === 'due' && typeof doMnie === 'number') {
-                    kwotaHtml = doMnie > 0
+                    chipHtml = doMnie > 0
                         ? statusChip('', 'fa-hourglass-half', 'Czeka na zwrot')
                         : statusChip('text-due', 'fa-check', 'Rozliczony');
-                    chipClass = 'chip';
-                    statusWWierszu = true;
+                }
+                if (sporneRachunki.has(id)) {
+                    chipHtml = statusChip('', 'fa-eye', 'Do wyjaśnienia');
+                }
+                // NAJWYŻSZY PRIORYTET: ktoś zgłosił przelew za ten rachunek i czeka na moje
+                // „Mam" (zgłoszenie właściciela 2026-08-29: „warto może wyróżnić rachunki,
+                // gdzie mamy do potwierdzenia przelewy"). To jedyny stan na tej liście,
+                // w którym CUDZE pieniądze czekają na moje jedno stuknięcie — i jedyny,
+                // przy którym rachunek dostaje tu wołanie mimo domkniętego statusu.
+                const doPotwierdzeniaTu = doPotwierdzeniaRachunki.get(id) || 0;
+                if (doPotwierdzeniaTu) {
+                    chipHtml = statusChip('text-info', 'fa-circle-question', doPotwierdzeniaTu === 1
+                        ? 'Przelew do sprawdzenia'
+                        : `${doPotwierdzeniaTu} przelewy do sprawdzenia`);
+                    kwotaHtml = '';
+                    wolaMnie = true;
                 }
 
                 // WIERSZ ODSUWANY PALCEM. Kartę i przycisk ukrywania rozdziela teraz gest,
@@ -6278,7 +6699,7 @@
                 // kafelkach z tonem `action` („Wskaż, kto płacił", „Stuknij, co Twoje",
                 // „Zamknij rachunek") i stąd wrażenie, że usterka zależy od statusu.
                 // Klasa nakłada barwę WARSTWĄ na nieprzezroczystym tle — patrz src/tailwind.css.
-                if (status.tone === 'action') billEl.classList.add('tile-action');
+                if (wolaMnie) billEl.classList.add('tile-action');
                 // PEŁNA NAZWA RACHUNKU, BEZ UCINANIA (zgłoszenie właściciela 2026-08-26:
                 // „Pizzeria u Wujka Stacha" schodziła do „Pizzeria u W…"). Nazwa jest
                 // tożsamością wiersza — po niej odróżnia się dwie kolacje z tego samego
@@ -6290,18 +6711,31 @@
                 // równie dobrze w rzędzie podpisów piętro niżej — więc tam schodzi,
                 // a nazwa dostaje całą szerokość. W pozostałych trybach po prawej stoi
                 // LICZBA, która musi być wyrównana do prawej i zostaje na miejscu.
+                // WIERSZ O STAŁYM UKŁADZIE I STAŁEJ WYSOKOŚCI (zgłoszenie właściciela
+                // 2026-08-29: „wkurza mnie, że zmienia się wysokość rachunków na liście
+                // oraz układ danych się przesuwa w zależności od długości treści").
+                //
+                // Miał rację co do przyczyny: nazwa łamała się na dowolną liczbę wierszy,
+                // znaczki stały w rzędzie ze zawijaniem, a kwota raz stała w prawej kolumnie,
+                // raz schodziła do rzędu podpisów — więc kafelek miał inny KSZTAŁT zależnie
+                // od treści. Lista, po której się skanuje wzrokiem, musi mieć jedną siatkę.
+                //
+                // Siatka jest teraz dwuwierszowa i niezmienna:
+                //   [ znak ]  nazwa rachunku (jeden wiersz, nadmiar wielokropkiem)
+                //             [znaczek stanu] · godzina                        kwota
+                // Nazwa dostaje CAŁĄ szerokość kolumny, bo znaczek zszedł piętro niżej —
+                // czyli ucięcie zdarza się rzadziej niż wtedy, gdy nazwa nie była ucinana
+                // wcale, ale konkurowała o miejsce z kwotą po prawej.
                 billEl.innerHTML = `
-                    <div class="flex items-start gap-3">
-                    ${bill.payerId ? avatarHtml(memberName(bill.payerId), bill.payerId, 'w-11 h-11 text-base') : unknownPayerHtml()}
-                    <div class="min-w-0 flex-grow">
-                        <p class="font-bold text-lg leading-tight break-words">${escapeHtml(bill.billName)}</p>
-                        <div class="mt-1.5 flex items-center gap-2 flex-wrap">
-                            <span class="${chipClass}">${status.labelHtml}</span>
-                            ${statusWWierszu ? kwotaHtml : ''}
-                            <span class="text-sm text-ink-3">${created}</span>
+                    <div class="bill-row">
+                        ${bill.payerId ? avatarHtml(memberName(bill.payerId), bill.payerId, 'w-11 h-11 text-base') : unknownPayerHtml()}
+                        <div class="min-w-0 flex-grow">
+                            <p class="bill-row-name">${escapeHtml(bill.billName)}</p>
+                            <div class="bill-row-meta">
+                                <span class="bill-row-state">${chipHtml}${created ? `<span class="text-sm text-ink-3">${created}</span>` : ''}</span>
+                                ${kwotaHtml ? `<span class="flex-shrink-0">${kwotaHtml}</span>` : ''}
+                            </div>
                         </div>
-                    </div>
-                    ${statusWWierszu ? '' : `<div class="flex items-center gap-2 flex-shrink-0 pt-0.5">${kwotaHtml}</div>`}
                     </div>
                 `;
                 billEl.onclick = (e) => {
@@ -6365,6 +6799,76 @@
         // na górze listy, choć wybrany rachunek stał w jej połowie. Przy dwudziestu
         // rachunkach to znaczy szukanie tego samego miejsca drugi raz.
         let dashboardScrollY = 0;
+
+        // WYJŚCIE Z RACHUNKU — JEDNA FUNKCJA NA WSZYSTKIE DROGI. Strzałka w nagłówku
+        // i gest od krawędzi muszą robić DOKŁADNIE to samo, bo inaczej ta sama czynność
+        // zaczyna zachowywać się różnie zależnie od tego, czym się ją wykonało.
+        const leaveBillScreen = () => {
+            if (!currentBillId) return;
+            if (unsubscribeBill) unsubscribeBill();
+            navigateToGroup(currentGroupId);
+        };
+
+        // GEST COFANIA OD LEWEJ KRAWĘDZI — WŁASNY, BO CUDZY BYWA NIEOBECNY.
+        //
+        // Zgłoszenie właściciela 2026-08-29: „czasem na iOS przesunięcie z rachunku nie
+        // wraca do listy — czasem działa, czasem nie". Wersja pierwsza tego kodu nie
+        // istniała w ogóle: aplikacja liczyła na gest SYSTEMOWY. On jednak nie jest
+        // obietnicą. W aplikacji uruchomionej z ikony (a tak jej używa ekipa właściciela)
+        // iOS raz go daje, raz nie, a kiedy treść przewija się w kontenerze `#app-scroll`
+        // i akurat wybrzmiewa rozpęd przewijania, gest przepada bez śladu. Stąd
+        // „czasem działa".
+        //
+        // Rozwiązanie: ten sam gest, ale nasz — a gdy przeglądarka zdecyduje się przejąć
+        // go u siebie, strona dostaje `touchcancel` i nasz po prostu milknie. Dzięki temu
+        // cofnięcie nie wykona się dwa razy, a wykona się ZAWSZE.
+        //
+        // Strefa startu jest wąska (28 px) i to nie jest ostrożność, tylko konieczność:
+        // szerszy pas kradłby stukanie w lewą kolumnę ekranu rachunku (znaki uczestników
+        // przy pozycjach paragonu stoją dokładnie tam).
+        const setupEdgeBack = () => {
+            const STREFA = 28;
+            const PROG = 72;
+            let x0 = null, y0 = null, os = null;
+
+            const czynny = () => currentScreenName === 'bill'
+                && !!currentBillId
+                && !document.querySelector('.modal.active');
+
+            document.addEventListener('touchstart', (e) => {
+                x0 = null;
+                os = null;
+                if (e.touches.length !== 1 || !czynny()) return;
+                const t = e.touches[0];
+                if (t.clientX > STREFA) return;
+                x0 = t.clientX;
+                y0 = t.clientY;
+            }, { passive: true });
+
+            document.addEventListener('touchmove', (e) => {
+                if (x0 === null || !e.touches.length) return;
+                const dx = e.touches[0].clientX - x0;
+                const dy = e.touches[0].clientY - y0;
+                // Oś ustala się raz i nie zmienia: gest ukośny albo cofa, albo przewija,
+                // a nie raz jedno, raz drugie.
+                if (os === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+                    os = (dx > 0 && Math.abs(dx) > Math.abs(dy)) ? 'x' : 'y';
+                }
+            }, { passive: true });
+
+            document.addEventListener('touchend', (e) => {
+                const start = x0;
+                const osGestu = os;
+                x0 = null;
+                os = null;
+                if (start === null || osGestu !== 'x' || !e.changedTouches.length) return;
+                if (e.changedTouches[0].clientX - start < PROG) return;
+                leaveBillScreen();
+            }, { passive: true });
+
+            // Przeglądarka przejęła gest u siebie — nasz ma zamilknąć.
+            document.addEventListener('touchcancel', () => { x0 = null; os = null; }, { passive: true });
+        };
 
         const joinBill = async (groupId, billId) => {
             dashboardScrollY = appScrollTop();
@@ -7384,6 +7888,30 @@
             };
             const spory = [...disputesAsPayee(myId).filter(tegoRachunku), ...disputesAsDebtor(myId).filter(tegoRachunku)];
 
+            // CZEKASZ NA PRZELEW — TEN SAM STOS, CO W ROZLICZENIACH, ale zawężony do tego
+            // jednego rachunku (na wniosek właściciela 2026-08-29: „wszystko, co da się
+            // zrobić w Rozliczeniach, powinno być widoczne w Rachunkach i możliwe do
+            // realizacji" — bo część ekipy rozlicza się rachunek po rachunku i do zakładki
+            // Rozliczeń praktycznie nie zagląda).
+            //
+            // Brakowało tu dokładnie jednej rzeczy: przypomnienia. Dłużnik miał na rachunku
+            // limonkową kartę „Twój udział" z przyciskiem „Ureguluj", a płatnik widział
+            // wyłącznie zwinięty spis „Ekipa: 14 osób · oddało 2 z 14" — czyli wiedział,
+            // kto nie oddał, i nie mógł z tym zrobić nic bez wyjścia na inną zakładkę.
+            //
+            // WYŁĄCZNIE W TRYBIE RACHUNKOWYM. W planie „Najmniej przelewów" pieniądze idą
+            // trasami, których ten rachunek nie stworzył, więc „czekasz na przelew ZA TEN
+            // rachunek" byłoby zdaniem, którego nie da się uczciwie obronić — a „Oddał/a mi
+            // już" zapisałoby wpłatę, która niczego tam nie gasi.
+            const per = perBillNow();
+            const czekamNa = groupSettlementMode() === 'perBill'
+                ? (per.rows || []).filter((r) => r.billId === currentBillId && r.payer === myId && r.openG > 0)
+                : [];
+            const kartyCzekam = czekamNa.map((r) => personCard(
+                { other: r.debtor, currency: r.currency, sumaG: r.openG, rachunki: [r] },
+                { kierunek: 'due', sporneG: sporneWobec(disputesAsPayee(myId).filter(tegoRachunku), r.debtor, r.currency) },
+            ));
+
             const html = [
                 doPotwierdzenia.length
                     ? stackHtml({ name: `bill-confirm-${currentBillId}`, title: 'Do potwierdzenia', tone: 'is-info', items: doPotwierdzenia.map((x) => payeeCard(x, billCtxFor(x))) })
@@ -7394,10 +7922,17 @@
                         items: spory.map((s) => (s.to === myId ? payeeCard(s) : debtorDisputeCard(s))),
                     })}</div>`
                     : '',
+                kartyCzekam.length
+                    ? `<div class="mt-4">${stackHtml({
+                        name: `bill-waiting-${currentBillId}`, title: 'Czekasz na przelew', tone: 'is-due',
+                        items: kartyCzekam,
+                    })}</div>`
+                    : '',
             ].filter(Boolean).join('');
 
             wrap.innerHTML = html;
             wrap.classList.toggle('hidden', !html);
+            applyStackMorph();
         };
 
         const renderBillScreen = async () => {
@@ -7462,7 +7997,16 @@
             const currentPayer = billData.payerId ? (billData.participants || {})[billData.payerId] : null;
             payerSelect.dataset.value = billData.payerId || '';
             const payerLabel = document.getElementById('payer-select-label');
-            payerLabel.textContent = currentPayer ? currentPayer.name : 'Wskaż osobę…';
+            // TWARZ, NIE SAMO IMIĘ (zgłoszenie właściciela 2026-08-29). Znak z kolorem
+            // rozpoznaje się szybciej niż napis, a w całej reszcie aplikacji — na liście
+            // rachunków, przy pozycjach paragonu, w rozliczeniach — ta sama osoba ma przy
+            // sobie tę samą twarz. Pole „Kto wyłożył pieniądze" było jedynym miejscem,
+            // gdzie zostawało samo imię, więc czytało się jak coś innego niż wszędzie indziej.
+            if (currentPayer) {
+                payerLabel.innerHTML = `<span class="flex items-center min-w-0">${avatarHtml(currentPayer.name, billData.payerId, 'w-7 h-7 text-xs mr-2')}<span class="truncate">${escapeHtml(currentPayer.name)}</span></span>`;
+            } else {
+                payerLabel.textContent = 'Wskaż osobę…';
+            }
             payerLabel.classList.toggle('text-ink-3', !currentPayer);
             // Payer selection should be locked after confirmation to avoid confusion.
             payerSelect.disabled = isPayerConfirmed;
@@ -7565,27 +8109,20 @@
             const modeHint = document.getElementById('bill-mode-hint');
             const modeNote = document.getElementById('bill-mode-note');
             if (modeHint) {
+                // ZOSTAJE SAM POWÓD BLOKADY. Opis obu sposobów mieszka pod znakiem
+                // zapytania obok nagłówka (patrz uwaga w index.html) — tam wolno mu być
+                // pełniejszy, a tutaj nie zabiera trzech wierszy przy każdym wejściu.
                 if (billIsFrozen) {
                     // Wyłączony przełącznik bez wyjaśnienia czyta się jak usterka — a tu
                     // powód jest inny niż „to nie Twój rachunek".
-                    modeHint.textContent = mode === 'even'
-                        ? 'Cała kwota dzieli się równo między uczestników. Reszta jest już podzielona, więc sposobu podziału nie da się teraz zmienić — najpierw trzeba cofnąć podział.'
-                        : 'Każdy stuka swoje pozycje i wpisuje koszty własne. Reszta jest już podzielona, więc sposobu podziału nie da się teraz zmienić — najpierw trzeba cofnąć podział.';
+                    modeHint.textContent = 'Reszta jest już podzielona, więc sposobu podziału nie da się teraz zmienić — najpierw trzeba cofnąć podział.';
                 } else if (!canEditMainFields) {
-                    // Wyłączony przełącznik bez wyjaśnienia czyta się jak usterka.
                     const payerName = billData.payerId ? memberName(billData.payerId) : 'płatnik';
-                    modeHint.textContent = mode === 'even'
-                        ? `Cała kwota dzieli się równo między uczestników. Sposób podziału może zmienić tylko ${payerName}, bo to on wyłożył pieniądze.`
-                        : `Każdy stuka swoje pozycje i wpisuje koszty własne. Sposób podziału może zmienić tylko ${payerName}, bo to on wyłożył pieniądze.`;
+                    modeHint.textContent = `Sposób podziału może zmienić tylko ${payerName}, bo to on wyłożył pieniądze.`;
                 } else {
-                    modeHint.textContent = mode === 'even'
-                        ? 'Cała kwota dzieli się równo między uczestników i nikt niczego nie uzupełnia. Chcesz rozpisać paragon na pozycje? Przełącz na „Ze swoimi kosztami".'
-                        // OBIETNICA SPRZED BRAMY. Zdanie mówiło, że nieodklikane pozycje
-                        // „i tak podzielą się po równo" — a od wprowadzenia bramy NIE dzielą
-                        // się same: wiszą bez właściciela i blokują przelewy, dopóki płatnik
-                        // nie zdecyduje. Ekran obiecywał więc coś, czego aplikacja nie robi.
-                        : 'Każdy stuka swoje pozycje i wpisuje koszty własne. O tym, czego nikt nie weźmie imiennie, decyduje na końcu płatnik.';
+                    modeHint.textContent = '';
                 }
+                modeHint.classList.toggle('hidden', !modeHint.textContent);
             }
 
             // W trybie „po równo" cała maszyneria rozpisywania schodzi z ekranu. Nie chodzi
@@ -7737,6 +8274,14 @@
                     const niczyjaG = toGrosze(calculations.restUndecided || 0);
                     if (niczyjaG > 0) {
                         controlStatusEl.textContent = `Nierozpisane ${diffText(fromGrosze(niczyjaG))} — nikt tego jeszcze nie wziął.`;
+                    } else if (billSplitMode(billData) === 'even') {
+                        // W TRYBIE „PO RÓWNO" TA LINIJKA MILCZY (zgłoszenie właściciela
+                        // 2026-08-29). „Nierozpisane 400,00, czyli po 100,00 na osobę" opisuje
+                        // tam DOKŁADNIE TO, CO MÓWI NAZWA TRYBU dwa centymetry niżej — i robi
+                        // to słowem „nierozpisane", które brzmi jak zaległość do załatwienia,
+                        // choć w tym trybie nie ma czego rozpisywać. Zdanie zostaje wyłącznie
+                        // tam, gdzie niesie wiadomość: w trybie ze swoimi kosztami.
+                        controlStatusEl.textContent = '';
                     } else {
                         controlStatusEl.textContent = calculations.perPersonUnallocated > 0
                             ? `Nierozpisane ${diffText(calculations.unallocated)}, czyli po ${diffText(calculations.perPersonUnallocated)} na osobę.`
@@ -7954,10 +8499,7 @@
             // wywołał cichy ReferenceError, gdy jedna z kopii zniknęła przy refaktorze.)
 
 
-            document.getElementById('back-to-dashboard-btn').onclick = () => {
-                if (unsubscribeBill) unsubscribeBill();
-                navigateToGroup(currentGroupId);
-            };
+            document.getElementById('back-to-dashboard-btn').onclick = () => leaveBillScreen();
             // Stuknięcie w samą nazwę otwiera pole — o to prosił właściciel. Ołówek obok
             // istnieje po to, żeby dało się to ODKRYĆ: nagłówek, który po cichu reaguje na
             // stuknięcie, jest funkcją, o której wie wyłącznie ten, kto ją zamówił.
@@ -7967,6 +8509,20 @@
             // i leży dokładnie tam, gdzie kciuk ląduje przy przewijaniu — więc pole do wpisu
             // otwierało się przez przypadek. Ołówek jest mały, stoi obok i nie robi nic,
             // czego ktoś nie chciał. Nagłówek zostaje nagłówkiem, także dla czytnika ekranu.
+            // WYJAŚNIENIE OBU SPOSOBÓW PODZIAŁU — jedno miejsce, jedna treść, oba tryby
+            // opisane naraz. Do 2026-08-29 na karcie stał opis WYBRANEGO sposobu, więc
+            // żeby dowiedzieć się, czym jest ten drugi, trzeba było go włączyć.
+            const modeHelpBtn = document.getElementById('bill-mode-help');
+            if (modeHelpBtn) modeHelpBtn.onclick = () => showInfo('Jak dzielimy rachunek', `
+                <p><b>Po równo.</b> Cała kwota rachunku dzieli się na uczestników i nikt niczego nie uzupełnia. Rachunek jest gotowy od razu, a pozycje z paragonu w ogóle nie są potrzebne.</p>
+                <p><b>Ze swoimi kosztami.</b> Każdy stuka na paragonie to, co jadł, i wpisuje swoje koszty własne. Cena pozycji dzieli się po równo między wszystkich, którzy ją stuknęli.</p>
+                <ul class="list-disc pl-5 space-y-1">
+                    <li><b>Koszt wspólny</b> (napiwek, serwis) dolicza się do całości i dzieli po równo — w obu sposobach tak samo.</li>
+                    <li>O tym, czego nikt nie weźmie imiennie, decyduje na końcu <b>płatnik</b>: dzieli resztę po równo albo wrzuca ją tym, którzy nie stuknęli swojego.</li>
+                    <li>Grosze zaokrąglają się w górę, żeby płatnik nigdy nie był stratny.</li>
+                </ul>
+                <p>Sposób podziału zmienia <b>płatnik</b>, i tylko dopóki reszta nie została podzielona. Powrót do „Po równo" jest możliwy, dopóki nikt niczego nie rozpisał — inaczej przełączenie skasowałoby czyjś wybór.</p>`);
+
             const olowekNazwy = document.getElementById('bill-name-edit-btn');
             if (olowekNazwy) olowekNazwy.onclick = () => startBillNameEdit();
             const poleNazwy = document.getElementById('bill-name-input');
@@ -9024,7 +9580,7 @@
             if (existing) existing.remove();
             const toast = document.createElement('div');
             toast.id = toastId;
-            toast.className = 'toast-in toast-dock toast-bar px-4 py-3 rounded-block flex items-center gap-4 shadow-lift';
+            toast.className = 'toast-in toast-dock toast-bar px-4 py-3 rounded-block flex items-center gap-4';
             const span = document.createElement('span');
             span.textContent = message;
             const btn = document.createElement('button');
@@ -9199,6 +9755,7 @@
             if (billStacks) billStacks.addEventListener('click', (e) => {
                 const st = e.target.closest('.stack-toggle');
                 if (st) {
+                    noteStackHeight(st.dataset.stack);
                     setStackOpen(st.dataset.stack, st.dataset.open !== '1');
                     const my = myMemberNow();
                     if (my) renderBillStacks(my.id);
@@ -9214,32 +9771,101 @@
                 if (oops) { withdrawSettlement(oops.dataset.id); return; }
                 const nb = e.target.closest('.nudge-btn');
                 if (nb) { openNudgeCompose(nb.dataset.nudgeTo, Number(nb.dataset.amountG), nb.dataset.currency); return; }
+                // „Oddał/a mi już" — rzadka droga boczna dla gotówki przy stole. Musi
+                // działać także tutaj, bo od 2026-08-29 stos „Czekasz na przelew" stoi
+                // również na ekranie rachunku, a ta sama karta bez tego nasłuchu miałaby
+                // tam martwy odnośnik.
+                const rb = e.target.closest('.receive-btn');
+                // Wpłata zapisana TUTAJ dotyczy TEGO rachunku i musi to nieść w danych —
+                // inaczej gotówka wzięta przy stole zgasiłaby dług „gdzieś", a rachunek
+                // dalej stałby jako nieopłacony.
+                if (rb) { openSettleModal(rb.dataset.from, Number(rb.dataset.amountG), rb.dataset.currency, 'receive', currentBillId); return; }
             });
 
-            // GEST PRZESUNIĘCIA MIĘDZY STRONAMI. Nasłuch wisi na stałym rodzicu, bo same
-            // strony przerysowują się przy każdej zmianie w bazie.
+            // GEST PRZESUNIĘCIA MIĘDZY STRONAMI — TREŚĆ IDZIE ZA PALCEM.
             //
-            // Próg poziomy MUSI być większy od pionowego, inaczej gest kradłby przewijanie
-            // listy — a na tym ekranie przewija się częściej, niż przełącza strony. Gest
-            // jest tu DODATKIEM do przełącznika, nie jedyną drogą: sam byłby niewidzialny.
+            // Do 2026-08-29 gest był zwykłym „machnięciem": aplikacja mierzyła odległość
+            // dopiero po oderwaniu palca i podmieniała stronę skokiem. Nie było więc widać
+            // ANI ŻE gest istnieje, ANI że właśnie działa — a machnięcie, które nie odpowiada
+            // w trakcie, czyta się jak przypadek, nie jak sterowanie (zgłoszenie właściciela).
+            //
+            // Teraz taśma jedzie w czasie rzeczywistym, razem z pigułką w przełączniku, bo
+            // obie biorą położenie z tej samej liczby `--settle-p`. Po oderwaniu palca strona
+            // dojeżdża do najbliższej krawędzi — z uwzględnieniem prędkości, więc szybki,
+            // krótki ruch też przełącza.
+            //
+            // OŚ WYBIERA SIĘ RAZ, na pierwszych pikselach ruchu, i nie zmienia do końca gestu.
+            // Bez tego gest ukośny raz przewijałby listę, raz przesuwał stronę.
             const settlementsList = document.getElementById('settlements-list');
-            let swipeX = null, swipeY = null;
+            let swipeX = null, swipeY = null, swipeT = 0, swipeOs = null, swipeW = 1, swipeOd = 0;
+
+            const settleBox = () => document.getElementById('settle-panes');
+            const settleProgress = (p) => settlementsList.style.setProperty('--settle-p', String(p));
+
             settlementsList.addEventListener('touchstart', (e) => {
-                if (e.touches.length !== 1) { swipeX = null; return; }
+                const box = settleBox();
+                if (e.touches.length !== 1 || !box) { swipeX = null; return; }
                 swipeX = e.touches[0].clientX;
                 swipeY = e.touches[0].clientY;
+                swipeT = Date.now();
+                swipeOs = null;
+                swipeW = box.offsetWidth || 1;
+                swipeOd = settleSide === 'due' ? 1 : 0;
             }, { passive: true });
-            settlementsList.addEventListener('touchend', (e) => {
-                if (swipeX === null || !e.changedTouches.length) return;
-                const dx = e.changedTouches[0].clientX - swipeX;
-                const dy = e.changedTouches[0].clientY - swipeY;
+
+            settlementsList.addEventListener('touchmove', (e) => {
+                if (swipeX === null || !e.touches.length) return;
+                const dx = e.touches[0].clientX - swipeX;
+                const dy = e.touches[0].clientY - swipeY;
+                if (swipeOs === null) {
+                    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+                    swipeOs = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'x' : 'y';
+                    if (swipeOs === 'x') {
+                        const box = settleBox();
+                        if (box) {
+                            box.classList.remove('is-animated');
+                            // NA CZAS GESTU OKNO JEST WYSOKOŚCI DŁUŻSZEJ ZE STRON.
+                            // Bez tego strona wjeżdżająca zza krawędzi była przycinana
+                            // do wysokości tej, z której się wychodzi — przy jednej sprawie
+                            // po lewej i sześciu po prawej wyglądało to jak wjeżdżanie
+                            // treści do szpary. Po oderwaniu palca `settlePanesSync`
+                            // dojeżdża do wysokości strony, na której naprawdę stanęliśmy.
+                            const wysokosci = [...box.querySelectorAll('.settle-pane')].map((p) => p.offsetHeight);
+                            if (wysokosci.length) box.style.height = `${Math.max(...wysokosci)}px`;
+                        }
+                    }
+                }
+                if (swipeOs !== 'x') return;
+                // OPÓR NA KRAWĘDZIACH. Ciągnięcie poza pierwszą i ostatnią stronę zwalnia
+                // do jednej trzeciej — palec dostaje odpowiedź „dalej nic nie ma", zamiast
+                // trafiać w ścianę bez reakcji.
+                let p = swipeOd - dx / swipeW;
+                if (p < 0) p = p / 3;
+                if (p > 1) p = 1 + (p - 1) / 3;
+                settleProgress(p);
+            }, { passive: true });
+
+            const settleSwipeEnd = (e) => {
+                if (swipeX === null) return;
+                const os = swipeOs;
+                const start = swipeX;
+                const czas = Date.now() - swipeT;
                 swipeX = null;
-                if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
-                const nowa = dx < 0 ? 'due' : 'owe';
-                if (nowa === settleSide) return;
+                swipeOs = null;
+                if (os !== 'x' || !e.changedTouches.length) { if (os === 'x') settlePanesSync(); return; }
+                const dx = e.changedTouches[0].clientX - start;
+                // Próg jest podwójny: ćwierć szerokości ekranu ALBO szybki rzut (ponad
+                // 0,4 piksela na milisekundę) na co najmniej 40 px. Sam próg odległości
+                // kazałby przeciągać stronę do połowy ekranu przy każdym przełączeniu.
+                const rzut = czas > 0 && Math.abs(dx) / czas > 0.4 && Math.abs(dx) > 40;
+                const przejdz = rzut || Math.abs(dx) > swipeW * 0.25;
+                const nowa = przejdz ? (dx < 0 ? 'due' : 'owe') : settleSide;
+                settleSideChosen = true;
                 settleSide = nowa;
-                renderSettlements();
-            }, { passive: true });
+                settlePanesSync();
+            };
+            settlementsList.addEventListener('touchend', settleSwipeEnd, { passive: true });
+            settlementsList.addEventListener('touchcancel', settleSwipeEnd, { passive: true });
 
             settlementsList.addEventListener('click', async (e) => {
                 const settleRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
@@ -9249,13 +9875,14 @@
                 // a nie fakt o pokoju.
                 const st = e.target.closest('.stack-toggle');
                 if (st) {
+                    noteStackHeight(st.dataset.stack);
                     setStackOpen(st.dataset.stack, st.dataset.open !== '1');
                     renderSettlements();
                     return;
                 }
 
                 const side = e.target.closest('.settle-side-btn');
-                if (side) { settleSide = side.dataset.side; renderSettlements(); return; }
+                if (side) { setSettleSide(side.dataset.side); return; }
 
                 const yes = e.target.closest('.settle-yes-btn');
                 if (yes) { confirmSettlement(yes.dataset.id); return; }
@@ -9309,6 +9936,23 @@
             document.querySelectorAll('.log-mode-btn').forEach((btn) => {
                 btn.onclick = () => { logMode = btn.dataset.log; renderSettlementsLog(); };
             });
+            document.querySelectorAll('.log-filter-btn').forEach((btn) => {
+                btn.onclick = () => { logFilter = btn.dataset.logFilter; renderSettlementsLog(); };
+            });
+            const logSearch = document.getElementById('log-search');
+            const logSearchClear = document.getElementById('log-search-clear');
+            if (logSearch) logSearch.oninput = () => {
+                logQuery = logSearch.value;
+                if (logSearchClear) logSearchClear.classList.toggle('hidden', !logQuery);
+                renderSettlementsLog();
+            };
+            if (logSearchClear) logSearchClear.onclick = () => {
+                logQuery = '';
+                logSearch.value = '';
+                logSearchClear.classList.add('hidden');
+                logSearch.focus();
+                renderSettlementsLog();
+            };
             document.getElementById('settlements-log-list').addEventListener('click', async (e) => {
                 const settleRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
 
@@ -9405,6 +10049,7 @@
                     const go = e.target.closest('.balance-go-btn');
                     if (go) {
                         settleSide = go.dataset.side || 'due';
+                        settleSideChosen = true;
                         showDeckView(DECK_NAV_VIEWS['nav-settle']);
                         renderSettlements();
                         return;
@@ -9450,8 +10095,13 @@
 
                 const wyslij = async () => {
                     nudgeComposeModal.classList.remove('active');
+                    // Rachunek adresata (jeśli go niesie) wygrywa z rachunkiem całej wysyłki:
+                    // przy zbiorczym przypomnieniu z Bilansu każdy zalega gdzie indziej.
+                    const dlaOsoby = (a) => (a.billId
+                        ? { ...dodatki, billId: a.billId, billName: a.billName || '' }
+                        : dodatki);
                     if (lista.length === 1) {
-                        await sendNudge(lista[0].toId, lista[0].amountG, currency, message, dodatki);
+                        await sendNudge(lista[0].toId, lista[0].amountG, currency, message, dlaOsoby(lista[0]));
                     } else {
                         // Bramka anty-spamowa działa PER OSOBA, więc ktoś, kto dostał
                         // przypomnienie przed chwilą, po prostu wypada z tej wysyłki.
@@ -9459,7 +10109,7 @@
                         // pominięciu połowy listy byłoby nieprawdą.
                         let poszlo = 0;
                         for (const a of lista) {
-                            if (await sendNudge(a.toId, a.amountG, currency, message, { ...dodatki, cicho: true })) poszlo += 1;
+                            if (await sendNudge(a.toId, a.amountG, currency, message, { ...dlaOsoby(a), cicho: true })) poszlo += 1;
                         }
                         const pominieto = lista.length - poszlo;
                         showToast(pominieto === 0
