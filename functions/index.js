@@ -266,6 +266,9 @@ export const sendSettlementConfirmedPush = onDocumentUpdated(
     const po = event.data && event.data.after && event.data.after.data();
     if (!przed || !po || !po.from || !po.to) return;
     if (przed.confirmed === true || po.confirmed !== true) return;
+    // POTWIERDZENIE PO SPORZE TO TEŻ DOMKNIĘCIE, więc powiadomienie się należy — ale
+    // treść „sprawa zamknięta" jest wtedy tym bardziej na miejscu: to właśnie ta wiadomość
+    // mówi nadawcy, że pieniądze się jednak znalazły i nie musi już nic robić.
 
     const db = admin.firestore();
     const groupDoc = await db.doc(`artifacts/${APP_ID}/public/data/groups/${groupId}`).get();
@@ -282,6 +285,87 @@ export const sendSettlementConfirmedPush = onDocumentUpdated(
         ? `${toName} potwierdził/a Twoją wpłatę ${kwota}. Sprawa zamknięta.`
         : `${toName} potwierdził/a Twoją wpłatę. Sprawa zamknięta.`,
       `settlement-ok-${groupId}`,
+    );
+  },
+);
+
+// BRAK PRZELEWU → push do NADAWCY („sprawdź, czy wyszedł").
+//
+// To jest jedyne powiadomienie w tej aplikacji, które mówi o pieniądzach WRACAJĄCYCH
+// na czyjeś saldo, więc ton jest tu ważniejszy niż zwykle: brak przelewu to najczęściej
+// nie kłamstwo, tylko pomyłka w szukaniu albo przelew, który jeszcze idzie. Wiadomość
+// prosi o sprawdzenie i nie zawiera ani jednego słowa o winie.
+//
+// Bez niej dług wracałby na saldo ZNIKĄD — a pieniądze, które pojawiają się same,
+// czyta się jak usterkę aplikacji, nie jak wiadomość od człowieka.
+export const sendSettlementDisputedPush = onDocumentUpdated(
+  {
+    document: `artifacts/${APP_ID}/public/data/groups/{groupId}/settlements/{settlementId}`,
+    region: "europe-central2",
+  },
+  async (event) => {
+    const { groupId } = event.params;
+    const przed = event.data && event.data.before && event.data.before.data();
+    const po = event.data && event.data.after && event.data.after.data();
+    if (!przed || !po || !po.from || !po.to) return;
+    // Reagujemy WYŁĄCZNIE na przejście „nie było sporu → jest spór". Zapis może przyjść
+    // ponownie (at-least-once), a druga runda ma własne powiadomienie.
+    if (przed.disputed === true || po.disputed !== true) return;
+
+    const db = admin.firestore();
+    const groupDoc = await db.doc(`artifacts/${APP_ID}/public/data/groups/${groupId}`).get();
+    if (!groupDoc.exists) return;
+
+    const members = groupDoc.data().members || {};
+    const toName = (members[po.to] && members[po.to].name) || "Odbiorca";
+    const kwota = kwotaTekstem(po.amount, po.currency);
+
+    await wyslijPush(
+      db, groupDoc, groupId, po.from,
+      "Sprawdź, czy przelew wyszedł",
+      kwota
+        ? `${toName} nie znalazł/a przelewu ${kwota}. Dług wrócił na saldo.`
+        : `${toName} nie znalazł/a Twojego przelewu. Dług wrócił na saldo.`,
+      `settlement-dispute-${groupId}`,
+    );
+  },
+);
+
+// NADAWCA PODTRZYMAŁ → push do ODBIORCY („poszukaj jeszcze raz").
+//
+// Druga runda NIE POWTARZA PYTANIA, tylko oddaje narzędzia: kwotę i datę zgłoszenia,
+// czyli dokładnie to, czym przeszukuje się wyciąg bankowy. Bez tego byłaby wyłącznie
+// głośniejszym powtórzeniem pierwszej.
+export const sendSettlementInsistedPush = onDocumentUpdated(
+  {
+    document: `artifacts/${APP_ID}/public/data/groups/{groupId}/settlements/{settlementId}`,
+    region: "europe-central2",
+  },
+  async (event) => {
+    const { groupId } = event.params;
+    const przed = event.data && event.data.before && event.data.before.data();
+    const po = event.data && event.data.after && event.data.after.data();
+    if (!przed || !po || !po.from || !po.to) return;
+    if (przed.insisted === true || po.insisted !== true) return;
+
+    const db = admin.firestore();
+    const groupDoc = await db.doc(`artifacts/${APP_ID}/public/data/groups/${groupId}`).get();
+    if (!groupDoc.exists) return;
+
+    const members = groupDoc.data().members || {};
+    const fromName = (members[po.from] && members[po.from].name) || "Ktoś";
+    const kwota = kwotaTekstem(po.amount, po.currency);
+    const kiedy = (po.createdAt && typeof po.createdAt.toDate === "function")
+      ? po.createdAt.toDate().toLocaleDateString("pl-PL", { day: "numeric", month: "long" })
+      : "";
+
+    await wyslijPush(
+      db, groupDoc, groupId, po.to,
+      "Poszukaj jeszcze raz",
+      kwota
+        ? `${fromName} podtrzymuje, że wysłał/a ${kwota}${kiedy ? ` (${kiedy})` : ""}.`
+        : `${fromName} podtrzymuje, że wysłał/a przelew${kiedy ? ` (${kiedy})` : ""}.`,
+      `settlement-insist-${groupId}`,
     );
   },
 );
