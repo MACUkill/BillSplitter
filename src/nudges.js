@@ -63,14 +63,33 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
     // rachunku byłoby to pięć identycznych wierszy z tą samą kwotą i tym samym imieniem.
     // Nazwę dokleja warstwa interfejsu — tu nie ma dostępu do rachunków.
     //
-    // Ktoś zgłosił wpłatę DO MNIE i czeka na potwierdzenie — blokuje domknięcie długu.
-    if (s.to === myId && s.from !== myId && !s.confirmed) {
-      items.push({ level: 1, kind: 'confirm-payment', id: s.id, from: s.from, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.createdAtMs });
+    // WYCOFANE ZGŁOSZENIE NIE JEST NICZYJĄ SPRAWĄ. Nadawca sam je zdjął („pomyłka,
+    // nie wysłałem"), więc nie ma o co pytać ani czego domykać — zostaje wyłącznie
+    // ślad w rejestrze.
+    if (s.withdrawn) return;
+
+    // Ktoś zgłosił wpłatę DO MNIE i czeka na moją odpowiedź.
+    //
+    // Warunek obejmuje DWIE sytuacje, bo obie czekają na to samo słowo: świeże zgłoszenie
+    // i takie, przy którym nadawca podtrzymał („wysłałem na pewno") po mojej odmowie.
+    // Sprawa, na którą już odpowiedziałem odmownie, NIE wraca tutaj — piłka jest wtedy
+    // po jego stronie, a wołanie mnie do czynności, której nie mam jak wykonać, jest
+    // dokładnie tym, czego zabrania próg sygnału (docs/UI-UX.md §10.2).
+    const czekaNaMnie = !s.confirmed && (!s.disputed || s.insisted) && !s.stalled;
+    if (s.to === myId && s.from !== myId && czekaNaMnie) {
+      items.push({ level: 1, kind: 'confirm-payment', id: s.id, from: s.from, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.createdAtMs, insisted: !!s.insisted });
+      return;
+    }
+    // Odbiorca NIE ZNALAZŁ mojego przelewu — i to jest sygnał poziomu 1, bo dług właśnie
+    // wrócił na moje saldo. Bez tego wiersza pieniądze wracałyby znikąd i wyglądało
+    // to na usterkę aplikacji, a nie na wiadomość od człowieka.
+    if (s.from === myId && s.disputed && !s.insisted && !seenConfirmations.includes(s.id)) {
+      items.push({ level: 1, kind: 'payment-disputed', id: s.id, from: s.to, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.disputedAtMs || s.createdAtMs });
       return;
     }
     // Odbiorca potwierdził MOJĄ wpłatę — zamyka pętlę. Bez tego użytkownik nie wie,
     // że skończył. Znika po obejrzeniu (lista `seenConfirmations`).
-    if (s.from === myId && s.confirmed && s.confirmedBy !== myUid && !seenConfirmations.includes(s.id)) {
+    if (s.from === myId && s.confirmed && !s.disputed && s.confirmedBy !== myUid && !seenConfirmations.includes(s.id)) {
       items.push({ level: 1, kind: 'payment-confirmed', id: s.id, from: s.to, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.confirmedAtMs });
     }
   });

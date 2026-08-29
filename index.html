@@ -784,6 +784,15 @@ the verdict, and DESIGN.md
                  rozpiska całej ekipy przy dwunastu osobach zajmowała więcej miejsca niż
                  pozycje paragonu i spychała je poza ekran. Nagłówek mówi, ilu ich jest
                  i ilu ma jeszcze coś do zrobienia, więc zwinięcie nic nie ukrywa. -->
+            <!-- STOSY SPRAW TEGO RACHUNKU — WŁASNY BLOK, NIE WNĘTRZE LIMONKOWEJ KARTY.
+                 Karta „Twój udział" odpowiada na pytanie ILE WYNOSI MÓJ UDZIAŁ, a stos na
+                 KTO MI PRZELAŁ — to dwie różne sprawy i wsadzenie ich w jedno pudełko było
+                 błędem. Przy okazji znika problem kolorów: na limonce nie istnieje ani
+                 limonkowy przycisk, ani ciemny (bo w motywie ciemnym `--ink` jest prawie
+                 bielą), więc karty musiałyby mieć własną paletę. Tutaj stoją na zwykłej
+                 powierzchni i używają dokładnie tych samych przycisków, co Rozliczenia. -->
+            <div id="bill-stacks" class="mt-6 hidden"></div>
+
             <details id="participants-details" class="mb-3 mt-6">
                 <!-- CHEVRON ZAWSZE PO PRAWEJ. Do 2026-08-15 „Ekipa" miała go po prawej,
                      a „Historia zmian" po lewej — ta sama kontrolka w dwóch miejscach
@@ -1421,12 +1430,32 @@ the verdict, and DESIGN.md
                     <span id="settle-avatar" class="flex-shrink-0"></span>
                     <p class="text-sm font-bold text-ink-3 min-w-0"><span id="settle-name-label">Wpłata do</span> <b id="settle-name" class="text-ink block truncate text-lg">…</b></p>
                 </div>
+                <!-- KWOTA JEST WYPROWADZANA Z WYBORU, NIE WPISYWANA (2026-08-29).
+                     Wpisana z palca nie odpowiadała żadnemu zbiorowi rachunków, więc odbiorca
+                     dostawał pytanie o gołą liczbę i sam musiał zgadnąć, czego dotyczy
+                     i czy jesteście kwita. Teraz każde zgłoszenie mapuje się na nazwane
+                     rachunki, a „Mam" domyka właśnie te rachunki.
+                     Pole zostaje wyłącznie przy „Oddał/a mi już": tam człowiek przepisuje
+                     realną kwotę gotówki ze swojej kieszeni, której aplikacja nie zna. -->
                 <div class="flex items-center gap-2">
-                    <input id="settle-amount-input" type="text" inputmode="decimal" class="field min-h-tap w-36 text-2xl font-semibold">
+                    <span id="settle-amount-fixed" class="amount text-3xl">0,00</span>
+                    <input id="settle-amount-input" type="text" inputmode="decimal" class="field min-h-tap w-36 text-2xl font-semibold hidden">
                     <span id="settle-currency" class="text-lg font-semibold text-ink-3">PLN</span>
                     <button id="settle-copy-amount" class="copy-account-btn tap min-h-tap px-3 rounded-full text-sm font-semibold text-ink bg-surface-2 ml-auto" title="Kopiuj kwotę">Kopiuj</button>
                 </div>
-                <p class="text-xs text-ink-3 mt-1.5 mb-4">Możesz wpisać część kwoty. Spłata częściowa jest w porządku.</p>
+                <p id="settle-amount-note" class="text-xs text-ink-3 mt-1.5 mb-4"></p>
+                <!-- TYTUŁ PRZELEWU DO SKOPIOWANIA — tylko wtedy, gdy jest jednoznaczny.
+                     Przy jednym rachunku to jego nazwa; przy kilku wiersz w ogóle nie
+                     wchodzi. Sklejone nazwy nie mieszczą się w tytule przelewu, a ucięte
+                     w połowie wyglądają na śmieć — tytuł, o który nikt nie prosił, jest
+                     gorszy niż jego brak. -->
+                <div id="settle-title-wrap" class="block-quiet p-3 mb-4 flex items-center gap-2 hidden">
+                    <span class="min-w-0 flex-grow">
+                        <span class="block text-xs text-ink-3">Tytuł przelewu</span>
+                        <b id="settle-title-value" class="block truncate">—</b>
+                    </span>
+                    <button id="settle-copy-title" class="copy-account-btn tap min-h-tap px-3 rounded-full text-sm font-semibold text-ink bg-surface flex-shrink-0" title="Kopiuj tytuł">Kopiuj</button>
+                </div>
                 <div id="settle-methods-wrap">
                     <div id="settle-methods" class="space-y-2"></div>
                 </div>

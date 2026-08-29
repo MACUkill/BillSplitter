@@ -2559,6 +2559,21 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
     .toast-dock { left: auto; right: 1.25rem; max-width: 24rem; }
   }
 
+  /* PASEK „COFNIJ" MA STAŁE BARWY W OBU MOTYWACH.
+     Do 2026-08-29 brał tło z `bg-ink`, czyli z tokenu TEKSTU — a ten w motywie ciemnym
+     (domyślnym w tej aplikacji) jest prawie bielą. Pasek odwracał się więc na jasny,
+     a wszystko, co na nim stało, liczyło na ciemne tło. To jest ta sama pułapka, którą
+     kod opisuje już przy znaku firmowym: kolor, który nie zna motywu.
+     Nakładka nie jest powierzchnią — nie idzie za motywem, tylko zostaje ciemna. */
+  .toast-bar {
+    background-color: #16181E;
+    color: #F5F6F8;
+  }
+  /* „Cofnij" jest CZERWONE i to jest zgodne ze znaczeniem czerwieni w tej aplikacji:
+     cofnięcie potwierdzenia PRZYWRACA DŁUG, czyli pieniądze znów wychodzą. Odcień
+     jest rozjaśniony (ten z motywu ciemnego), bo tło paska jest ciemne zawsze. */
+  .toast-undo { color: #FF6A7A; }
+
   /* Toast wjeżdża od dołu i wychodzi tą samą drogą. */
   @keyframes toast-in {
     0%   { opacity: 0; transform: translateY(1rem) scale(0.96); }
