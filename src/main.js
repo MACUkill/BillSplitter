@@ -4072,11 +4072,7 @@
             // Wejście do rejestru wpłat. Sam rejestr mieszka w osobnym arkuszu
             // pełnoekranowym — patrz `renderSettlementsLog`.
             const logBtn = document.getElementById('open-settlements-log');
-            const logCount = document.getElementById('settlements-log-count');
-            if (logBtn) logBtn.classList.toggle('hidden', latestSettlements.length === 0);
-            if (logCount) logCount.textContent = latestSettlements.length
-                ? `${latestSettlements.length} ${plural(latestSettlements.length, 'wpłata', 'wpłaty', 'wpłat')}`
-                : '';
+            if (logBtn) logBtn.classList.toggle('hidden', latestSettlements.length === 0 && !(latestEvents || []).some((ev) => ev && ev.type === 'bill-amount'));
         };
 
         // --- REJESTR WPŁAT ----------------------------------------------------------
@@ -4091,13 +4087,37 @@
         // (decyzja właściciela 2026-08-15). To naprawa własnej pomyłki sprzed minuty,
         // a nie kasowanie historii — po potwierdzeniu wpis jest dowodem dla dwóch stron
         // i znika wyłącznie wpłatą w drugą stronę. Reguły Firestore pilnują tego samego.
+        // REJESTR MA DWA SEGMENTY I JEDNĄ REGUŁĘ WSTĘPU.
+        //
+        // „Moje" to sprawy, w których jestem stroną — mój dowód. „Cała grupa" to to samo
+        // dla wszystkich, bo pieniądze w pokoju nie są tajemnicą.
+        //
+        // Wchodzi WYŁĄCZNIE to, co ruszyło pieniądze albo jest dowodem w sporze. Test:
+        // „czy po tym zdarzeniu ktoś jest komuś winien inną kwotę". Przypomnienia,
+        // stuknięcia pozycji i zmiany nazw nie przechodzą tego testu — bez tej reguły
+        // rejestr po tygodniu wyjazdu przestaje być dowodem i staje się szumem.
+        let logMode = 'mine';
+
         const renderSettlementsLog = () => {
             const list = document.getElementById('settlements-log-list');
             if (!list) return;
             const myId = (myMemberNow() || {}).id || null;
 
-            if (latestSettlements.length === 0) {
-                list.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">Nikt jeszcze nie zapisał żadnej wpłaty.</p>`;
+            document.querySelectorAll('.log-mode-btn').forEach((btn) => {
+                btn.setAttribute('aria-pressed', String(btn.dataset.log === logMode));
+            });
+
+            const moje = (s) => s && (s.from === myId || s.to === myId);
+            const wplaty = logMode === 'mine' ? latestSettlements.filter(moje) : latestSettlements;
+            // Zmiana kwoty rachunku to jedyne zdarzenie spoza wpłat, które przechodzi test
+            // „czy ktoś jest teraz winien inną kwotę" — i odpowiada na pytanie, które pada
+            // zawsze: czemu nagle jestem winien więcej.
+            const zmianyKwot = (latestEvents || []).filter((ev) => ev && ev.type === 'bill-amount');
+
+            if (wplaty.length === 0 && zmianyKwot.length === 0) {
+                list.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">${logMode === 'mine'
+                    ? 'Nie masz jeszcze żadnych wpłat ani zmian kwot.'
+                    : 'Nikt jeszcze nie zapisał żadnej wpłaty.'}</p>`;
                 return;
             }
 
@@ -4115,7 +4135,7 @@
 
             let html = '';
             let lastDay = null;
-            latestSettlements.forEach((s) => {
+            wplaty.forEach((s) => {
                 const at = (s.createdAt && s.createdAt.toDate) ? s.createdAt.toDate() : null;
                 const key = at ? `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}` : 'brak';
                 if (key !== lastDay) {
@@ -4182,6 +4202,18 @@
                     </span>
                 </div>`;
             });
+            // Zmiany kwot idą osobnym blokiem na dole: są rzadsze i innego rodzaju
+            // niż wpłaty, a wymieszane z nimi po dacie gubiłyby się między wierszami.
+            if (zmianyKwot.length) {
+                html += `<p class="bills-day-title mt-5 mb-2">Zmiany kwot</p>`;
+                zmianyKwot.forEach((ev) => {
+                    const kiedy = stampLong(ev.createdAt);
+                    html += `<div class="block-quiet p-3.5">
+                        <p class="text-sm"><b>${escapeHtml(ev.byName || memberName(ev.by))}</b> ${escapeHtml(ev.label || '')}</p>
+                        ${kiedy ? `<p class="text-xs text-ink-3 mt-1">${escapeHtml(kiedy)}</p>` : ''}
+                    </div>`;
+                });
+            }
             list.innerHTML = html;
         };
 
@@ -9269,6 +9301,9 @@
             const openLogBtn = document.getElementById('open-settlements-log');
             if (openLogBtn) openLogBtn.onclick = openSettlementsLog;
             document.getElementById('close-settlements-log').onclick = () => logModal.classList.remove('active');
+            document.querySelectorAll('.log-mode-btn').forEach((btn) => {
+                btn.onclick = () => { logMode = btn.dataset.log; renderSettlementsLog(); };
+            });
             document.getElementById('settlements-log-list').addEventListener('click', async (e) => {
                 const settleRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
 

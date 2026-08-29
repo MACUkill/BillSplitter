@@ -2230,3 +2230,171 @@ przebiegu offline, 9 sprawdzeń service workera, 42 sprawdzenia przebiegu etapu 
 zielone. Reguły Firestore **nie wymagały zmiany**: `settlementMode` na dokumencie grupy
 i `billId` na wpłacie mieszczą się w istniejących regułach, a pola podsumowań nadal są
 zamrożone.
+
+---
+
+## 23. POTWIERDZANIE PRZELEWÓW — etap 5 (2026-08-29)
+
+Do tej pory na zgłoszoną wpłatę dało się odpowiedzieć wyłącznie „tak": wpłata miała
+jedno pole `confirmed` i nic więcej. Kto nie widział przelewu na koncie, **nie miał
+czym tego powiedzieć** — więc nie robił nic, a wtedy nie działo się nic. Wpis wisiał
+w nieskończoność, a saldo twierdziło, że pieniądze doszły.
+
+### 23.1 Trzy dziury, od których się zaczęło
+
+1. **Odpowiedź była jedna.** Brak drugiej odpowiedzi znaczył, że znaczek „potwierdzona"
+   nie niósł żadnej informacji o tym, czy pieniądze naprawdę doszły.
+2. **Osoba znikała z „Dostajesz".** Zgłoszona wpłata od razu zbijała dług do zera, a lista
+   pokazuje tylko długi większe od zera — więc płatnik tracił wiersz tej osoby w tej samej
+   sekundzie, w której powinien był o niej pomyśleć.
+3. **Podpis kłamał.** „Bez niego dług zostaje otwarty" — nieprawda: saldo nie czyta pola
+   `confirmed` i nigdy nie czytało. Dług był zamknięty, zanim ktokolwiek cokolwiek
+   potwierdził.
+
+### 23.2 Model: sześć stanów, każdy pisany przez inną stronę
+
+| Stan | Liczy się do salda? | Kto pisze |
+|---|---|---|
+| Zgłoszona | tak | — |
+| Potwierdzona | tak | odbiorca (`confirmed`) |
+| Nie znaleziona | **nie** | odbiorca (`disputed`) |
+| Sprawdzana ponownie | **nie** | nadawca (`insisted`) |
+| Do wyjaśnienia | **nie** | odbiorca (`stalled`, druga odmowa) |
+| Wycofana | **nie** | nadawca (`withdrawn`) |
+
+Wszystkie pola są **opcjonalne** — wpłaty sprzed tej zmiany nie mają żadnego i czytają
+się dokładnie jak dotąd. **Migracji nie ma i nie będzie.**
+
+Reguły Firestore pilnują przypisania ról: nadawca nie może sam sobie potwierdzić wpłaty
+ani zdjąć cudzej odmowy. Pilnują też stanu niemożliwego — potwierdzona i sporna naraz
+znaczyłyby dwie sprzeczne rzeczy o tych samych pieniądzach, bo saldo czyta oba pola.
+
+Predykat `settlementCountsInLedger` (functions/calc.js) jest **jednym źródłem prawdy**
+dla obu ksiąg (`buildLedger` i `billLedger`). Rozjazd między nimi znaczyłby, że Bilans
+i Rozliczenia mówią o tych samych pieniądzach dwie różne rzeczy.
+
+### 23.3 Stos — i dlaczego nazwy mówią o STANIE
+
+Ekran rozliczeń ma dwie strony (Płacisz / Dostajesz) z przełącznikiem segmentowym
+i gestem przesunięcia. Sam gest jest niewidzialny, więc afordancję niesie przełącznik —
+ten sam wzorzec, którym działa skrzynka.
+
+Wewnątrz stron stoją **nazwane stosy**. Stos zajmuje wysokość jednej karty niezależnie
+od tego, czy leży w nim dwie sprawy, czy czterdzieści — piętnaście osób i trzy osoby dają
+ten sam pierwszy ekran.
+
+- **Dostajesz:** „Do potwierdzenia" · „Do wyjaśnienia" · „Czekasz na przelew"
+- **Płacisz:** „Do zapłaty" · „Do wyjaśnienia"
+- **Rachunek:** „Do potwierdzenia" · „Do wyjaśnienia" (bez trzeciego — patrz §23.6)
+
+**Nazwy mówią o STANIE, nie o kategorii, i to jest cała różnica wobec pierwszej próby
+tego podziału.** „Do potwierdzenia" obok „Dostajesz" czytało się jak dwie listy tego
+samego, bo drugie słowo nazywało kategorię i brzmiało, jakby obejmowało pierwszą.
+„Do potwierdzenia" obok „Czekasz na przelew" pomylić się nie da: jedno znaczy „ktoś
+już przelał, sprawdź", drugie „jeszcze nie przelał, poganiaj".
+
+**ODWROTNA GĘSTOŚĆ.** Zwinięty stos jest *bogatszy* od rozwiniętej listy: gdy patrzysz
+na jedną sprawę, chcesz szczegółu; gdy skanujesz czterdzieści — gęstości. Zwinięty:
+twarz 46 px, przyciski z napisami, pełne daty. Rozwinięty: wiersz 52 px, ikony, kropka
+stanu zamiast pigułki.
+
+**BLOK STANU MA STAŁĄ WYSOKOŚĆ TRZECH WIERSZY.** To nie jest estetyka. Stos przeklikuje
+się po kolei, więc gdyby karta rosła i malała z liczbą rachunków, przyciski skakałyby
+pod palcem: stukasz „Mam", następna karta jest krótsza i palec ląduje nad „Nie widzę".
+Przy cudzych pieniądzach to jest sposób na potwierdzenie nie tej wpłaty, co trzeba.
+
+Kolejność w stosie idzie po tym, **czyj jest ruch i czy da się go zrobić teraz** —
+nie po dacie. Sprawa stojąca od tygodnia wygląda na pilną, ale „Jednak mam" wymaga tego,
+żeby pieniądze faktycznie doszły, a nie kolejnego stuknięcia.
+
+### 23.4 Tarcie jest niesymetryczne
+
+- **„Mam"** — jedno stuknięcie, bez arkusza, z paskiem „Cofnij" (6 s). Odpowiedź
+  spodziewana i częsta; arkusz przed nią opodatkowuje wszystkich, żeby chronić przed
+  rzadkim missclickiem, a przy piętnastu wpłatach robi z 15 stuknięć 30.
+- **„Nie widzę"** — arkusz trzech przyczyn. Zostaje **nie dlatego, że pyta „na pewno?"**
+  (taki arkusz byłby czystym podatkiem), tylko dlatego, że **podaje trzy fakty**, których
+  człowiek mógł nie mieć: przelew międzybankowy idzie do następnego dnia roboczego, BLIK
+  bywa widoczny pod pełnym nazwiskiem, sprawdź właściwe konto. To ostatnie miejsce,
+  w którym da się zatrzymać fałszywy alarm, zanim dotrze do drugiej osoby.
+
+Zapis idzie do bazy **od razu** (`fireWrite`), bo aplikacja działa offline, a obietnica
+z Firestore bez sieci nie rozwiązuje się nigdy. „Cofnij" jest więc drugim zapisem.
+
+### 23.5 Słownictwo — trzy rozstrzygnięcia
+
+- **„Nie widzę", nie „Nie mam".** To nie ta sama rzecz: „nie mam" orzeka o świecie
+  i brzmi jak zarzut, „nie widzę" mówi prawdę — szukałem i nie znalazłem. Dzięki temu
+  wiadomość, która pójdzie do drugiej strony, nie zaczyna się od oskarżenia o kłamstwo.
+- **„Pomyłka, nie wysłałem", nie „Wycofaj wpłatę".** To drugie było słownikiem bazy
+  danych; nikt nie myśli o sobie „wycofuję wpłatę". I prowadzi **prosto do przelewu** —
+  bo bez tego człowiek wyśle pieniądze teraz i stuknie „Wysłałem na pewno", zostawiając
+  w mocy stare zgłoszenie ze **starą datą**. Odbiorca dostanie tę datę jako podpowiedź
+  i przeszuka wyciąg wokół dnia, w którym nic nie wyszło.
+- **Imiona wyłącznie w mianowniku.** „Masz ten przelew?", nie „Masz przelew od Bartek?".
+  Polskich imion nie da się odmienić regułą (Bartek→Bartka, Ania→Ani, Kuba→Kuby),
+  a zgadywanie na końcówkach kaleczy część imion w każdej ekipie. Kto pyta — mówi twarz
+  i podpis pod nagłówkiem.
+
+### 23.6 Rachunek
+
+Ten sam wzorzec, zawężony do jednego rachunku, **pod** limonkową kartą, nie w niej: karta
+mówi „ile wynosi mój udział", stos „kto mi przelał". Przy okazji znika problem kolorów —
+na limonce nie istnieje ani limonkowy przycisk, ani ciemny (w motywie ciemnym `--ink`
+jest prawie bielą), więc karty musiałyby mieć własną paletę.
+
+**Brak stosu „Czekasz na przelew"** i to jest ta sama reguła, co przy dzwonku:
+przypomnienie idzie DO OSOBY, na całą jej zaległość, a nie do rachunku. Ci ludzie są
+widoczni tam, gdzie już są — jako chip przy imieniu w „Ekipie".
+
+**Potwierdzenie jest niepodzielne.** Jeden przelew bywa zapłatą za pięć rachunków,
+a potwierdza się PRZELEW, nie rachunek — więc karta mówi wprost „Pokrywa też N innych
+rachunków", zanim ktoś stuknie „Mam".
+
+### 23.7 Kwota przestaje być wpisywana
+
+Przy „Ureguluj" kwota jest **wyprowadzana z wyboru rachunków**, nie wpisywana z palca.
+Wpisana nie odpowiadała żadnemu zbiorowi rachunków, więc odbiorca dostawał pytanie
+o gołą liczbę i sam musiał zgadnąć, czego dotyczy i czy jesteście kwita.
+
+Wyjątkiem jest **„Oddał/a mi już"** (dawne „Mam wpłatę"): tam człowiek przepisuje realną
+kwotę gotówki, której aplikacja nie zna. Zasada porządkująca: **kwotę wolno wpisać
+z palca dokładnie tam, gdzie nie tworzy to pytania dla drugiego człowieka.**
+
+Przy okazji ten przycisk przestał robić dwie rzeczy pod jednym napisem — potwierdzał
+cudze zgłoszenie albo otwierał arkusz, zależnie od stanu.
+
+### 23.8 Bilans i rejestr
+
+**Bilans przestaje być drugą skrzynką.** Renderował pełne kafelki — te same, co skrzynka
+pod dzwonkiem — więc ekran wejściowy robił się listą zadań, a powtórzony sygnał uczy
+przewijać oba. Zostają dwa wiersze-drogowskazy: limonka tam, gdzie jest mój ruch,
+szarość tam, gdzie sprawa stoi.
+
+**Rejestr** ma dwa segmenty („Moje" / „Cała grupa") i jedną regułę wstępu: wchodzi
+wyłącznie to, **co ruszyło pieniądze albo jest dowodem w sporze**. Test brzmi *czy po
+tym zdarzeniu ktoś jest komuś winien inną kwotę*. Przypomnienia, stuknięcia pozycji
+i zmiany nazw go nie przechodzą — bez tej reguły rejestr po tygodniu wyjazdu przestaje
+być dowodem i staje się szumem.
+
+Każdy wiersz niesie **dwie daty** (zgłoszenia i rozstrzygnięcia). Oba pola były w bazie
+od zawsze, tylko nigdy ich nie było widać — a różnica między nimi odpowiada na pytanie,
+które pada przy każdym większym wyjeździe.
+
+### 23.9 Dwa błędy starsze od tego etapu, znalezione po drodze
+
+- **Wejście wprost z odnośnika w rachunek nie włączało nasłuchów pokoju.**
+  `renderGroupDashboard` woła się tylko z `navigateToGroup`, więc kto kliknął
+  powiadomienie push, dostawał rachunek z pustą listą wpłat i nic tego nie prostowało.
+  Chip „Oddał/a" pokazywał wtedy „Zostaje…" nawet komuś, kto oddał wszystko.
+- **Pasek „Cofnij" brał tło z tokenu TEKSTU** (`bg-ink`), a ten w motywie ciemnym —
+  domyślnym w tej aplikacji — jest prawie bielą. Pasek odwracał się na jasny. Ta sama
+  pułapka, którą kod opisuje już przy znaku firmowym.
+
+### 23.10 Stan testów po etapie
+
+**381 testów jednostkowych** (14 nowych w `src/calc.dispute.test.js`), **41 testów reguł**
+(7 nowych na rozdział ról i stan niemożliwy). Wszystko zielone.
+
+**Reguły i funkcje NIE są wdrożone** — to osobna decyzja i osobne wdrożenie. Bez wdrożenia
+reguł przycisk „Nie widzę" nie zadziała, a bez wdrożenia funkcji spór nie wyśle pusha.

@@ -439,24 +439,19 @@ the verdict, and DESIGN.md
                      rachunkowy trzyma je przy rachunkach. To dwa różne sposoby wydawania
                      pieniędzy, więc ekran pokazuje TEN, na który umówiła się grupa —
                      a wybiera się go raz, w ustawieniach pokoju. -->
-                <div class="mb-3">
+                <!-- REJESTR WCHODZI Z NAGŁÓWKA, nie z dołu listy. Należy do CAŁEGO ekranu,
+                     a nie do jednej z dwóch stron — a odkąd strony przełącza się gestem,
+                     przycisk doklejony pod jedną z nich znikał wraz z nią. -->
+                <div class="mb-3 flex items-center justify-between gap-3">
                     <h3 class="view-title">Rozliczenia</h3>
+                    <button id="open-settlements-log" class="icon-btn-sm is-quiet hidden" title="Rejestr" aria-label="Rejestr">
+                        <i class="fas fa-list"></i>
+                    </button>
                 </div>
                 <div id="settlements-content">
                     <div id="settlements-list" class="space-y-2"></div>
                 </div>
 
-                <!-- REJESTR WPŁAT — własne wejście, nie zwijana linijka doklejona pod listą.
-                     Wchodzi się tu z konkretnym pytaniem („czy on to potwierdził?"), więc
-                     to jest miejsce, a nie przypis. Przycisk znika, dopóki nie ma ani jednej
-                     wpłaty: pusty rejestr nie ma czego pokazać. -->
-                <button id="open-settlements-log" class="settings-row tap mt-4 hidden">
-                    <span class="truncate">Rejestr wpłat</span>
-                    <span class="settings-row-value">
-                        <span id="settlements-log-count"></span>
-                        <i class="fas fa-chevron-right text-sm"></i>
-                    </span>
-                </button>
             </section>
             </div><!-- /view-settle -->
 
@@ -1477,10 +1472,19 @@ the verdict, and DESIGN.md
             <div class="sheet-head">
                 <div class="sheet-grip" aria-hidden="true"></div>
                 <div class="sheet-head-row">
-                    <h3 class="sheet-title">Rejestr wpłat</h3>
+                    <h3 class="sheet-title">Rejestr</h3>
                     <button id="close-settlements-log" class="sheet-close" title="Zamknij" aria-label="Zamknij"><i class="fas fa-xmark"></i></button>
                 </div>
-                <p class="sheet-lede">Każda wpłata zapisana w tym pokoju, od najnowszej. Wpłatę potwierdza odbiorca i dopiero wtedy dług znika.</p>
+                <!-- CO TU WCHODZI: wyłącznie to, co RUSZYŁO PIENIĄDZE albo jest dowodem
+                     w sporze. Test brzmi „czy po tym zdarzeniu ktoś jest komuś winien inną
+                     kwotę". Przypomnienia, stuknięcia pozycji i zmiany nazw nie wchodzą —
+                     to krzątanina, a jej miejsce jest w skrzynce. Bez tej reguły rejestr
+                     po tygodniu wyjazdu przestaje być dowodem, a staje się szumem. -->
+                <p class="sheet-lede">Wpłaty i zmiany kwot — wszystko, co ruszyło pieniądze. Od najnowszego.</p>
+                <div class="seg mt-3">
+                    <button data-log="mine" class="log-mode-btn seg-btn" aria-pressed="true">Moje</button>
+                    <button data-log="all" class="log-mode-btn seg-btn" aria-pressed="false">Cała grupa</button>
+                </div>
             </div>
             <div class="sheet-body">
                 <div id="settlements-log-list" class="space-y-2"></div>
