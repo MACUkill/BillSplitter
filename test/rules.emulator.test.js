@@ -196,6 +196,20 @@ describe('reguły Firestore — rejestr wpłat (model wpłat)', () => {
     await assertFails(updateDoc(doc(odbiorca, s('s-insist-nope')), { withdrawn: true }));
   });
 
+  // Ten przypadek złapało dopiero klikanie w przeglądarce: kod próbował przy
+  // potwierdzeniu zgasić też `insisted`, czyli POLE NADAWCY — i reguła słusznie
+  // odrzucała cały zapis. Rozdział ról ma być nienaruszalny także wtedy, gdy
+  // druga strona chce zrobić coś dobrego.
+  it('odbiorca zamyka spór potwierdzeniem, ale NIE rusza pól nadawcy', async () => {
+    await sporna('s-zamkniecie');
+    const odbiorca = env.authenticatedContext('user-b').firestore();
+    await assertSucceeds(updateDoc(doc(odbiorca, s('s-zamkniecie')), { disputed: true }));
+    await assertSucceeds(updateDoc(doc(odbiorca, s('s-zamkniecie')), {
+      confirmed: true, confirmedBy: 'user-b', disputed: false, stalled: false,
+    }));
+    await assertFails(updateDoc(doc(odbiorca, s('s-zamkniecie')), { insisted: false }));
+  });
+
   it('POTWIERDZONA I SPORNA NARAZ to stan niemożliwy', async () => {
     // Saldo czyta oba pola, więc taki dokument znaczyłby dwie sprzeczne rzeczy
     // o tych samych pieniądzach. Ekran nigdy tego nie zapisze — reguła pilnuje,

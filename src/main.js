@@ -3705,11 +3705,16 @@
             if (!s) return;
             // Potwierdzenie ZAWSZE gasi spór — inaczej wpłata zostałaby poza saldem
             // mimo tego, że odbiorca właśnie powiedział „jednak mam".
+            //
+            // NIE RUSZAMY `insisted`: to pole NADAWCY („wysłałem na pewno"), a reguły
+            // Firestore pilnują rozdziału ról i odrzuciłyby cały zapis. Zresztą nie ma po co
+            // — `settlementState` pyta najpierw o spór, więc wpłata bez sporu jest po prostu
+            // potwierdzona, niezależnie od tego, co nadawca wcześniej podtrzymywał.
             fireWrite(updateDoc(settleDocRef(id), {
                 confirmed: true, confirmedBy: currentUser.uid, confirmedAt: serverTimestamp(),
-                disputed: false, insisted: false, stalled: false,
+                disputed: false, stalled: false,
             }), 'Nie udało się potwierdzić wpłaty.');
-            showUndoToast(`Potwierdzono wpłatę od ${memberName(s.from)}`, () => {
+            showUndoToast(`Wpłata potwierdzona · ${memberName(s.from)}`, () => {
                 fireWrite(updateDoc(settleDocRef(id), {
                     confirmed: false, confirmedBy: null, confirmedAt: null,
                 }), 'Nie udało się cofnąć potwierdzenia.');
