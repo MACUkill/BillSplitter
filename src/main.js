@@ -3062,7 +3062,12 @@
                     doOdebrania.filter((r) => r.currency === cur).forEach((r) => {
                         perOsoba.set(r.debtor, (perOsoba.get(r.debtor) || 0) + r.openG);
                     });
-                    openNudgeCompose([...perOsoba].map(([toId, amountG]) => ({ toId, amountG })), cur);
+                    const mojeId = (myMemberNow() || {}).id || null;
+                    const adresaci = [...perOsoba]
+                        .filter(([toId]) => !maSpornaWplateDoMnie(mojeId, toId))
+                        .map(([toId, amountG]) => ({ toId, amountG }));
+                    if (!adresaci.length) { showToast('Zostały same sprawy do wyjaśnienia.'); return; }
+                    openNudgeCompose(adresaci, cur);
                 };
             });
             wrap.querySelectorAll('.plan-open-settle-btn').forEach((btn) => {
@@ -3167,7 +3172,13 @@
             list.querySelectorAll('.plan-nudge-all-btn').forEach((btn) => {
                 btn.onclick = () => {
                     const p = planRows.find((r) => r.currency === btn.dataset.currency);
-                    if (p) openNudgeCompose(p.receive.map((r) => ({ toId: r.other, amountG: r.amountG })), p.currency);
+                    if (!p) return;
+                    const mojeId = (myMemberNow() || {}).id || null;
+                    const adresaci = p.receive
+                        .filter((r) => !maSpornaWplateDoMnie(mojeId, r.other))
+                        .map((r) => ({ toId: r.other, amountG: r.amountG }));
+                    if (!adresaci.length) { showToast('Zostały same sprawy do wyjaśnienia.'); return; }
+                    openNudgeCompose(adresaci, p.currency);
                 };
             });
             wrap.querySelectorAll('.plan-open-settle-btn, .plan-why-btn').forEach((btn) => {
@@ -3675,6 +3686,18 @@
         // i budzi drugiego człowieka, więc zatrzymuje się na arkuszu — ale ten arkusz nie
         // pyta „na pewno?", tylko podaje trzy fakty, których człowiek mógł nie mieć.
         // Arkusz, który tylko pyta, jest czystym podatkiem; arkusz, który coś mówi, nie jest.
+        // ZBIORCZE PRZYPOMNIENIE OMIJA SPORNE. To nie jest detal.
+        //
+        // Po odmowie („nie widzę tego przelewu") dług WRACA na saldo, więc osoba
+        // z niezałatwioną sprawą znów trafia na listę dłużników — i zbiorcza wysyłka
+        // potraktowałaby ją jak każdą inną, wysyłając „oddaj 340 zł" komuś, kto właśnie
+        // twierdzi, że te 340 wysłał. To brzmi jak zarzut kłamstwa i jest najgorszą
+        // możliwą wiadomością w tej sytuacji.
+        //
+        // Ich sprawa ma własne miejsce i własny przycisk — w stosie „Do wyjaśnienia".
+        const maSpornaWplateDoMnie = (myId, otherId) => disputesAsPayee(myId)
+            .some((s) => s.from === otherId);
+
         const settleDocRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
 
         const confirmSettlement = (id) => {
