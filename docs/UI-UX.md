@@ -2650,6 +2650,9 @@ nie może się rozjechać z tym, co filtr realnie pokaże.
 która przez większość życia pokoju stoi pusta, uczy omijać wzrokiem cały pasek — a ta
 niesie jedyną rzecz na tym ekranie, przy której czekają cudze pieniądze.
 
+> **Rozszerzone 2026-08-30 (§24.12).** Ta reguła obowiązuje dziś WSZYSTKIE pigułki,
+> nie tylko tę jedną.
+
 ### 24.9 Stos „Czekasz na przelew" wraca na rachunek
 
 §23.6 mówił: **brak** tego stosu na ekranie rachunku, bo przypomnienie idzie DO OSOBY,
@@ -2703,7 +2706,70 @@ z linku i zorientował się, że to nie ten, zostawał tam na dobre — jedyną 
 wyczyszczenie adresu, czyli rzecz niedostępna w aplikacji uruchomionej z ikony.
 Strzałka woła `goToRoomsList`, czyli dokładnie to, co strzałka w pokoju.
 
-### 24.12 Stan testów po etapie
+### 24.12 Pasek filtrów: znikanie, kolor, nazwy (2026-08-30)
+
+Filtr „Do potwierdzenia" pojawiał się tylko wtedy, gdy miał co pokazać (§24.8) — i to
+było pytanie właściciela: *„może inne filtry też powinny tak działać?"*. Powinny, bo
+uzasadnienie nie miało w sobie nic szczególnego dla tego jednego filtra.
+
+**PIGUŁKA ZNIKA, GDY NIE MA CO POKAZAĆ.** Pasek filtrów jest obietnicą: „stuknij, a coś
+zobaczysz". Pigułka, która daje pustą listę, tę obietnicę łamie — i nie robi tego lokalnie:
+uczy omijać wzrokiem CAŁY rząd, razem z tymi, które akurat coś niosą. Skoro liczbę przy
+każdej pigułce i tak liczymy (§24.8), to zero jest gotową odpowiedzią na pytanie, czy
+pigułka ma prawo tam stać.
+
+Dwa wyjątki:
+
+- **„Wszystkie"** zostaje zawsze. To punkt wyjścia i droga powrotna z każdego innego
+  filtra; pasek bez niego byłby ślepą uliczką.
+- **Pigułka WŁAŚNIE WYBRANA zostaje, nawet pusta.** Inaczej znikałaby spod palca dokładnie
+  w chwili, gdy domykasz ostatnią sprawę z tej listy — a zamiast domknięcia („Żaden przelew
+  nie czeka na Twoje potwierdzenie") dostawałbyś skok na inną listę. Pusty stan i tak niesie
+  przycisk „Pokaż wszystkie", więc wyjście jest jedno stuknięcie dalej.
+
+**Cały pasek schodzi z ekranu, gdy zostaje na nim mniej niż dwie pigułki.** Rząd wysokości
+celu dotykowego zajęty przez samo słowo „Wszystkie" nie jest paskiem filtrów. Dotyczy
+to świeżego pokoju i pokoju, w którym wszystko jest domknięte — czyli dwóch stanów,
+w których człowiek i tak nie przyszedł tu filtrować.
+
+**KOLOR PIGUŁKI TO KOLOR STANU, KTÓRY WYBIERA.** Czerwone „Do oddania" nad czerwonym
+„Nieopłacone" na kafelku, błękitne „Czekają na Ciebie" nad błękitnym kafelkiem z moim
+ruchem, zielone „Wyłożyłeś/aś" nad zielonym „Wyłożyłeś/aś". Filtr i to, co wybiera, mają
+wyglądać na tę samą rzecz — inaczej trzeba się nauczyć, że są powiązane.
+
+Kolor dostają WYŁĄCZNIE filtry wybierające stan pieniędzy. „Wszystkie", „Nie dotyczą Cię"
+i „Ukryte" zostają szare: kolor w tej aplikacji coś znaczy i rozdanie go wszystkim
+odebrałoby mu to znaczenie. Nieprzyciśnięta pigułka niesie barwę w napisie i w liczniku,
+przyciśnięta wypełnia się nią w całości.
+
+**Barwa tekstu na wypełnieniu liczona jest per motyw**, nie zapisana jako biel. W motywie
+ciemnym `--owe`, `--due` i `--info` są ROZJAŚNIONE (bo na ciemnym tle ciemna czerwień się
+zapada), więc biały napis na nich jest nieczytelny — obowiązuje ta sama zasada, co przy
+limonce: jasne wypełnienie zawsze nosi ciemny tekst. Licznik na wypełnionej pigułce
+potrzebuje osobnych, bardziej szczegółowych reguł niż wersja szara: bez nich
+`.filter-pill.is-owe .filter-pill-count` (trzy klasy) wygrywa z regułą stanu wciśnięcia
+(dwie klasy i atrybut) i na czerwonym wypełnieniu zostaje czerwony licznik.
+
+**Dwie nazwy przestały kłamać:**
+
+- **„Moje" → „Wyłożyłeś/aś".** W domyślnym widoku KAŻDY rachunek jest „mój", bo lista
+  pokazuje wyłącznie te, które mnie dotyczą — więc słowo nie rozróżniało niczego. Nowy
+  napis to dokładnie to samo słowo, które nosi kafelek takiego rachunku, i ten sam zielony
+  kolor.
+- **„Reszta grupy" → „Nie dotyczą Cię".** Właściciel napisał wprost: *„nie wiem, czym jest
+  «reszta grupy»"*. Filtr pokazuje rachunki, na których nie ma Cię wśród uczestników,
+  i **zostaje**, bo robi jedną rzecz, której nie robi nic innego w aplikacji: pozwala
+  sprawdzić, czy ktoś Cię przypadkiem nie pominął przy dodawaniu składu. To jedyny powód,
+  dla którego wolno tu zaglądać w cudze pieniądze — i dlatego napis jest tym samym zdaniem,
+  co status na takim kafelku („Nie dotyczy Cię"). Przy zgranej ekipie pigułka i tak znika,
+  bo lista jest pusta.
+
+Sprawdzone w przeglądarce: pusty pokój — paska nie ma; jeden rachunek bez płatnika — paska
+nie ma (tylko „Wszystkie" miałoby co pokazać); po ukryciu rachunku pojawia się „Ukryte";
+wejście w „Ukryte" i przywrócenie rachunku ZOSTAWIA pigułkę z pustym licznikiem i zdaniem
+„Nie masz ukrytych rachunków".
+
+### 24.13 Stan testów po etapie
 
 **381 testów jednostkowych, wszystko zielone.** Dwa nowe wpisy w `RUNTIME_CREATED_IDS`
 (`settle-panes`, `remind-fill-all-btn`). Przebieg `tools/audit-layout.mjs` przy 390 px

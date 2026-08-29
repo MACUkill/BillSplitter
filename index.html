@@ -480,27 +480,58 @@ the verdict, and DESIGN.md
                          przy każdym przewinięciu. -->
                     <p id="bills-count" class="text-sm text-ink-3 mt-1"></p>
                 </div>
-                <!-- Filtry pigułkami, zawsze widoczne. Przełącznik dwustanowy
-                     („Wszystkie / Ukryte") nie mieści czterech wymiarów, a chowanie
-                     filtrów w arkuszu kosztuje jedno stuknięcie za dużo przy stole. -->
+                <!-- Filtry pigułkami, nie przełącznikiem: dwustanowy („Wszystkie / Ukryte")
+                     nie mieści sześciu wymiarów, a chowanie filtrów w arkuszu kosztuje
+                     jedno stuknięcie za dużo przy stole.
+
+                     PIGUŁKA ZNIKA, GDY NIE MA CO POKAZAĆ (2026-08-30). Pasek filtrów jest
+                     obietnicą: „stuknij, a coś zobaczysz". Pigułka, która przez większość
+                     życia pokoju daje pustą listę, tę obietnicę łamie — i uczy omijać
+                     wzrokiem CAŁY pasek, razem z tymi, które akurat coś niosą. Zostają
+                     dwa wyjątki: „Wszystkie" (bo to punkt wyjścia i droga powrotna)
+                     oraz pigułka WŁAŚNIE WYBRANA, nawet pusta — inaczej znikałaby spod
+                     palca w chwili, gdy domkniesz ostatnią sprawę, a zamiast domknięcia
+                     dostałbyś skok na inną listę.
+
+                     KOLOR PIGUŁKI TO KOLOR STANU, KTÓRY WYBIERA. Czerwone „Do oddania"
+                     nad czerwonym „Nieopłacone" na kafelku, błękitne „Czekają na Ciebie"
+                     nad błękitnym kafelkiem z Twoim ruchem. Filtr i to, co wybiera, mają
+                     wyglądać na tę samą rzecz. Filtry, które nie wybierają stanu pieniędzy
+                     („Wszystkie", „Nie dotyczą Cię", „Ukryte"), zostają szare — kolor
+                     w tej aplikacji ma znaczenie i nie wolno go rozdać wszystkim. -->
                 <div id="bill-filters" class="filter-pills mb-3">
                     <button data-filter="all" class="bill-filter-btn filter-pill" aria-pressed="true" title="Rachunki, które Cię dotyczą">Wszystkie<span class="filter-pill-count"></span></button>
-                    <button data-filter="waiting" class="bill-filter-btn filter-pill" aria-pressed="false" title="Czekają na Twój ruch">Czekają na Ciebie<span class="filter-pill-count"></span></button>
+                    <button data-filter="waiting" class="bill-filter-btn filter-pill is-info" aria-pressed="false" title="Czekają na Twój ruch">Czekają na Ciebie<span class="filter-pill-count"></span></button>
                     <!-- DO POTWIERDZENIA — rachunki, przy których ktoś zgłosił przelew i czeka
                          na Twoje „Mam". Pigułka pojawia się WYŁĄCZNIE wtedy, gdy taki rachunek
                          istnieje (patrz `renderBillsList`): to jedyny stan na tej liście,
                          w którym czekają cudze pieniądze, więc ma znaczyć coś zawsze, gdy
                          się pokaże. Ludzie, którzy rozliczają się rachunek po rachunku,
                          mogą dzięki temu w ogóle nie odwiedzać zakładki Rozliczenia. -->
-                    <button data-filter="confirm" class="bill-filter-btn filter-pill hidden" aria-pressed="false" title="Ktoś zgłosił przelew i czeka na Twoje potwierdzenie">Do potwierdzenia<span class="filter-pill-count"></span></button>
+                    <button data-filter="confirm" class="bill-filter-btn filter-pill is-info hidden" aria-pressed="false" title="Ktoś zgłosił przelew i czeka na Twoje potwierdzenie">Do potwierdzenia<span class="filter-pill-count"></span></button>
                     <!-- DO ODDANIA — rachunki, za które wciąż jestem winien płatnikowi.
                          Filtr, nie osobny ekran: lista rachunków już umie wszystko, czego
                          tryb „Rachunek po rachunku" potrzebuje, a druga lista tych samych
                          rachunków w innym miejscu byłaby drugą prawdą o tym samym.
                          Liczbę dopisuje `renderBillsList` do `.filter-pill-count`. -->
-                    <button data-filter="owed" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które jeszcze nie oddałeś/aś">Do oddania<span class="filter-pill-count"></span></button>
-                    <button data-filter="mine" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które wyłożyłeś pieniądze">Moje<span class="filter-pill-count"></span></button>
-                    <button data-filter="others" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki grupy, które Cię nie dotyczą">Reszta grupy<span class="filter-pill-count"></span></button>
+                    <button data-filter="owed" class="bill-filter-btn filter-pill is-owe" aria-pressed="false" title="Rachunki, za które jeszcze nie oddałeś/aś">Do oddania<span class="filter-pill-count"></span></button>
+                    <!-- „WYŁOŻYŁEŚ/AŚ", NIE „MOJE" (zgłoszenie właściciela 2026-08-30:
+                         „Moje — trzeba zmienić na coś bardziej oczywistego, że to Ty byłeś
+                         płatnikiem"). Miał rację: w domyślnym widoku KAŻDY rachunek jest
+                         „mój", bo lista i tak pokazuje wyłącznie te, które mnie dotyczą —
+                         więc słowo nie rozróżniało niczego. Nowy napis to DOKŁADNIE to
+                         samo słowo, które nosi kafelek takiego rachunku, i ten sam zielony
+                         kolor. Filtr i to, co wybiera, czyta się jako jedną rzecz. -->
+                    <button data-filter="mine" class="bill-filter-btn filter-pill is-due" aria-pressed="false" title="Rachunki, za które to Ty wyłożyłeś/aś pieniądze">Wyłożyłeś/aś<span class="filter-pill-count"></span></button>
+                    <!-- „NIE DOTYCZĄ CIĘ", NIE „RESZTA GRUPY". Ta pigułka pokazuje rachunki,
+                         na których nie ma Cię wśród uczestników — i jest potrzebna do jednej
+                         rzeczy, której nie robi nic innego w aplikacji: sprawdzenia, czy
+                         ktoś przypadkiem Cię nie pominął przy dodawaniu składu. To jedyny
+                         powód, dla którego wolno tu zaglądać w cudze pieniądze, więc napis
+                         mówi wprost, co się w środku znajdzie (i jest tym samym zdaniem,
+                         co status na takim kafelku). Przy zgranej ekipie pigułka i tak
+                         znika, bo lista jest pusta. -->
+                    <button data-filter="others" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, na których nie ma Cię wśród uczestników">Nie dotyczą Cię<span class="filter-pill-count"></span></button>
                     <!-- Licznik ma teraz KAŻDA pigułka (2026-08-29, na wniosek właściciela).
                          Zaczęło się od „Ukryte": to jedyny filtr, który człowiek sam na siebie
                          nakłada, i jedyny, po którym rachunek znika mu z oczu. Reszta ma go

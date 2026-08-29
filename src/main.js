@@ -6294,13 +6294,17 @@
             if (latestBills.length === 0) {
                 return '<p class="block-quiet p-5 text-sm text-ink-2">Pusty pokój. Pierwszy rachunek dodasz limonkowym przyciskiem na dole ekranu.</p>';
             }
+            // Pusta lista pod WYBRANYM filtrem jest dziś jedynym powodem, dla którego pusta
+            // pigułka w ogóle stoi na pasku (patrz `renderBillsList`) — więc to zdanie musi
+            // nieść DOMKNIĘCIE, a nie samą informację o zerze.
             const messages = {
                 waiting: 'Nic nie czeka na Twój ruch. Wszystko, co Twoje, jest uzupełnione.',
+                confirm: 'Żaden przelew nie czeka na Twoje potwierdzenie.',
                 owed: 'Nie masz nic do oddania. Za każdy rachunek już się rozliczyłeś/aś.',
                 mine: 'Nie wyłożyłeś/aś jeszcze pieniędzy za żaden rachunek.',
                 others: 'Każdy rachunek w tym pokoju dotyczy także Ciebie.',
                 hidden: 'Nie masz ukrytych rachunków.',
-                all: 'Żaden rachunek Cię nie dotyczy. Zajrzyj do „Reszta grupy".',
+                all: 'Żaden rachunek Cię nie dotyczy. Zajrzyj do „Nie dotyczą Cię".',
             };
             const message = messages[currentBillFilter] || messages.all;
             const reset = currentBillFilter === 'all'
@@ -6541,26 +6545,44 @@
                 return true;
             };
 
-            // FILTR „DO POTWIERDZENIA" POJAWIA SIĘ TYLKO WTEDY, GDY MA CO POKAZAĆ.
-            // Pigułka, która przez większość życia pokoju stoi pusta, uczy omijać wzrokiem
-            // cały pasek — a ta niesie jedyną rzecz na tym ekranie, przy której czekają
-            // CUDZE pieniądze. Lepiej, żeby pojawiała się rzadko i znaczyła coś zawsze.
-            const confirmBtn = document.querySelector('.bill-filter-btn[data-filter="confirm"]');
-            if (confirmBtn) confirmBtn.classList.toggle('hidden', doPotwierdzeniaRachunki.size === 0);
-            if (doPotwierdzeniaRachunki.size === 0 && currentBillFilter === 'confirm') currentBillFilter = 'all';
-
             const visible = latestBills.filter(({ id, data }) => pasujeDoFiltru(currentBillFilter, id, data));
 
-            // LICZBA PRZY KAŻDEJ PIGUŁCE (zgłoszenie właściciela 2026-08-29). Bez niej filtr
-            // trzeba odwiedzić, żeby się dowiedzieć, czy coś w nim jest — a przy sześciu
-            // pigułkach to sześć stuknięć, żeby zobaczyć jedną liczbę. Zero chowa licznik
-            // zamiast pisać „0": pusty filtr ma wyglądać na pusty, a nie na zepsuty.
+            // LICZBA I OBECNOŚĆ PIGUŁKI Z JEDNEGO PRZEBIEGU (2026-08-30).
+            //
+            // Liczba przy pigułce (2026-08-29) odpowiadała na pytanie „czy tam coś jest",
+            // które bez niej wymagało odwiedzenia filtra. Skoro jednak i tak ją liczymy,
+            // to pigułka z zerem nie musi w ogóle stać na pasku: pasek filtrów jest
+            // obietnicą „stuknij, a coś zobaczysz", a pusta pigułka tę obietnicę łamie
+            // i uczy omijać wzrokiem cały rząd — razem z tymi, które akurat coś niosą.
+            //
+            // DWA WYJĄTKI OD ZNIKANIA:
+            //   • „Wszystkie" — punkt wyjścia i droga powrotna z każdego innego filtra;
+            //   • pigułka WŁAŚNIE WYBRANA, nawet pusta. Inaczej znikałaby spod palca
+            //     dokładnie w chwili, gdy domykasz ostatnią sprawę z tej listy, a zamiast
+            //     domknięcia („nic już nie czeka") dostawałbyś skok na inną listę.
+            //     Pusty stan i tak niesie przycisk „Pokaż wszystkie".
+            //
+            // „Do oddania" ma jeszcze własny powód nieobecności — tryb rozliczania,
+            // a nie liczba rachunków (patrz wyżej).
+            let widocznychPigulek = 0;
             document.querySelectorAll('.bill-filter-btn').forEach((btn) => {
+                const filtr = btn.dataset.filter;
+                const ile = latestBills.filter(({ id, data }) => pasujeDoFiltru(filtr, id, data)).length;
                 const licznik = btn.querySelector('.filter-pill-count');
-                if (!licznik) return;
-                const ile = latestBills.filter(({ id, data }) => pasujeDoFiltru(btn.dataset.filter, id, data)).length;
-                licznik.textContent = ile ? String(ile) : '';
+                // Zero chowa licznik zamiast pisać „0" — pusty filtr ma wyglądać na pusty,
+                // a nie na zepsuty. Widać go zresztą wyłącznie wtedy, gdy jest wybrany.
+                if (licznik) licznik.textContent = ile ? String(ile) : '';
+                const wTymTrybie = filtr !== 'owed' || perBillActive;
+                const chowamy = !wTymTrybie
+                    || (ile === 0 && filtr !== 'all' && filtr !== currentBillFilter);
+                btn.classList.toggle('hidden', chowamy);
+                if (!chowamy) widocznychPigulek += 1;
             });
+            // Pasek z jedną pigułką nie jest paskiem filtrów, tylko napisem „Wszystkie"
+            // zajmującym rząd wysokości celu dotykowego. W świeżym pokoju i w pokoju,
+            // w którym wszystko jest domknięte, schodzi z ekranu w całości.
+            const pasekFiltrow = document.getElementById('bill-filters');
+            if (pasekFiltrow) pasekFiltrow.classList.toggle('hidden', widocznychPigulek < 2);
 
             renderBillsCount(visible);
 

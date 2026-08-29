@@ -1447,10 +1447,6 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
     color: rgb(var(--ink-2));
   }
   .filter-pill-count:empty { display: none; }
-  .filter-pill[aria-pressed='true'] .filter-pill-count {
-    background-color: rgb(var(--surface) / 0.22);
-    color: inherit;
-  }
 
   .filter-pill {
     flex-shrink: 0;
@@ -1470,6 +1466,59 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
   .filter-pill[aria-pressed='true'] {
     background-color: rgb(var(--ink));
     color: rgb(var(--surface));
+  }
+
+  /* --- KOLOR FILTRA TO KOLOR STANU, KTÓRY WYBIERA (2026-08-30) --------------
+     Czerwone „Do oddania" nad czerwonym „Nieopłacone" na kafelku, błękitne
+     „Czekają na Ciebie" nad błękitnym kafelkiem z moim ruchem, zielone
+     „Wyłożyłeś/aś" nad zielonym „Wyłożyłeś/aś". Filtr i to, co wybiera, mają
+     wyglądać na tę samą rzecz — inaczej trzeba się nauczyć, że są powiązane.
+
+     Kolor dostają WYŁĄCZNIE filtry, które wybierają stan pieniędzy. „Wszystkie",
+     „Nie dotyczą Cię" i „Ukryte" zostają szare: w tej aplikacji kolor coś znaczy
+     i rozdanie go wszystkim odebrałoby mu to znaczenie.
+
+     BARWA TEKSTU NA WYPEŁNIENIU JEST LICZONA PER MOTYW, nie zapisana jako biel.
+     W motywie ciemnym `--owe`, `--due` i `--info` są ROZJAŚNIONE (bo na ciemnym tle
+     ciemna czerwień się zapada), więc biały napis na nich jest nieczytelny. Ta sama
+     zasada, co przy limonce: jasne wypełnienie zawsze nosi ciemny tekst. */
+  .filter-pill.is-info { color: rgb(var(--info)); }
+  .filter-pill.is-owe { color: rgb(var(--owe)); }
+  .filter-pill.is-due { color: rgb(var(--due)); }
+
+  .filter-pill.is-info .filter-pill-count { background-color: rgb(var(--info) / 0.16); color: rgb(var(--info)); }
+  .filter-pill.is-owe .filter-pill-count { background-color: rgb(var(--owe) / 0.16); color: rgb(var(--owe)); }
+  .filter-pill.is-due .filter-pill-count { background-color: rgb(var(--due) / 0.16); color: rgb(var(--due)); }
+
+  .filter-pill.is-info[aria-pressed='true'] { background-color: rgb(var(--info)); color: #fff; }
+  .filter-pill.is-owe[aria-pressed='true'] { background-color: rgb(var(--owe)); color: #fff; }
+  .filter-pill.is-due[aria-pressed='true'] { background-color: rgb(var(--due)); color: #fff; }
+
+  :root[data-theme='dark'] .filter-pill.is-info[aria-pressed='true'],
+  :root[data-theme='dark'] .filter-pill.is-owe[aria-pressed='true'],
+  :root[data-theme='dark'] .filter-pill.is-due[aria-pressed='true'] {
+    color: rgb(var(--brand-ink));
+  }
+
+  /* Licznik na wypełnionej pigułce bierze barwę z jej tekstu — własny kolor byłby
+     trzecim odcieniem na dwucentymetrowym przedmiocie. Reguły dla pigułek kolorowych
+     muszą być OSOBNE i bardziej szczegółowe: bez nich `.filter-pill.is-owe
+     .filter-pill-count` (trzy klasy) wygrywa z regułą stanu wciśnięcia (dwie klasy
+     i atrybut) i na czerwonym wypełnieniu zostaje czerwony licznik. */
+  .filter-pill[aria-pressed='true'] .filter-pill-count {
+    background-color: rgb(var(--surface) / 0.22);
+    color: inherit;
+  }
+  .filter-pill.is-info[aria-pressed='true'] .filter-pill-count,
+  .filter-pill.is-owe[aria-pressed='true'] .filter-pill-count,
+  .filter-pill.is-due[aria-pressed='true'] .filter-pill-count {
+    background-color: rgb(255 255 255 / 0.28);
+    color: inherit;
+  }
+  :root[data-theme='dark'] .filter-pill.is-info[aria-pressed='true'] .filter-pill-count,
+  :root[data-theme='dark'] .filter-pill.is-owe[aria-pressed='true'] .filter-pill-count,
+  :root[data-theme='dark'] .filter-pill.is-due[aria-pressed='true'] .filter-pill-count {
+    background-color: rgb(var(--brand-ink) / 0.16);
   }
 
   /* Rząd twarzy ekipy pod nominałem (`.crew-row`, `.crew-face`, `.crew-name`) został
