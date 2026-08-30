@@ -7218,6 +7218,38 @@
             }
         };
 
+        // TA SAMA OCHRONA, ALE DLA OBU TABLIC NARAZ.
+        //
+        // Odkąd „Dla wszystkich" jest właściwością pozycji, jeden zapis potrafi dotknąć
+        // OBU tablic: przełączenie przenosi pozycję z `sharedCosts` do `globalCosts` albo
+        // z powrotem. Dwa osobne `updateDoc` są tu dwoma błędami naraz — po pierwsze
+        // między nimi pozycja istnieje dwa razy albo wcale (a jeśli drugi zapis nie
+        // dojdzie, zostaje tak na stałe), po drugie każdy z nich nadpisuje CAŁĄ tablicę
+        // z lokalnej kopii, więc kasuje cudze stuknięcia z ostatnich sekund. A kafelki
+        // paragonu powstały właśnie po to, żeby cała ekipa odklikiwała swoje NARAZ
+        // (patrz `mutateItems` wyżej).
+        //
+        // `mutate` dostaje ŚWIEŻE tablice z bazy i zwraca gotowy zestaw pól do zapisania.
+        // Zapasowe wyjście identyczne jak przy pozycjach: offline transakcja nie przejdzie,
+        // a odmowa działania przy słabym zasięgu byłaby gorsza niż ryzyko kolizji.
+        const mutateBillItems = async (mutate) => {
+            const billRef = itemsDocRef();
+            const zTablic = (d) => mutate({
+                sharedCosts: (d && d.sharedCosts) || [],
+                globalCosts: (d && d.globalCosts) || [],
+            });
+            try {
+                await runTransaction(db, async (tx) => {
+                    const snap = await tx.get(billRef);
+                    if (!snap.exists()) return;
+                    tx.update(billRef, zTablic(snap.data()));
+                });
+            } catch (err) {
+                console.warn('[Billiada] Transakcja pozycji nieudana — zapis awaryjny:', err);
+                await updateDoc(billRef, zTablic(billData));
+            }
+        };
+
         const renderItemTiles = () => {
             const list = document.getElementById('shared-costs-list');
             if (!list || !billData) return;
@@ -7818,6 +7850,10 @@
             deleteBtn.dataset.costId = istnieje ? istnieje.id : '';
             deleteBtn.onclick = async () => {
                 if (!editingItemId) return;
+                // Strażnik także tutaj: arkusz bywa otwarty minutę, a w tym czasie płatnik
+                // po drugiej stronie może podzielić resztę. Kasowanie pozycji na zamrożonym
+                // rachunku przesunęłoby kwoty, na podstawie których ktoś zrobił już przelew.
+                if (refuseFrozen()) return;
                 const id = editingItemId;
                 const zDlaWszystkich = editingItemForAll;
                 const removed = zDlaWszystkich
@@ -7825,7 +7861,7 @@
                     : (billData.sharedCosts || []).find(x => x.id === id);
                 document.getElementById('shared-cost-modal').classList.remove('active');
                 if (zDlaWszystkich) {
-                    await updateDoc(itemsDocRef(), { globalCosts: (billData.globalCosts || []).filter(g => g.id !== id) });
+                    await mutateBillItems(({ globalCosts }) => ({ globalCosts: globalCosts.filter(g => g.id !== id) }));
                 } else {
                     await mutateItems((items) => items.filter(sc => sc.id !== id));
                 }
@@ -7861,15 +7897,19 @@
                 if (!(amount > 0)) { showToast(procent ? 'Podaj procent.' : 'Podaj kwotę pozycji.', true); return; }
                 if (procent && amount > 100) { showToast('Procent musi być w przedziale 0–100.', true); return; }
                 const wpis = { id: editingItemId || generateId(), description, type: procent ? 'percent' : 'amount', value: amount };
-                const stare = billData.globalCosts || [];
-                // Ta sama pozycja mogła przed chwilą być imienna — przełącznik „Dla wszystkich"
-                // przenosi ją między tablicami, więc ze starej trzeba ją wtedy wyjąć.
-                const przeniesiona = !!editingItemId && (billData.sharedCosts || []).some(x => x.id === editingItemId);
-                await updateDoc(itemsDocRef(), {
-                    globalCosts: stare.some(g => g.id === wpis.id)
-                        ? stare.map(g => (g.id === wpis.id ? wpis : g))
-                        : [...stare, wpis],
-                    ...(przeniesiona ? { sharedCosts: (billData.sharedCosts || []).filter(x => x.id !== editingItemId) } : {}),
+                // JEDNA TRANSAKCJA NA OBIE TABLICE. Ta sama pozycja mogła przed chwilą być
+                // imienna — przełącznik przenosi ją wtedy z `sharedCosts` do `globalCosts`,
+                // a to musi być JEDEN zapis: w przerwie między dwoma pozycja istniałaby dwa
+                // razy albo wcale. Do tego tablice biorą się ze ŚWIEŻEGO odczytu, więc
+                // zapis nie kasuje stuknięć, które ekipa zrobiła w międzyczasie.
+                await mutateBillItems(({ sharedCosts, globalCosts }) => {
+                    const przeniesiona = !!editingItemId && sharedCosts.some(x => x.id === editingItemId);
+                    return {
+                        globalCosts: globalCosts.some(g => g.id === wpis.id)
+                            ? globalCosts.map(g => (g.id === wpis.id ? wpis : g))
+                            : [...globalCosts, wpis],
+                        ...(przeniesiona ? { sharedCosts: sharedCosts.filter(x => x.id !== editingItemId) } : {}),
+                    };
                 });
                 document.getElementById('shared-cost-modal').classList.remove('active');
                 showToast(editingItemId ? 'Zapisano pozycję.' : 'Dodano pozycję.');
@@ -7883,28 +7923,36 @@
             }
 
             if (!(amount > 0)) { showToast('Podaj cenę pozycji.', true); return; }
-            // Pozycja przestała być „dla wszystkich" — wypada ze starej tablicy, zanim
-            // wejdzie do nowej. Inaczej ta sama rzecz liczyłaby się dwa razy.
-            if (editingItemId && (billData.globalCosts || []).some(g => g.id === editingItemId)) {
-                await updateDoc(itemsDocRef(), { globalCosts: (billData.globalCosts || []).filter(g => g.id !== editingItemId) });
-                editingItemId = null;
-            }
 
+            // Droga powrotna: pozycja przestała być „dla wszystkich". Też jedną transakcją,
+            // z tego samego powodu, co wyżej — inaczej między wyjęciem ze starej tablicy
+            // a wstawieniem do nowej rachunek na chwilę gubi tę kwotę, a przy zerwanej
+            // sieci gubi ją na stałe.
             const newId = generateId();
-            await mutateItems((fresh) => {
-                const items = [...fresh];
-                if (editingItemId) {
-                    const i = items.findIndex(x => x.id === editingItemId);
-                    // Pozycja mogła w międzyczasie zniknąć (ktoś ją skasował) — nie wskrzeszamy jej.
-                    if (i === -1) return items;
-                    items[i] = { ...items[i], description, amount, quantity, sharedBy };
-                } else {
-                    // Nowa pozycja bez wskazanych osób jest dozwolona — kafelek pokaże „nikt nie wybrał",
-                    // a każdy dopisze się sam jednym stuknięciem. To główny przepływ przy paragonie.
-                    items.push({ id: newId, description, amount, quantity, sharedBy });
-                }
-                return items;
-            });
+            const wracaZDlaWszystkich = !!editingItemId
+                && (billData.globalCosts || []).some(g => g.id === editingItemId);
+            if (wracaZDlaWszystkich) {
+                await mutateBillItems(({ sharedCosts, globalCosts }) => ({
+                    globalCosts: globalCosts.filter(g => g.id !== editingItemId),
+                    sharedCosts: [...sharedCosts, { id: newId, description, amount, quantity, sharedBy }],
+                }));
+                editingItemId = null;
+            } else {
+                await mutateItems((fresh) => {
+                    const items = [...fresh];
+                    if (editingItemId) {
+                        const i = items.findIndex(x => x.id === editingItemId);
+                        // Pozycja mogła w międzyczasie zniknąć (ktoś ją skasował) — nie wskrzeszamy jej.
+                        if (i === -1) return items;
+                        items[i] = { ...items[i], description, amount, quantity, sharedBy };
+                    } else {
+                        // Nowa pozycja bez wskazanych osób jest dozwolona — kafelek pokaże „nikt nie wybrał",
+                        // a każdy dopisze się sam jednym stuknięciem. To główny przepływ przy paragonie.
+                        items.push({ id: newId, description, amount, quantity, sharedBy });
+                    }
+                    return items;
+                });
+            }
             document.getElementById('shared-cost-modal').classList.remove('active');
             showToast(editingItemId ? 'Zapisano pozycję.' : 'Dodano pozycję.');
             logEvent({
