@@ -2636,7 +2636,29 @@
         // --- Faza 5: widok „Rozliczenia" (ledger kto komu ile / min. przelewów) + „Ureguluj" ---
         const CURRENCY_ORDER = ['PLN', 'EUR', 'USD'];
         const memberName = (id) => ((groupData && groupData.members && groupData.members[id]) || {}).name || 'Ktoś';
-        const fmtMoney = (amountG, currency) => `${fromGrosze(amountG).toFixed(2).replace('.', ',')} ${currency}`;
+        // ŻADNE POLE KWOTY NIE MA PRAWA WYŚWIETLIĆ „NaN" ANI „undefined"
+        // (zgłoszenie właściciela 2026-08-30: „pokazuje NaN undefined — co to znaczy?").
+        //
+        // Do 2026-08-30 ta funkcja ufała obu argumentom bezwarunkowo, więc jedno wywołanie
+        // z brakującą liczbą albo walutą drukowało na ekranie o CUDZYCH PIENIĄDZACH napis,
+        // który dla patrzącego znaczy „aplikacja się pomyliła w rachunkach". W aplikacji,
+        // której cała treść to kwoty, żadne miejsce nie powinno tego umieć.
+        //
+        // Zastępnik to PÓŁPAUZA, nie zero: zero jest twierdzeniem o pieniądzach („nikt nic
+        // nie jest winien"), a półpauza mówi prawdę — tej liczby nie ma. Do konsoli idzie
+        // ostrzeżenie z wartościami, żeby dało się znaleźć wywołanie, które ją zgubiło;
+        // cichy zastępnik zamieniłby usterkę widoczną w niewidoczną.
+        const fmtMoney = (amountG, currency) => {
+            const zl = fromGrosze(amountG);
+            if (!Number.isFinite(zl)) {
+                console.warn('[Billiada] fmtMoney bez liczby — pokazuję półpauzę:', { amountG, currency });
+                return '—';
+            }
+            const kwota = zl.toFixed(2).replace('.', ',');
+            // Brak waluty NIE psuje kwoty: liczba jest prawdziwa, więc pokazujemy ją samą,
+            // zamiast doklejać do niej słowo „undefined".
+            return currency ? `${kwota} ${currency}` : kwota;
+        };
         // Nazwa rachunku po identyfikatorze — potrzebna wszędzie tam, gdzie o rachunku
         // mówi coś, co nie jest samym rachunkiem: wpłata, skrzynka, rejestr.
         const billNameById = (id) => {
@@ -3768,7 +3790,12 @@
                     detailRow(escapeHtml(naglowek), '', 'is-lead'),
                     detailRow('Kwota', escapeHtml(kwota)),
                     detailRow('Zgłoszone', escapeHtml(kiedy)),
-                    billCtx ? detailRow('Udział w tym rachunku', escapeHtml(fmtMoney(billCtx.udzialG, billCtx.currency))) : '',
+                    // „JEGO", nie samo „Udział" — ta sama etykieta, co w bloku stanu wyżej.
+                    // Bez zaimka wiersz nie mówi, CZYJ to udział, a stoi tuż obok kwoty
+                    // przelewu i mojego własnego udziału w tym samym rachunku: trzy liczby,
+                    // z których dwie są cudze. Zgłoszenie właściciela 2026-08-30: „czym jest
+                    // ten udział w tym rachunku?" — pytanie samo w sobie było odpowiedzią.
+                    billCtx ? detailRow('Jego udział w tym rachunku', escapeHtml(fmtMoney(billCtx.udzialG, billCtx.currency))) : '',
                     nazwy.length
                         ? `${detailRow(`Pokrywa ${nazwy.length} ${plural(nazwy.length, 'rachunek', 'rachunki', 'rachunków')}`, '', 'is-head')}${nazwy.map((n) => detailRow(escapeHtml(n))).join('')}`
                         : detailRow('Wpłata bez przypisania do rachunków'),
@@ -8292,9 +8319,17 @@
             // Udział tej osoby w TYM rachunku — bierzemy go z księgi, żeby liczba zgadzała
             // się co do grosza z tym, co ta osoba widzi u siebie na rachunku.
             const wiersze = billSettledBy(perBillNow(), currentBillId);
+            // KONTEKST POWSTAJE TYLKO WTEDY, GDY MA CO POWIEDZIEĆ. Wiersz „Jego udział
+            // w tym rachunku" jest zdaniem O CUDZYCH PIENIĄDZACH, więc albo niesie liczbę,
+            // której można zaufać, albo nie ma go wcale. Sam fakt, że w księdze znalazł się
+            // wiersz tej osoby, tego nie gwarantuje: rachunek zapisany przez starszą wersję
+            // aplikacji potrafi nie mieć waluty, a udział policzony z pola tekstowego
+            // wychodzi jako NaN. Wtedy karta milczy o udziale — reszta jej treści (kwota
+            // przelewu, data, których rachunków dotyczy) jest prawdziwa i zostaje.
             const billCtxFor = (x) => {
                 const w = wiersze.find((r) => r.debtor === x.from);
-                return w ? { udzialG: w.shareG, currency: w.currency } : null;
+                if (!w || !Number.isFinite(w.shareG) || !w.currency) return null;
+                return { udzialG: w.shareG, currency: w.currency };
             };
             const spory = [...disputesAsPayee(myId).filter(tegoRachunku), ...disputesAsDebtor(myId).filter(tegoRachunku)];
 
