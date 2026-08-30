@@ -4218,10 +4218,21 @@
             // dobrą wiadomością i człowiek ma się o niej dowiedzieć. Pozostałe stosy
             // znikają bez śladu, bo pusta lista „do wyjaśnienia" byłaby zaproszeniem
             // do szukania problemu, którego nie ma.
+            // `(s) => payeeCard(s)`, NIGDY `map(payeeCard)` — i to nie jest kwestia gustu
+            // (zgłoszenie właściciela 2026-08-30: „w Do potwierdzenia pisze NaN undefined").
+            //
+            // `Array.map` podaje funkcji TRZY argumenty: element, INDEKS i całą tablicę.
+            // `payeeCard(s, billCtx)` brał więc indeks jako kontekst rachunku. Przy jednym
+            // przelewie indeks wynosi 0, czyli fałsz, i karta wyglądała poprawnie — usterka
+            // zapalała się dopiero od DRUGIEGO przelewu w stosie, gdzie indeks 1 jest
+            // prawdą, a `1.udzialG` i `1.currency` to `undefined`. Stąd „NaN undefined"
+            // w wierszu o cudzym udziale. Strażnik w selectors.contract.test.js pilnuje
+            // teraz, żeby żadna funkcja o więcej niż jednym parametrze nie trafiła do
+            // `map` bez opakowania.
             const potwierdzenia = doPotwierdzenia.length
                 ? stackHtml({
                     name: 'confirm', title: 'Do potwierdzenia', tone: 'is-info',
-                    items: doPotwierdzenia.map(payeeCard),
+                    items: doPotwierdzenia.map((s) => payeeCard(s)),
                 })
                 : (kartyDue.length || sporyOdbiorcy.length
                     ? `<div class="stack-done mb-4"><i class="fas fa-check"></i><span>Nie masz przelewów do potwierdzenia</span></div>`
@@ -4232,7 +4243,7 @@
                     name: 'pay', title: 'Do zapłaty', tone: 'is-owe', items: kartyOwe,
                 }),
                 sporyDluznika.length
-                    ? `<div class="mt-4">${stackHtml({ name: 'mydisputes', title: 'Do wyjaśnienia', items: sporyDluznika.map(debtorDisputeCard) })}</div>`
+                    ? `<div class="mt-4">${stackHtml({ name: 'mydisputes', title: 'Do wyjaśnienia', items: sporyDluznika.map((s) => debtorDisputeCard(s)) })}</div>`
                     : '',
                 bezHtml,
             ].filter(Boolean).join('');
@@ -4240,7 +4251,7 @@
             const dueHtml = [
                 potwierdzenia,
                 sporyOdbiorcy.length
-                    ? `<div class="mt-4">${stackHtml({ name: 'disputes', title: 'Do wyjaśnienia', items: sporyOdbiorcy.map(payeeCard) })}</div>`
+                    ? `<div class="mt-4">${stackHtml({ name: 'disputes', title: 'Do wyjaśnienia', items: sporyOdbiorcy.map((s) => payeeCard(s)) })}</div>`
                     : '',
                 kartyDue.length
                     ? `<div class="mt-4">${stackHtml({ name: 'waiting', title: 'Czekasz na przelew', tone: 'is-due', items: kartyDue })}</div>`

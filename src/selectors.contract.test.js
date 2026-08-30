@@ -340,3 +340,42 @@ describe("kontrakt bramy: powód „nostake\" ma swoje zdanie na każdym ekranie
     expect(calcJs).toContain("bezStawki.length > 0 && bill.settleOpen !== true");
   });
 });
+
+// STRAŻNIK PRZED `map(funkcja)` Z FUNKCJĄ O WIELU PARAMETRACH.
+//
+// `Array.map` podaje wywołanej funkcji TRZY argumenty: element, indeks i całą tablicę.
+// Funkcja o jednym parametrze nic na tym nie traci, ale każda kolejna „szuflada" łapie
+// wtedy indeks. Audyt 2026-08-30 znalazł na tym realną usterkę: `doPotwierdzenia.map(payeeCard)`
+// podawało indeks jako `billCtx`, więc karta drugiego przelewu w stosie pokazywała
+// „NaN undefined" w wierszu o cudzym udziale w rachunku. Przy jednym przelewie indeks
+// wynosi 0 (fałsz) i wszystko wyglądało dobrze — dlatego usterka przeżyła kilka wydań.
+//
+// Test czyta main.js jako TEKST: wyłuskuje `.map(nazwa)` bez opakowania w strzałkę,
+// znajduje deklarację tej nazwy i liczy jej parametry.
+describe("pułapka `map(funkcja)`: indeks nie może wejść w drugi parametr", () => {
+  const mapowane = [...new Set(collect(/\.map\(([a-zA-Z_][a-zA-Z0-9_]*)\)/g, mainJs))];
+
+  it("znajduje wywołania do sprawdzenia (test nie zdegenerował się do pustego)", () => {
+    expect(mapowane.length).toBeGreaterThan(0);
+  });
+
+  it("każda funkcja podana do `map` bez opakowania przyjmuje dokładnie jeden parametr", () => {
+    const winne = [];
+    for (const nazwa of mapowane) {
+      // Deklaracja funkcji strzałkowej albo zwykłej — obie formy występują w main.js.
+      const m = mainJs.match(new RegExp(`(?:const|let)\\s+${nazwa}\\s*=\\s*(?:async\\s*)?\\(([^)]*)\\)\\s*=>`))
+        || mainJs.match(new RegExp(`function\\s+${nazwa}\\s*\\(([^)]*)\\)`));
+      if (!m) continue; // funkcja z innego modułu — jej kontraktu nie znamy stąd
+      const parametry = m[1].trim();
+      if (!parametry) continue;
+      // Przecinki wewnątrz wartości domyślnych nas nie interesują: liczymy szuflady
+      // najwyższego poziomu, a te w main.js są proste.
+      const ile = parametry.split(',').length;
+      if (ile > 1) winne.push(`${nazwa} (${ile} parametry) — użyte jako .map(${nazwa})`);
+    }
+    expect(
+      winne,
+      `Funkcje wieloparametrowe podane wprost do map (indeks wejdzie w drugi parametr):\n  ${winne.join('\n  ')}`,
+    ).toEqual([]);
+  });
+});
