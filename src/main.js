@@ -3606,6 +3606,39 @@
             `<span class="detail-line ${klasa}"><span class="truncate">${lewo}</span>${prawo ? `<b class="flex-shrink-0">${prawo}</b>` : ''}</span>`;
         const detailBlock = (linie) => `<div class="stack-detail">${linie.filter(Boolean).join('')}</div>`;
 
+        // --- GŁOWA KARTY NA WIERZCHU STOSU: jeden szkielet na trzy karty --------------
+        //
+        // Zgłoszenie właściciela 2026-08-30: „kafelek Do wyjaśnienia ma dziwny układ,
+        // po lewej tekst zciśnięty i bardzo zwinięty". Przyczyna była arytmetyczna,
+        // nie estetyczna: trzy karty stosu lepiły własny rząd `[znak][tekst][kwota]`,
+        // w którym kwota stała w stopniu 2xl z `flex-shrink-0`. Na telefonie 390 px karta
+        // ma 326 px treści, z czego znak i odstępy zjadają 60, a kwota „1082,30 PLN"
+        // w tym stopniu kolejne 155 — na tytuł zostawało około 110 px. Nazwie osoby to nie
+        // przeszkadzało, ale gdy tytułem jest ZDANIE („Macu nie znalazł Twojego przelewu"),
+        // łamało się ono na cztery wiersze, a znak i kwota pływały w połowie ich wysokości.
+        //
+        // Zdanie i duża kwota nie zmieszczą się w jednym rzędzie i nie ma sensu ich do tego
+        // zmuszać. Kwota schodzi więc wiersz niżej, na prawy koniec rzędu ze znaczkiem stanu:
+        // oba są krótkie, więc się nie biją, a tytuł dostaje całą szerokość kolumny.
+        // To ten sam układ, co w kafelku rejestru (`.log-row`) — nagłówek, a pod nim rząd
+        // „stan po lewej, pieniądze po prawej".
+        //
+        // PODPIS DOSTAJE WŁASNY WIERSZ TYLKO WTEDY, gdy zajęty jest znaczkiem. Bez tego
+        // karta planu przelewów (nazwa + „2 rachunki" + kwota) urosłaby o wiersz, choć
+        // nie ma czego rozdzielać.
+        const stackBigHead = ({ avatar, title, note = '', chip = '', amount = '', amountClass = '' }) => `
+            <div class="stack-big">
+                ${avatar}
+                <div class="stack-big-col">
+                    <p class="stack-big-title">${title}</p>
+                    ${chip && note ? `<p class="stack-big-note">${note}</p>` : ''}
+                    <div class="stack-big-meta">
+                        <span class="stack-big-side">${chip || (note ? `<span class="stack-big-note">${note}</span>` : '')}</span>
+                        ${amount ? `<span class="amount stack-big-amount ${amountClass}">${amount}</span>` : ''}
+                    </div>
+                </div>
+            </div>`;
+
         // Ile rachunków pokrywa ta wpłata — jedna fraza, używana w obu gęstościach.
         const ileRachunkow = (s) => {
             const n = billNamesOfSettlement(s).length;
@@ -3690,16 +3723,18 @@
             // Chip TYLKO tam, gdzie nie powtarza nagłówka stosu. W stosie „Do wyjaśnienia"
             // pigułka „Do wyjaśnienia" byłaby echem tytułu dwa centymetry wyżej.
             const chip = stan === SETTLE_INSISTED
-                ? `<span class="chip text-info mt-1"><i class="fas fa-eye"></i>Sprawdź jeszcze raz</span>`
+                ? `<span class="chip text-info"><i class="fas fa-eye"></i>Sprawdź jeszcze raz</span>`
                 : '';
 
             return {
                 flagged,
-                big: `<div class="flex items-center gap-3">
-                        ${settleAvatarBig(s.from)}
-                        <span class="flex-grow min-w-0"><span class="block font-display font-extrabold text-base leading-tight">${escapeHtml(naglowek)}</span><span class="block text-xs text-ink-3 truncate">${podpis}</span>${chip}</span>
-                        <span class="amount text-2xl flex-shrink-0">${escapeHtml(kwota)}</span>
-                      </div>
+                big: `${stackBigHead({
+                          avatar: settleAvatarBig(s.from),
+                          title: escapeHtml(naglowek),
+                          note: podpis,
+                          chip,
+                          amount: escapeHtml(kwota),
+                      })}
                       ${stackStateMaybeZaco(s, linie)}
                       <div class="mt-3 flex items-center gap-2">${akcje}</div>`,
                 rowFace: `${settleAvatarRow(s.from)}
@@ -3758,11 +3793,13 @@
 
             return {
                 flagged: ' card-flagged',
-                big: `<div class="flex items-center gap-3">
-                        ${settleAvatarBig(s.to)}
-                        <span class="flex-grow min-w-0"><span class="block font-display font-extrabold text-base leading-tight">${escapeHtml(naglowek)}</span><span class="chip mt-1"><i class="fas fa-eye"></i>${stan === SETTLE_STALLED ? 'Do wyjaśnienia' : 'Sprawdzacie'}</span></span>
-                        <span class="amount text-2xl text-owe flex-shrink-0">${escapeHtml(kwota)}</span>
-                      </div>
+                big: `${stackBigHead({
+                          avatar: settleAvatarBig(s.to),
+                          title: escapeHtml(naglowek),
+                          chip: `<span class="chip"><i class="fas fa-eye"></i>${stan === SETTLE_STALLED ? 'Do wyjaśnienia' : 'Sprawdzacie'}</span>`,
+                          amount: escapeHtml(kwota),
+                          amountClass: 'text-owe',
+                      })}
                       ${stackStateMaybeZaco(s, linie)}
                       <div class="mt-3 flex items-center gap-2">${akcje}</div>`,
                 rowFace: `${settleAvatarRow(s.to)}
@@ -3867,11 +3904,13 @@
 
             return {
                 flagged: '',
-                big: `<div class="flex items-center gap-3">
-                        ${avatarHtml(memberName(grupa.other), grupa.other, 'w-12 h-12 text-lg')}
-                        <span class="flex-grow min-w-0"><span class="block font-display font-extrabold text-base leading-tight truncate">${imie}</span>${zaCo ? `<span class="block text-xs text-ink-3">${escapeHtml(zaCo)}</span>` : ''}</span>
-                        <span class="amount text-2xl ${kolor} flex-shrink-0">${escapeHtml(kwota)}</span>
-                      </div>
+                big: `${stackBigHead({
+                          avatar: avatarHtml(memberName(grupa.other), grupa.other, 'w-12 h-12 text-lg'),
+                          title: imie,
+                          note: zaCo ? escapeHtml(zaCo) : '',
+                          amount: escapeHtml(kwota),
+                          amountClass: kolor,
+                      })}
                       ${stackState(linie)}
                       ${crossref}
                       <div class="mt-3 flex items-center gap-2">${akcje}</div>
@@ -6612,9 +6651,27 @@
             const rachunkiWplaty = (s) => (Array.isArray(s.billIds) && s.billIds.length)
                 ? s.billIds
                 : (s.billId ? [s.billId] : []);
+            // KWOTA PRZELEWU NALEŻY DO WIERSZA TYLKO WTEDY, GDY JEST JEDNOZNACZNA.
+            //
+            // Jedna wpłata bywa zapłatą za pięć rachunków i wtedy ŻADNA jej część nie jest
+            // przypisana do żadnego z nich — pokazanie jej przy jednym kłamałoby o cudzych
+            // pieniądzach. Zliczamy więc osobno: ile przelewów czeka i ile z nich dotyczy
+            // wyłącznie tego rachunku. Kwota idzie na ekran tylko w tym drugim przypadku.
             const doPotwierdzeniaRachunki = new Map();
             settlementsAwaitingMe(myMember.id).forEach((s) => {
-                rachunkiWplaty(s).forEach((b) => doPotwierdzeniaRachunki.set(b, (doPotwierdzeniaRachunki.get(b) || 0) + 1));
+                const rachunki = rachunkiWplaty(s);
+                rachunki.forEach((b) => {
+                    const wpis = doPotwierdzeniaRachunki.get(b)
+                        || { ile: 0, amountG: 0, currency: null, jednoznaczna: true };
+                    wpis.ile += 1;
+                    if (rachunki.length === 1) {
+                        wpis.amountG += settlementAmountG(s);
+                        wpis.currency = wpis.currency || settlementCurrency(s);
+                    } else {
+                        wpis.jednoznaczna = false;
+                    }
+                    doPotwierdzeniaRachunki.set(b, wpis);
+                });
             });
             const sporneRachunki = new Set();
             [...disputesAsPayee(myMember.id), ...disputesAsDebtor(myMember.id)].forEach((s) => {
@@ -6736,13 +6793,16 @@
 
                 // Data rachunku idzie mikrodrukiem: jest potrzebna do odróżnienia dwóch kolacji
                 // w tym samym miejscu, ale nie konkuruje z nazwą ani z kwotą.
-                // Godzina zamiast daty: dzień niesie nagłówek grupy, a przy dwóch
-                // kolacjach tego samego dnia rozróżnia je właśnie godzina.
-                const createdDate = billCreatedDate(bill);
-                const created = createdDate
-                    ? createdDate.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })
-                    : '';
-
+                // GODZINA ZDJĘTA Z WIERSZA (zgłoszenie właściciela 2026-08-30: „Do
+                // wyjaśnienia + godzina + kwota — bardzo się ciasno im robi w kafelku").
+                // Miał rację i wybór był arytmetyczny. Rząd podpisów ma na telefonie 390 px
+                // około 280 px, a stały w nim trzy rzeczy: znaczek stanu (do 180 px przy
+                // „Przelew do sprawdzenia"), godzina i kwota. Dwie z nich są tu po coś —
+                // znaczek mówi, co się dzieje, kwota mówi o pieniądzach — a godzina
+                // odpowiadała na pytanie, którego nikt nie zadaje: o której powstał
+                // rachunek. Datę niesie nagłówek dnia nad grupą, więc nic nie ginie.
+                // Odzyskane miejsce idzie w całości na znaczek i kwotę, które przestają
+                // się o nie bić.
                 // KOLOR NIESIE STATUS, nie tożsamość. Kolorowanie kafelka kolorem płatnika
                 // zamieniało listę w tęczę, w której nic nie znaczyło nic. Tu odcień pojawia
                 // się WYŁĄCZNIE tam, gdzie jest coś do wiedzenia: co czeka na twój ruch,
@@ -6806,12 +6866,22 @@
                 // gdzie mamy do potwierdzenia przelewy"). To jedyny stan na tej liście,
                 // w którym CUDZE pieniądze czekają na moje jedno stuknięcie — i jedyny,
                 // przy którym rachunek dostaje tu wołanie mimo domkniętego statusu.
-                const doPotwierdzeniaTu = doPotwierdzeniaRachunki.get(id) || 0;
+                const doPotwierdzeniaTu = doPotwierdzeniaRachunki.get(id);
                 if (doPotwierdzeniaTu) {
-                    chipHtml = statusChip('text-info', 'fa-circle-question', doPotwierdzeniaTu === 1
+                    chipHtml = statusChip('text-info', 'fa-circle-question', doPotwierdzeniaTu.ile === 1
                         ? 'Przelew do sprawdzenia'
-                        : `${doPotwierdzeniaTu} przelewy do sprawdzenia`);
-                    kwotaHtml = '';
+                        : `${doPotwierdzeniaTu.ile} przelewy do sprawdzenia`);
+                    // KWOTA WRACA NA TEN WIERSZ (zgłoszenie właściciela 2026-08-30: „przy
+                    // statusie Przelewy do sprawdzenia nie wyświetla się kwota — specjalnie
+                    // czy błąd?"). Do 2026-08-30 była tu kasowana bez śladu i bez powodu
+                    // widocznego z ekranu, więc wiersz czytał się jak niedowczytany.
+                    // Powód istniał, ale dotyczył TYLKO wpłat za kilka rachunków naraz —
+                    // i teraz milczy dokładnie w tym przypadku, a nie zawsze.
+                    // Barwa `info`, nie zieleń: te pieniądze jeszcze do mnie nie doszły,
+                    // to jest ZGŁOSZENIE czekające na moje sprawdzenie, nie wpływ.
+                    kwotaHtml = (doPotwierdzeniaTu.jednoznaczna && doPotwierdzeniaTu.amountG > 0)
+                        ? `<span class="font-bold text-info tabular-nums">${fmtMoney(doPotwierdzeniaTu.amountG, doPotwierdzeniaTu.currency || 'PLN')}</span>`
+                        : '';
                     wolaMnie = true;
                 }
 
@@ -6867,7 +6937,7 @@
                         <div class="min-w-0 flex-grow">
                             <p class="bill-row-name">${escapeHtml(bill.billName)}</p>
                             <div class="bill-row-meta">
-                                <span class="bill-row-state">${chipHtml}${created ? `<span class="text-sm text-ink-3">${created}</span>` : ''}</span>
+                                <span class="bill-row-state">${chipHtml}</span>
                                 ${kwotaHtml ? `<span class="flex-shrink-0">${kwotaHtml}</span>` : ''}
                             </div>
                         </div>

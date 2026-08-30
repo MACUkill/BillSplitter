@@ -1781,6 +1781,54 @@ body:has(#update-banner:not(.hidden)):has(#offline-banner:not(.hidden)) #app-con
      wyglądał na rozwalony (zgłoszenie właściciela 2026-08-29). Odstęp stoi tutaj, bo
      `.stack-top` jest jedynym miejscem, w którym ta karta powstaje. */
   .stack-top { position: relative; z-index: 3; padding: 1rem; }
+
+  /* --- GŁOWA KARTY NA WIERZCHU STOSU --------------------------------------
+     Jeden szkielet na trzy karty (patrz `stackBigHead` w src/main.js). Do 2026-08-30
+     każda z nich lepiła własny rząd `[znak][tekst][kwota]` z kwotą w stopniu 2xl —
+     a na telefonie 390 px zostawało po tym na tytuł około 110 px. Nazwie osoby to nie
+     przeszkadzało, ale ZDANIE („Macu nie znalazł Twojego przelewu") łamało się na cztery
+     wiersze, przy `align-items: center` znak i kwota pływały w połowie ich wysokości,
+     a tekst wyglądał na wciśnięty w lewą krawędź.
+     Kwota schodzi więc wiersz niżej, na prawy koniec rzędu ze znaczkiem stanu: oba są
+     krótkie, więc się mieszczą obok siebie, a tytuł dostaje całą szerokość kolumny.
+     Ten sam układ, co w kafelku rejestru — nagłówek, a pod nim „stan po lewej,
+     pieniądze po prawej". */
+  .stack-big { display: flex; align-items: flex-start; gap: 0.75rem; }
+  .stack-big-col { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+  .stack-big-title {
+    font-family: 'Bricolage Grotesque Variable', 'Archivo Variable', system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    overflow-wrap: anywhere;
+  }
+  .stack-big-note {
+    font-size: 0.75rem;
+    color: rgb(var(--ink-3));
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Stała wysokość rzędu, także gdy stoi w nim sama kwota: karty w jednym stosie mają
+     wtedy tę samą wysokość niezależnie od tego, czy niosą znaczek. */
+  .stack-big-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-height: 1.75rem;
+  }
+  .stack-big-side { min-width: 0; display: inline-flex; align-items: center; }
+  .stack-big-side .chip {
+    min-width: 0;
+    display: inline-flex;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .stack-big-amount { flex-shrink: 0; font-size: 1.25rem; }
   /* KRAWĘDZIE STOSU — PEŁNE KARTY, NIE DOKLEJONE PASKI (przeprojektowane 2026-08-29
      po zgłoszeniu właściciela: „jakoś brzydko wygląda, gdy przelewy są zwinięte w stos").
      Poprzednia wersja rysowała pod kartą dwa prostokąty z twardą kreską dookoła i płaskim
