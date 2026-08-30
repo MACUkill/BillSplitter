@@ -32,6 +32,8 @@ beforeAll(async () => {
     projectId: 'billsplitter-attack-test',
     firestore: { host: '127.0.0.1', port: FIRESTORE_PORT, rules },
   });
+  // Czysta baza na każdy przebieg — powód przy tym samym wywołaniu w rules.emulator.test.js.
+  await env.clearFirestore();
 });
 
 afterAll(async () => {

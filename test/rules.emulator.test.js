@@ -30,6 +30,13 @@ beforeAll(async () => {
     projectId: 'billsplitter-rules-test',
     firestore: { host: '127.0.0.1', port: FIRESTORE_PORT, rules },
   });
+  // CZYSTA BAZA NA KAŻDY PRZEBIEG — inaczej suita przechodzi tylko za pierwszym razem.
+  // `env.cleanup()` w `afterAll` zamyka aplikacje testowe, ale NIE kasuje dokumentów;
+  // przy drugim uruchomieniu na tym samym emulatorze `setDoc` trafia w istniejący wpis,
+  // czyli reguły oceniają go jako UPDATE, a nie CREATE — i test "zalogowany może dodać
+  // wpłatę" pada, choć reguły są w porządku. Fałszywy alarm w suicie bezpieczeństwa jest
+  // gorszy niż brak testu: uczy, że czerwone bywa normalne.
+  await env.clearFirestore();
   // Zasiew grupy g1 z pominięciem reguł (baza pod testy update/delete).
   await env.withSecurityRulesDisabled(async (ctx) => {
     await setDoc(doc(ctx.firestore(), g('g1')), {
