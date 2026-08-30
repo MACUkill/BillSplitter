@@ -893,7 +893,7 @@
                     <ul class="list-disc pl-5 space-y-1">
                         <li><b>Pozycje z paragonu</b>: zrób zdjęcie i odczytaj je, a potem <b>stuknij linie, które jadłeś</b>. Cena pozycji dzieli się po równo między wszystkich, którzy ją stuknęli, a ich zdjęcia pojawiają się na linii na żywo.</li>
                         <li>Pozycję o ilości większej niż 1 możesz <b>podzielić na sztuki</b> (ołówek, potem „Podziel na sztuki"), gdy każdą sztukę wziął kto inny.</li>
-                        <li><b>Koszt wspólny</b> to napiwek albo serwis. Dolicza się do całości i dzieli po równo, niezależnie od trybu.</li>
+                        <li><b>Pozycja dla wszystkich</b> to napiwek, serwis albo wino na stół. Dodajesz ją tym samym przyciskiem, co każdą inną, i zaznaczasz w arkuszu „Dla wszystkich": dzieli się po równo, nikt nie musi jej stukać, a jej kwotę można podać też jako procent rachunku.</li>
                         <li><b>Koszt tylko Twój</b> to coś, co zamówiłeś wyłącznie dla siebie.</li>
                         <li><b>Suma pozycji</b> pilnuje, żeby wpisy nie przekroczyły kwoty rachunku. Niedobór nie jest błędem: to właśnie ta część, która idzie po równo.</li>
                         <li>Grosze zaokrąglają się w górę, żeby płatnik nigdy nie był stratny.</li>
@@ -1830,12 +1830,11 @@
             const gate = billSettleGate(bill);
             if (gate.open) return '';
             if (gate.reason === 'over') {
-                // W trybie „po równo" lista pozycji jest schowana, a jedyne, co potrafi
-                // przekroczyć kwotę rachunku, to koszt wspólny (napiwek, serwis). Kierowanie
-                // wtedy do „pozycji" wskazywałoby na coś, czego na ekranie nie ma.
-                return billSplitMode(bill) === 'even'
-                    ? 'Koszty wspólne przekraczają kwotę rachunku. Ktoś musi to poprawić, zanim ruszą przelewy.'
-                    : 'Pozycje przekraczają kwotę rachunku. Ktoś musi to poprawić, zanim ruszą przelewy.';
+                // JEDNO ZDANIE NA OBA TRYBY (2026-08-30). Stały tu dwa, bo w trybie „po równo"
+                // jedyną rzeczą zdolną przekroczyć kwotę rachunku był „koszt wspólny" — osobne
+                // pojęcie z osobną sekcją. Odkąd to jest po prostu pozycja (dla wszystkich),
+                // słowo „pozycje" wskazuje na to, co realnie stoi na ekranie w obu trybach.
+                return 'Pozycje przekraczają kwotę rachunku. Ktoś musi to poprawić, zanim ruszą przelewy.';
             }
             // NIKT NIE MA UDZIAŁU ZEROWEGO. Tu nie chodzi o kwotę — wszystko jest rozpisane
             // co do grosza — tylko o to, że rozpisane jest na ZA MAŁO OSÓB.
@@ -1870,9 +1869,7 @@
                 return;
             }
             const kroki = gate.reason === 'over'
-                ? (billSplitMode(bill) === 'even'
-                    ? '<li>Popraw kwotę rachunku albo koszt wspólny, żeby suma się zgadzała.</li>'
-                    : '<li>Popraw kwotę rachunku albo pozycje, żeby suma się zgadzała.</li>')
+                ? '<li>Popraw kwotę rachunku albo pozycje, żeby suma się zgadzała.</li>'
                 : `<li>Stuknij na paragonie pozycje, które są Twoje.</li>
                    <li>Gdy nic już nie wisi bez właściciela, rachunek odblokuje się sam.</li>
                    <li>Jeśli coś zostaje, płatnik dzieli resztę i decyduje, co z tą kwotą.</li>`;
@@ -1901,13 +1898,13 @@
             const sierot = calculations.orphanCount || 0;
             const wszystkich = calculations.itemCount || 0;
             if (sierot > 0) {
-                czesci.push(`<p class="text-sm text-ink-2 mt-2"><b class="text-ink">${sierot} z ${wszystkich} pozycji nikt nie wziął</b> · ${fmtMoney(toGrosze(calculations.orphanAmount || 0), cur)}</p>`);
+                czesci.push(`<p class="text-sm text-ink-2"><b class="text-ink">${sierot} z ${wszystkich} pozycji nikt nie wziął</b> · ${fmtMoney(toGrosze(calculations.orphanAmount || 0), cur)}</p>`);
             }
             // Różnica między kwotą rachunku a sumą pozycji. Na rachunku bez ani jednej pozycji
             // jest całą jego treścią, nie usterką — więc nazywamy ją spokojnie.
             const resztaG = toGrosze(calculations.unallocated) - toGrosze(calculations.orphanAmount);
             if (resztaG > 0) {
-                czesci.push(`<p class="text-sm text-ink-2 mt-2"><b class="text-ink">Nierozpisane z kwoty rachunku:</b> ${fmtMoney(resztaG, cur)}</p>`);
+                czesci.push(`<p class="text-sm text-ink-2"><b class="text-ink">Nierozpisane z kwoty rachunku:</b> ${fmtMoney(resztaG, cur)}</p>`);
             }
             return czesci.join('');
         };
@@ -1937,6 +1934,42 @@
                 <p class="text-xs text-ink-3 mt-1.5 truncate">${escapeHtml(podpis)}</p>`;
         };
 
+        // --- KAFELEK STANU RACHUNKU: JEDEN SZKIELET NA WSZYSTKIE STANY --------------
+        //
+        // Zgłoszenie właściciela 2026-08-30: „ten kafelek nie ma ładu i składu". Miał rację,
+        // a powód był strukturalny, nie kosmetyczny — kafelek nie był KOMPONENTEM, tylko
+        // pięcioma osobnymi kawałkami znaczników pisanymi ręcznie w pięciu gałęziach.
+        // Stąd brały się cztery rozjazdy naraz:
+        //   1. raz `items-center`, raz `items-start` — przy trzywierszowej treści znaczek
+        //      stanu pływał w połowie wysokości albo stał u góry, zależnie od gałęzi;
+        //   2. jedna gałąź („Potwierdzam") nie miała znaczka w ogóle, więc tekst zaczynał
+        //      się w innym miejscu niż we wszystkich pozostałych stanach;
+        //   3. tekst PŁYNĄŁ OBOK znaczka, a znaczki mają różne długości („Błąd" ↔
+        //      „Uzupełniamy") — czyli kolumna tekstu startowała raz stąd, raz stamtąd;
+        //   4. `flex-wrap justify-between` stawiało przycisk raz obok treści, raz pod nią,
+        //      więc kształt kafelka zmieniała SZEROKOŚĆ EKRANU, a nie znaczenie.
+        //
+        // Trzy reguły, które to zamykają — i dlatego są tu, a nie w pięciu miejscach:
+        //   • znaczek stanu ma WŁASNY RZĄD razem z tytułem, więc jego długość przestaje
+        //     mieć znaczenie: kolumna treści zawsze startuje przy lewej krawędzi karty;
+        //   • znaczek jest ZAWSZE — żaden stan nie wypada z rytmu;
+        //   • pogrubione zdanie wiodące (dotąd wtopione w środek akapitu jako `<b>`)
+        //     awansuje na TYTUŁ, więc treść krótka i długa wyglądają tak samo i różnią się
+        //     wyłącznie wysokością akapitu pod tytułem.
+        // Przyciski zawsze na pełną szerokość i zawsze pod spodem — nigdy obok treści.
+        //
+        // TREŚĆ SIĘ NIE ZMIENIA. To jest wyłącznie porządek, o który prosiło zgłoszenie.
+        const billBannerHtml = ({ chipClass = 'chip', chip, title, body = '', extra = '', actions = '' }) => `
+            <div class="card bill-banner">
+                <div class="bill-banner-head">
+                    <span class="${chipClass} bill-banner-chip">${chip}</span>
+                    <span class="bill-banner-title">${title}</span>
+                </div>
+                ${body ? `<p class="bill-banner-body">${body}</p>` : ''}
+                ${extra}
+                ${actions ? `<div class="bill-banner-actions">${actions}</div>` : ''}
+            </div>`;
+
         // BANER STANU RACHUNKU. Mówi trzy rzeczy i ani jednej więcej: ile wisi, czemu to
         // blokuje przelewy i czyj jest ruch. Wchodzi w baner, który już istnieje — ekran
         // rachunku jest zapchany i nie zniesie kolejnej karty.
@@ -1945,10 +1978,12 @@
             const cur = bill.currency || 'PLN';
 
             if (gate.reason === 'over') {
-                return `<div class="card p-4 flex items-start gap-3">
-                    <span class="chip text-owe text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Błąd</span>
-                    <span class="text-sm text-ink-2"><b class="text-ink">${billSplitMode(bill) === 'even' ? 'Koszty wspólne przekraczają' : 'Pozycje przekraczają'} kwotę rachunku o ${fmtMoney(toGrosze(gate.diff || 0), cur)}.</b> Dopóki to się nie zgadza, nikt nie może się rozliczyć — inaczej wszyscy by przepłacili. Popraw kwotę albo ${billSplitMode(bill) === 'even' ? 'koszt wspólny' : 'pozycje'} wyżej.</span>
-                </div>`;
+                return billBannerHtml({
+                    chipClass: 'chip text-owe',
+                    chip: 'Błąd',
+                    title: `Pozycje przekraczają kwotę rachunku o ${fmtMoney(toGrosze(gate.diff || 0), cur)}.`,
+                    body: 'Dopóki to się nie zgadza, nikt nie może się rozliczyć — inaczej wszyscy by przepłacili. Popraw kwotę rachunku albo pozycje wyżej.',
+                });
             }
 
             const calculations = calculateAllForBill(bill);
@@ -1961,25 +1996,33 @@
             // NIKT Z UDZIAŁEM ZEROWYM. Baner wymienia te osoby po imieniu, bo to jedyna
             // informacja, która pozwala coś zrobić: albo im przypomnieć, albo stwierdzić,
             // że faktycznie nic nie brali.
+            // Zdanie wiodące i wyjaśnienie stoją teraz OSOBNO, bo szkielet kafelka rozdziela
+            // tytuł od treści (patrz `billBannerHtml`). Do 2026-08-30 były jednym ciągiem
+            // z pogrubionym początkiem w środku akapitu.
             const brakStawki = gate.reason === 'nostake';
-            const wstepHtml = brakStawki
-                ? `<b class="text-ink">${escapeHtml(imionaZdanie(gate.bezStawki))} nie ${(gate.bezStawki || []).length === 1 ? 'wziął/ęła' : 'wzięli'} ani jednej pozycji.</b> Rachunek spina się co do grosza, ale ${cudzaCzescHtml((gate.bezStawki || []).length)} — dlatego regulowanie płatności jest jeszcze zablokowane.`
+            const tytul = brakStawki
+                ? `${escapeHtml(imionaZdanie(gate.bezStawki))} nie ${(gate.bezStawki || []).length === 1 ? 'wziął/ęła' : 'wzięli'} ani jednej pozycji.`
                 : gate.reason === 'changed'
-                ? `<b class="text-ink">Rachunek zmienił się po podziale reszty.</b> ${kwota} znów nie ma właściciela, więc regulowanie płatności jest z powrotem zablokowane.`
-                : `<b class="text-ink">Ten rachunek jeszcze się uzupełnia.</b> ${kwota} nikt nie wziął, a dopóki tak jest, regulowanie płatności jest zablokowane — inaczej przelew szedłby za cudze pozycje.`;
+                    ? 'Rachunek zmienił się po podziale reszty.'
+                    : 'Ten rachunek jeszcze się uzupełnia.';
+            const trescHtml = brakStawki
+                ? `Rachunek spina się co do grosza, ale ${cudzaCzescHtml((gate.bezStawki || []).length)} — dlatego regulowanie płatności jest jeszcze zablokowane.`
+                : gate.reason === 'changed'
+                    ? `${kwota} znów nie ma właściciela, więc regulowanie płatności jest z powrotem zablokowane.`
+                    : `${kwota} nikt nie wziął, a dopóki tak jest, regulowanie płatności jest zablokowane — inaczej przelew szedłby za cudze pozycje.`;
 
             // Kto nie może zamknąć, dostaje jedno zdanie o tym, na kogo się czeka, i jedno
             // polecenie, które MOŻE wykonać. Wołanie do czynności, której ktoś nie ma jak
             // zrobić, jest w tej aplikacji uznane za usterkę (patrz `billStatus`).
             if (!mogeZamknac) {
                 const kto = bill.payerId ? memberName(bill.payerId) : 'płatnik';
-                return `<div class="card p-4">
-                    <div class="flex items-start gap-3">
-                        <span class="chip text-info text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Uzupełniamy</span>
-                        <span class="text-sm text-ink-2">${wstepHtml} ${brakStawki ? `Rachunek domknie <strong>${escapeHtml(kto)}</strong>.` : `Stuknij niżej na paragonie, co Twoje — a resztę podzieli <strong>${escapeHtml(kto)}</strong>.`}</span>
-                    </div>
-                    ${restBreakdownHtml(bill, calculations)}
-                </div>`;
+                return billBannerHtml({
+                    chipClass: 'chip text-info',
+                    chip: 'Uzupełniamy',
+                    title: tytul,
+                    body: `${trescHtml} ${brakStawki ? `Rachunek domknie <strong>${escapeHtml(kto)}</strong>.` : `Stuknij niżej na paragonie, co Twoje — a resztę podzieli <strong>${escapeHtml(kto)}</strong>.`}`,
+                    extra: restBreakdownHtml(bill, calculations),
+                });
             }
 
             const ilu = Object.values(bill.participants || {})
@@ -2004,7 +2047,7 @@
             // „domykam sprawę, którą ktoś mi postawił", a przypomnienie sam zaczynam — i jest
             // to przycisk, który budzi do dwudziestu pięciu telefonów naraz.
             const przypomnijHtml = ilu > 0
-                ? `<button id="remind-fill-btn" class="btn btn-dark w-full mt-3">Przypomnij ${ilu} ${plural(ilu, 'osobie', 'osobom', 'osobom')}</button>`
+                ? `<button id="remind-fill-btn" class="btn btn-dark w-full">Przypomnij ${ilu} ${plural(ilu, 'osobie', 'osobom', 'osobom')}</button>`
                 : '';
             // „LUB" MIĘDZY DWIEMA DROGAMI (zgłoszenie właściciela 2026-08-27).
             //
@@ -2018,22 +2061,23 @@
             // rzeczy. Pojawia się WYŁĄCZNIE wtedy, gdy są dwie drogi: bez kogo przypominać
             // zostaje sam przycisk rozstrzygnięcia i nie ma czego rozdzielać.
             const lubHtml = ilu > 0
-                ? `<div class="flex items-center gap-3 py-1 mt-2">
+                ? `<div class="flex items-center gap-3 py-1">
                         <span class="h-px flex-grow bg-ink/10"></span>
                         <span class="text-xs font-bold text-ink-3 tracking-wide">LUB</span>
                         <span class="h-px flex-grow bg-ink/10"></span>
                     </div>`
                 : '';
-            return `<div class="card p-4">
-                <div class="flex items-start gap-3">
-                    <span class="chip text-info text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Uzupełniamy</span>
-                    <span class="text-sm text-ink-2">${wstepHtml}</span>
-                </div>
-                ${restBreakdownHtml(bill, calculations)}
-                ${przypomnijHtml}
-                ${lubHtml}
-                <button id="close-bill-btn" class="btn btn-dark w-full ${ilu > 0 ? 'mt-2' : 'mt-3'}">${brakStawki ? 'Domknij rachunek' : 'Podziel resztę'}</button>
-            </div>`;
+            // Marginesy przy przyciskach zniknęły: odstępy niesie teraz `.bill-banner-actions`
+            // jedną wartością dla całego kafelka, więc nie da się ich rozjechać w jednej
+            // gałęzi i nie zauważyć tego w czterech pozostałych.
+            return billBannerHtml({
+                chipClass: 'chip text-info',
+                chip: 'Uzupełniamy',
+                title: tytul,
+                body: trescHtml,
+                extra: restBreakdownHtml(bill, calculations),
+                actions: `${przypomnijHtml}${lubHtml}<button id="close-bill-btn" class="btn btn-dark w-full">${brakStawki ? 'Domknij rachunek' : 'Podziel resztę'}</button>`,
+            });
         };
 
         const wireGateBanner = () => {
@@ -2130,13 +2174,17 @@
             const ponownieHtml = juzRozdzieloneG > 0
                 ? `<p class="text-sm text-ink-2 mt-2">W tym <b class="text-ink">${fmtMoney(juzRozdzieloneG, cur)}</b> rozdzielone przy poprzednim podziale — ta decyzja rozstrzyga całość na nowo.</p>`
                 : '';
+            // Odstęp niesie tu OPAKOWANIE, a nie same akapity: `restBreakdownHtml` stoi też
+            // w kafelku stanu rachunku, gdzie odstępy rozdaje `gap` całego kafelka i własny
+            // margines akapitu dokładałby się do niego drugi raz.
+            const rozpiskaHtml = restBreakdownHtml(billData, calculations);
             document.getElementById('close-bill-summary').innerHTML = `
                 <div class="block-quiet p-4">
                     <div class="flex items-baseline justify-between gap-3">
                         <span class="font-bold">Nikt nie wziął</span>
                         <span class="text-2xl font-bold tabular-nums">${fmtMoney(wiszaceG, cur)}</span>
                     </div>
-                    ${restBreakdownHtml(billData, calculations)}
+                    ${rozpiskaHtml ? `<div class="mt-2 space-y-2">${rozpiskaHtml}</div>` : ''}
                     ${ponownieHtml}
                     <p class="text-sm text-ink-2 mt-2">Podział tej kwoty <b class="text-ink">domyka rachunek</b> i odblokowuje regulowanie płatności — od tej chwili ekipa może oddawać pieniądze.</p>
                 </div>`;
@@ -3455,13 +3503,8 @@
                     ? `<button type="button" class="stack-toggle icon-btn-sm is-quiet" data-stack="${escapeHtml(name)}" data-open="${open ? '1' : '0'}" aria-label="${open ? 'Zwiń stos' : 'Rozwiń stos'}"><i class="fas ${open ? 'fa-chevron-up' : 'fa-chevron-down'}"></i></button>`
                     : ''}
             </div>`;
-            // Identyfikatory rozwinięć składamy PRZED szablonem, żeby nazwa stosu nie
-            // pojawiła się surowa w znacznikach — pilnuje tego render.safety.test.js,
-            // a reguła jest słuszna także tutaj: nazwa bywa sklejona z identyfikatorem
-            // rachunku, czyli z danymi z bazy.
-            const ids = items.map((_, i) => `${name}-${i}`);
             const body = open
-                ? `<div class="card stack-list">${items.map((x, i) => stackItemHtml(x, ids[i])).join('')}</div>`
+                ? `<div class="card stack-list">${items.map(stackItemHtml).join('')}</div>`
                 : stackCollapsedHtml(items);
             return `${head}<div class="stack-body" data-stack="${escapeHtml(name)}">${body}</div>`;
         };
@@ -3471,14 +3514,28 @@
         // rozwinięcie stosu odbiera informację zamiast ją porządkować (zgłoszenie
         // właściciela 2026-08-29: po rozwinięciu nie dało się sprawdzić, jakie rachunki
         // pokrywa dany przelew).
-        const stackItemHtml = (x, id) => {
-            if (!x.details) return `<div class="stack-item">${x.row}</div>`;
+        // ROZWIJA CAŁY WIERSZ, NIE STRZAŁKA OBOK PRZYCISKÓW (zgłoszenie właściciela
+        // 2026-08-30). Osobna strzałka stała przy prawej krawędzi, czyli TUŻ OBOK „Mam" —
+        // a to jest najgorsze możliwe sąsiedztwo: chybienie o pięć pikseli przy celowaniu
+        // w szczegóły potwierdzało cudzy przelew. Teraz celuje się w środek wiersza, daleko
+        // od przycisków, a chybienie w drugą stronę tylko rozwija szczegóły, czyli nie rusza
+        // niczyich pieniędzy. Tarcie wylądowało po właściwej stronie.
+        //
+        // TWARZ WIERSZA JEST PRAWDZIWYM PRZYCISKIEM, nie klikalnym `div`-em. Przyciski akcji
+        // stoją OBOK niej, jako rodzeństwo — gdyby leżały w środku, każdy z nich musiałby
+        // blokować propagację zdarzenia, a zapomniana blokada to cicha usterka przy cudzych
+        // pieniądzach. Przy okazji dostajemy klawiaturę, czytnik ekranu i `aria-expanded`
+        // za darmo. Wiersz bez szczegółów przycisku nie dostaje: nie ma czego rozwijać.
+        //
+        // Blok szczegółów znajdujemy PRZEZ SĄSIEDZTWO w drzewie, a nie po identyfikatorze
+        // (patrz nasłuch niżej) — dzięki temu nazwa stosu, sklejana z identyfikatorem
+        // rachunku, w ogóle nie trafia do znaczników.
+        const stackItemHtml = (x) => {
+            const wiersz = (srodek) => `<div class="stack-row">${srodek}${x.rowActions || ''}</div>`;
+            if (!x.details) return `<div class="stack-item">${wiersz(`<span class="stack-row-face is-plain">${x.rowFace}</span>`)}</div>`;
             return `<div class="stack-item">
-                <div class="stack-row-line">
-                    ${x.row}
-                    <button type="button" class="stack-row-more" data-detail="${escapeHtml(id)}" aria-expanded="false" aria-label="Szczegóły"><i class="fas fa-chevron-down"></i></button>
-                </div>
-                <div class="stack-row-detail" id="detail-${escapeHtml(id)}" hidden>${x.details}</div>
+                ${wiersz(`<button type="button" class="stack-row-face tap" aria-expanded="false">${x.rowFace}</button>`)}
+                <div class="stack-row-detail" hidden>${x.details}</div>
             </div>`;
         };
 
@@ -3499,14 +3556,19 @@
         // stoją w trzech miejscach (dwie strony rozliczeń i ekran rachunku), a każde z nich
         // przerysowuje się osobno. Stan jest wyłącznie w DOM — po przerysowaniu z bazy
         // szczegóły wracają do zwiniętych i to jest w porządku: to podgląd, nie ustawienie.
+        //
+        // Szukamy przez SĄSIEDZTWO, nie po identyfikatorze. Identyfikator trzeba by skleić
+        // z nazwy stosu, a ta bywa sklejona z identyfikatorem rachunku — czyli z danymi
+        // z bazy, których do znaczników nie wpuszczamy bez potrzeby. Blok szczegółów i tak
+        // leży zawsze w tym samym `.stack-item`, co jego wiersz.
         document.addEventListener('click', (e) => {
-            const btn = e.target.closest('.stack-row-more');
-            if (!btn) return;
-            const box = document.getElementById(`detail-${btn.dataset.detail}`);
+            const face = e.target.closest('.stack-row-face');
+            if (!face || face.tagName !== 'BUTTON') return;
+            const box = face.closest('.stack-item').querySelector('.stack-row-detail');
             if (!box) return;
             const otwarte = box.hidden;
             box.hidden = !otwarte;
-            btn.setAttribute('aria-expanded', otwarte ? 'true' : 'false');
+            face.setAttribute('aria-expanded', otwarte ? 'true' : 'false');
         });
 
         // --- KARTY SPRAW ---------------------------------------------------------
@@ -3640,15 +3702,13 @@
                       </div>
                       ${stackStateMaybeZaco(s, linie)}
                       <div class="mt-3 flex items-center gap-2">${akcje}</div>`,
-                row: `<div class="stack-row">
-                        ${settleAvatarRow(s.from)}
+                rowFace: `${settleAvatarRow(s.from)}
                         <span class="flex-grow min-w-0">
                             <span class="stack-row-top"><span class="stack-row-name truncate">${kto}</span><span class="amount stack-row-amount">${escapeHtml(kwota)}</span></span>
-                            <span class="stack-row-sub"><span class="stack-dot ${czeka ? 'is-info' : 'is-gray'}"></span>${escapeHtml(stampShort(s.createdAt))}${zaCo ? ` · ${escapeHtml(zaCo)}` : ''}</span>
-                        </span>
-                        <button class="settle-no-btn icon-btn-sm is-ghost" data-id="${id}" aria-label="Nie widzę"><i class="fas fa-xmark"></i></button>
-                        <button class="settle-yes-btn icon-btn-sm is-yes" data-id="${id}" aria-label="Mam"><i class="fas fa-check"></i></button>
-                      </div>`,
+                            <span class="stack-row-sub"><span class="stack-dot ${czeka ? 'is-info' : 'is-gray'}"></span><span class="stack-row-sub-text">${escapeHtml(stampShort(s.createdAt))}${zaCo ? ` · ${escapeHtml(zaCo)}` : ''}</span><i class="fas fa-chevron-down stack-row-chevron" aria-hidden="true"></i></span>
+                        </span>`,
+                rowActions: `<button class="settle-no-btn icon-btn-sm is-ghost" data-id="${id}" aria-label="Nie widzę"><i class="fas fa-xmark"></i></button>
+                        <button class="settle-yes-btn icon-btn-sm is-yes" data-id="${id}" aria-label="Mam"><i class="fas fa-check"></i></button>`,
                 details: detailBlock([
                     detailRow(escapeHtml(naglowek), '', 'is-lead'),
                     detailRow('Kwota', escapeHtml(kwota)),
@@ -3705,14 +3765,12 @@
                       </div>
                       ${stackStateMaybeZaco(s, linie)}
                       <div class="mt-3 flex items-center gap-2">${akcje}</div>`,
-                row: `<div class="stack-row">
-                        ${settleAvatarRow(s.to)}
+                rowFace: `${settleAvatarRow(s.to)}
                         <span class="flex-grow min-w-0">
                             <span class="stack-row-top"><span class="stack-row-name truncate">${kto}</span><span class="amount stack-row-amount text-owe">${escapeHtml(kwota)}</span></span>
-                            <span class="stack-row-sub"><span class="stack-dot is-gray"></span>${czekaNaMnie ? 'czeka na Ciebie' : 'sprawdza'} · ${escapeHtml(stampShort(s.createdAt))}</span>
-                        </span>
-                        <button class="settle-oops-btn icon-btn-sm is-ghost" data-id="${id}" aria-label="Pomyłka, nie wysłałem"><i class="fas fa-rotate-left"></i></button>
-                      </div>`,
+                            <span class="stack-row-sub"><span class="stack-dot is-gray"></span><span class="stack-row-sub-text">${czekaNaMnie ? 'czeka na Ciebie' : 'sprawdza'} · ${escapeHtml(stampShort(s.createdAt))}</span><i class="fas fa-chevron-down stack-row-chevron" aria-hidden="true"></i></span>
+                        </span>`,
+                rowActions: `<button class="settle-oops-btn icon-btn-sm is-ghost" data-id="${id}" aria-label="Pomyłka, nie wysłałem"><i class="fas fa-rotate-left"></i></button>`,
                 details: detailBlock([
                     detailRow(escapeHtml(naglowek), '', 'is-lead'),
                     detailRow('Kwota', escapeHtml(kwota)),
@@ -3818,14 +3876,12 @@
                       ${crossref}
                       <div class="mt-3 flex items-center gap-2">${akcje}</div>
                       ${cichy}`,
-                row: `<div class="stack-row">
-                        ${avatarHtml(memberName(grupa.other), grupa.other, 'w-7 h-7 text-xs')}
+                rowFace: `${avatarHtml(memberName(grupa.other), grupa.other, 'w-7 h-7 text-xs')}
                         <span class="flex-grow min-w-0">
                             <span class="stack-row-top"><span class="stack-row-name truncate">${imie}</span><span class="amount stack-row-amount ${kolor}">${escapeHtml(kwota)}</span></span>
-                            <span class="stack-row-sub"><span class="stack-dot is-mute"></span>${escapeHtml(zaCo || 'plan przelewów')}</span>
-                        </span>
-                        ${ikonaRow}
-                      </div>`,
+                            <span class="stack-row-sub"><span class="stack-dot is-mute"></span><span class="stack-row-sub-text">${escapeHtml(zaCo || 'plan przelewów')}</span><i class="fas fa-chevron-down stack-row-chevron" aria-hidden="true"></i></span>
+                        </span>`,
+                rowActions: ikonaRow,
                 details: detailBlock([
                     detailRow('Razem', escapeHtml(kwota), 'is-lead'),
                     ile
@@ -3886,9 +3942,17 @@
 
         const settleDocRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);
 
+        // Wpłata potwierdzona przed chwilą — do jednorazowego zielonego błysku w rejestrze
+        // (patrz `.log-row.is-just-confirmed` w src/tailwind.css). Trzymamy CZAS obok
+        // identyfikatora, bo potwierdzać można także z ekranu rozliczeń, przy zamkniętym
+        // rejestrze: bez znacznika czasu błysk czekałby w kolejce i odpalił się przy
+        // wejściu do rejestru pół godziny później, ogłaszając „właśnie" coś dawnego.
+        let justConfirmedSettlement = null;
+
         const confirmSettlement = (id) => {
             const s = latestSettlements.find((x) => x.id === id);
             if (!s) return;
+            justConfirmedSettlement = { id, at: Date.now() };
             // Potwierdzenie ZAWSZE gasi spór — inaczej wpłata zostałaby poza saldem
             // mimo tego, że odbiorca właśnie powiedział „jednak mam".
             //
@@ -4418,6 +4482,10 @@
 
             let html = '';
             let lastDay = null;
+            // Czy zielony błysk faktycznie trafił w tym przebiegu na ekran. Gasimy go dopiero
+            // wtedy — potwierdzenie wraca z bazy osobnym zapisem, więc pierwszy przerysunek
+            // zaraz po stuknięciu bywa jeszcze bez niego.
+            let blysnietoPotwierdzeniem = false;
             wplaty.forEach((s) => {
                 const at = (s.createdAt && s.createdAt.toDate) ? s.createdAt.toDate() : null;
                 const key = at ? `${at.getFullYear()}-${at.getMonth()}-${at.getDate()}` : 'brak';
@@ -4453,51 +4521,96 @@
                 // DWIE DATY NA KAŻDYM WIERSZU. Oba pola były w bazie od zawsze, tylko nigdy
                 // ich nie było widać — a różnica między nimi odpowiada na pytanie, które
                 // pada przy każdym większym wyjeździe: ile ktoś zwlekał z potwierdzeniem.
+                //
+                // DWIE POSTACIE DAT, NIE JEDNA (2026-08-30). Pełna tabelka „etykieta ⟷ pełny
+                // znacznik czasu" w KAŻDYM wierszu podnosiła kafelek o dwa rzędy tam, gdzie
+                // nie miała czego dowodzić: przy wpłacie potwierdzonej następnego dnia nikt
+                // nie liczy minut. Sprawa sporna to co innego — tam różnica dat JEST dowodem
+                // i zostaje rozpisana co do godziny.
+                const sporna = stan === SETTLE_DISPUTED || stan === SETTLE_STALLED || stan === SETTLE_INSISTED;
                 const daty = [
-                    ['Zgłoszona', stampLong(s.createdAt)],
-                    stan === SETTLE_CONFIRMED ? ['Potwierdzona', stampLong(s.confirmedAt)] : null,
-                    (stan === SETTLE_DISPUTED || stan === SETTLE_STALLED || stan === SETTLE_INSISTED)
-                        ? ['Nie znaleziona', stampLong(s.disputedAt)] : null,
-                    stan === SETTLE_WITHDRAWN ? ['Wycofana', stampLong(s.withdrawnAt)] : null,
+                    ['Zgłoszona', s.createdAt],
+                    stan === SETTLE_CONFIRMED ? ['Potwierdzona', s.confirmedAt] : null,
+                    sporna ? ['Nie znaleziona', s.disputedAt] : null,
+                    stan === SETTLE_WITHDRAWN ? ['Wycofana', s.withdrawnAt] : null,
                 ].filter((x) => x && x[1]);
-                const datyHtml = `<span class="block mt-1.5 space-y-0.5">${daty.map(([co, kiedy]) =>
-                    `<span class="flex justify-between gap-2 text-xs text-ink-3"><span>${escapeHtml(co)}</span><b class="text-ink-2">${escapeHtml(kiedy)}</b></span>`).join('')}</span>`;
-                // Kierunek niosą DWA znaki naraz: układ wiersza (od kogo, strzałka, do kogo)
-                // i twarze obu stron. Przy cudzych pieniądzach jeden nośnik to za mało.
-                html += `<div class="log-row">
-                    <span class="flex items-center gap-1.5 flex-shrink-0">
-                        ${avatarHtml(memberName(s.from), s.from, 'w-9 h-9 text-xs')}
-                        <i class="fas fa-arrow-right log-arrow"></i>
-                        ${avatarHtml(memberName(s.to), s.to, 'w-9 h-9 text-xs')}
-                    </span>
-                    <span class="min-w-0 flex-grow">
-                        <span class="block text-sm truncate"><b>${escapeHtml(memberName(s.from))}</b> dla <b>${escapeHtml(memberName(s.to))}</b></span>
-                        <span class="amount block text-lg">${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}</span>
-                        ${billNamesOfSettlement(s).length
-                            ? `<span class="block text-xs text-ink-3">${billNamesOfSettlement(s).map((n) => escapeHtml(n)).join(' · ')}</span>`
-                            : ''}
-                        <span class="mt-1 flex items-center gap-2 flex-wrap">${badge}</span>
-                        ${datyHtml}
-                        ${(canConfirm || canDelete) ? `<span class="mt-2 flex items-center gap-2">
-                            ${canConfirm ? `<button class="confirm-settle-btn btn btn-primary" data-id="${escapeHtml(s.id)}">Potwierdzam</button>` : ''}
-                            ${canDelete ? `<button class="settle-delete-btn tap min-h-tap px-3 rounded-full text-sm font-bold text-owe" data-id="${escapeHtml(s.id)}">Usuń wpis</button>` : ''}
-                        </span>` : ''}
-                    </span>
+                const datyHtml = daty.length === 0
+                    ? ''
+                    : sporna
+                        ? `<div class="log-dates">${daty.map(([co, kiedy]) =>
+                            `<span class="log-date-row"><span>${escapeHtml(co)}</span><b>${escapeHtml(stampLong(kiedy))}</b></span>`).join('')}</div>`
+                        : `<p class="log-dates-inline">${daty.map(([co, kiedy]) =>
+                            `${escapeHtml(co)} <b>${escapeHtml(stampShort(kiedy))}</b>`).join(' · ')}</p>`;
+
+                // KWOTA NIESIE KIERUNEK KOLOREM — ale wyłącznie w „Moich sprawach", bo tylko
+                // tam istnieje „ja", względem którego pieniądze wychodzą albo wracają.
+                // W widoku całej grupy nie ma takiego punktu odniesienia i barwa kłamałaby,
+                // więc kwota zostaje atramentowa. Ta sama reguła, co wszędzie indziej:
+                // czerwień znaczy „ode mnie", zieleń „do mnie", nigdy nic więcej.
+                const kwotaKlasa = logMode !== 'mine' ? '' : (s.from === myId ? 'text-owe' : (s.to === myId ? 'text-due' : ''));
+
+                // UKŁAD: NAGŁÓWEK I TREŚĆ NA PEŁNĄ SZEROKOŚĆ (zgłoszenie właściciela 2026-08-30).
+                //
+                // Do 2026-08-30 wiersz miał po lewej szynę z dwiema twarzami i strzałką —
+                // na telefonie 360 px około stu pikseli, czyli JEDNĄ TRZECIĄ szerokości karty,
+                // przez całą jej wysokość. Przy `align-items: center` twarze pływały dodatkowo
+                // w połowie wysokości wysokiego kafelka, otoczone pustką. Do tego tożsamość
+                // była niesiona DWA RAZY: twarzami w szynie i zaraz obok imionami w tekście.
+                //
+                // Teraz twarz stoi tuż przed swoim imieniem i jest z nim jednym słowem, a cała
+                // reszta — nazwa rachunku, stan, daty, przyciski — dostaje pełną szerokość karty
+                // zamiast wcięcia o szerokość szyny. Kwota idzie na prawy koniec nagłówka, więc
+                // kwoty wszystkich wierszy ustawiają się w jedną kolumnę i rejestr da się
+                // przejrzeć wzrokiem po pieniądzach, a nie po imionach.
+                const strona = (id) => `<span class="log-party">${avatarHtml(memberName(id), id, 'w-6 h-6 text-[0.625rem]')}<b>${escapeHtml(memberName(id))}</b></span>`;
+                const swiezoPotwierdzona = stan === SETTLE_CONFIRMED
+                    && justConfirmedSettlement
+                    && justConfirmedSettlement.id === s.id
+                    && (Date.now() - justConfirmedSettlement.at) < 8000;
+                if (swiezoPotwierdzona) blysnietoPotwierdzeniem = true;
+                // Klasa składana POZA szablonem — tak samo, jak przy linii paragonu:
+                // skaner Tailwinda nie znajduje nazw sklejanych wewnątrz atrybutu.
+                const klasaWiersza = swiezoPotwierdzona ? 'log-row is-just-confirmed' : 'log-row';
+                html += `<div class="${klasaWiersza}">
+                    <div class="log-head">
+                        <span class="log-parties">${strona(s.from)}<i class="fas fa-arrow-right log-arrow"></i>${strona(s.to)}</span>
+                        <span class="amount log-amount ${kwotaKlasa}">${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}</span>
+                    </div>
+                    ${billNamesOfSettlement(s).length
+                        ? `<p class="log-bills">${billNamesOfSettlement(s).map((n) => escapeHtml(n)).join(' · ')}</p>`
+                        : ''}
+                    <div class="log-state">${badge}</div>
+                    ${datyHtml}
+                    ${(canConfirm || canDelete) ? `<div class="log-actions">
+                        ${canConfirm ? `<button class="confirm-settle-btn btn btn-primary" data-id="${escapeHtml(s.id)}">Potwierdzam</button>` : ''}
+                        ${canDelete ? `<button class="settle-delete-btn btn btn-quiet" data-id="${escapeHtml(s.id)}">Usuń wpis</button>` : ''}
+                    </div>` : ''}
                 </div>`;
             });
             // Zmiany kwot idą osobnym blokiem na dole: są rzadsze i innego rodzaju
             // niż wpłaty, a wymieszane z nimi po dacie gubiłyby się między wierszami.
             if (zmianyKwot.length) {
                 html += `<p class="bills-day-title mt-5 mb-2">Zmiany kwot</p>`;
+                // TEN SAM SZKIELET, CO WPŁATA (2026-08-30). Zmiana kwoty stała tu w bloku
+                // `block-quiet` o innym tle, innym zaokrągleniu i innym odstępie niż wiersz
+                // wpłaty pół ekranu wyżej — dwie listy w jednym arkuszu wyglądały jak dwie
+                // różne aplikacje. Treść zostaje ta sama, zmienia się wyłącznie to, że
+                // korzysta z tego samego pudełka: twarz przy imieniu w nagłówku, opis
+                // i znacznik czasu pod spodem, na pełną szerokość.
                 zmianyKwot.forEach((ev) => {
                     const kiedy = stampLong(ev.createdAt);
-                    html += `<div class="block-quiet p-3.5">
-                        <p class="text-sm"><b>${escapeHtml(ev.byName || memberName(ev.by))}</b> ${escapeHtml(ev.label || '')}</p>
-                        ${kiedy ? `<p class="text-xs text-ink-3 mt-1">${escapeHtml(kiedy)}</p>` : ''}
+                    const kto = ev.byName || memberName(ev.by);
+                    html += `<div class="log-row">
+                        <div class="log-head">
+                            <span class="log-parties"><span class="log-party">${avatarHtml(kto, ev.by, 'w-6 h-6 text-[0.625rem]')}<b>${escapeHtml(kto)}</b></span></span>
+                        </div>
+                        <p class="log-bills">${escapeHtml(ev.label || '')}</p>
+                        ${kiedy ? `<p class="log-dates-inline">${escapeHtml(kiedy)}</p>` : ''}
                     </div>`;
                 });
             }
             list.innerHTML = html;
+            if (blysnietoPotwierdzeniem) justConfirmedSettlement = null;
         };
 
         const openSettlementsLog = () => {
@@ -7039,6 +7152,12 @@
             const list = document.getElementById('shared-costs-list');
             if (!list || !billData) return;
             const items = billData.sharedCosts || [];
+            // POZYCJE DLA WSZYSTKICH STOJĄ NA TYM SAMYM WYDRUKU (2026-08-30). Dawniej miały
+            // własną sekcję pod paragonem i własny przycisk — dwa pojęcia tam, gdzie ludzie
+            // widzą jedną rzecz: linię na paragonie. Idą NA KOŃCU listy, bo tym właśnie są:
+            // dopiskiem pod pozycjami, tak jak napiwek na prawdziwym paragonie.
+            const forAll = billData.globalCosts || [];
+            const wszystkich = items.length + forAll.length;
             const cur = billData.currency || 'PLN';
             const me = Object.values((groupData && groupData.members) || {}).find(m => m.claimedBy === (currentUser && currentUser.uid));
             const myId = me ? me.id : null;
@@ -7048,9 +7167,9 @@
                 const missing = unassignedItems(billData).length;
                 // Licznik „bez wyboru" jest jedyną czerwienią w tej sekcji: to realny brak
                 // w rozliczeniu, a nie ozdoba. Same kafelki znaczą brak przerywaną krawędzią.
-                header.innerHTML = items.length === 0 ? '' :
+                header.innerHTML = wszystkich === 0 ? '' :
                     `<div class="flex items-center justify-between gap-2 mb-3">
-                        <h3 class="font-display text-xl font-extrabold tracking-tight">Pozycje (${items.length})</h3>
+                        <h3 class="font-display text-xl font-extrabold tracking-tight">Pozycje (${wszystkich})</h3>
                         ${missing > 0 ? `<p class="chip text-owe">${missing} bez wyboru</p>` : ''}
                     </div>`;
             }
@@ -7061,7 +7180,7 @@
             const tearTop = document.getElementById('receipt-tear-top');
             const searchWrap = document.getElementById('item-search-wrap');
 
-            if (items.length === 0) {
+            if (wszystkich === 0) {
                 list.className = '';
                 if (tear) tear.classList.add('hidden');
                 if (tearTop) tearTop.classList.add('hidden');
@@ -7073,7 +7192,7 @@
             if (tearTop) tearTop.classList.remove('hidden');
             // Wyszukiwarka pojawia się dopiero przy paragonie, na którym szukanie ma sens.
             // Przy pięciu pozycjach jest szybciej spojrzeć niż pisać.
-            if (searchWrap) searchWrap.classList.toggle('hidden', items.length < ITEM_SEARCH_MIN);
+            if (searchWrap) searchWrap.classList.toggle('hidden', wszystkich < ITEM_SEARCH_MIN);
 
             // ŻYWY PARAGON — znak tej aplikacji.
             //
@@ -7133,7 +7252,14 @@
                         <button class="item-edit-btn w-11 h-11 rounded-full flex items-center justify-center text-ink-3 flex-shrink-0" data-item-id="${it.id}" title="Edytuj pozycję" aria-label="Edytuj pozycję"><i class="fas fa-pen text-xs"></i></button>
                     </span>
                 </div>`;
-            }).join('');
+            }).join('') + forAll.map((gc) => forAllLineHtml(gc, {
+                heads: activeHeadCount(),
+                cur,
+                // Ołówek, nie kosz — dokładnie jak przy pozycji imiennej. Kasowanie mieszka
+                // w arkuszu edycji, o jeden krok dalej: przy linii paragonu dwa cele dotykowe
+                // obok siebie nachodziły na siebie i kosz łapał stuknięcia w ołówek.
+                akcja: `<button class="item-edit-btn w-11 h-11 rounded-full flex items-center justify-center text-ink-3 flex-shrink-0" data-item-id="${gc.id}" title="Edytuj pozycję" aria-label="Edytuj pozycję"><i class="fas fa-pen text-xs"></i></button>`,
+            })).join('');
 
             // Zapamiętujemy stan PO wyrenderowaniu, żeby następny zapis z bazy wiedział,
             // które twarze są nowe. Przy pierwszym wejściu na rachunek mapa jest pusta,
@@ -7166,36 +7292,77 @@
             if (wrap) applyPersonFilter(wrap);
         };
 
-        // --- KOSZTY WSPÓLNE --------------------------------------------------------
-        // Zgłoszenie właściciela: „brakuje informacji, że koszt wspólny to faktycznie
-        // koszt wspólny". Nazwa sekcji tego nie niosła — napiwek stał na liście jako
-        // zwykły wiersz z kwotą i niczym nie różnił się od pozycji paragonu.
-        // Teraz mówią to trzy rzeczy naraz: nagłówek sekcji, jedno zdanie pod nim
-        // i kwota rozpisana NA OSOBĘ przy każdym wierszu. Ostatnie jest najważniejsze:
-        // dopiero „3,50/os." pokazuje, co ten koszt znaczy dla patrzącego.
+        // --- POZYCJA „DLA WSZYSTKICH" (dawny koszt wspólny) ------------------------
+        //
+        // Jeden wiersz wydruku, dwa miejsca użycia: na wspólnym paragonie w trybie „ze
+        // swoimi kosztami" (`renderItemTiles`) i w sekcji starych wpisów w trybie
+        // „po równo" (`renderGlobalCosts`). Jedna funkcja, bo to jest ta sama rzecz —
+        // dwa osobne szablony na tę samą treść rozjechały się już raz i po to je scalamy.
+        //
+        // Wiersz mówi trzy rzeczy naraz: znaczkiem, że to nie jest niczyja pozycja, tylko
+        // wspólna; podpisem „Dla wszystkich"; i — najważniejsze — kwotą rozpisaną NA OSOBĘ.
+        // Dopiero „3,50/os." pokazuje, co ten wpis znaczy dla patrzącego.
+        const forAllValue = (gc) => {
+            // Number() zamiast .toFixed() wprost: wartość wpisana z konsoli jako tekst
+            // wywalała cały render listy (a z nim ekran rachunku).
+            const wartosc = Number(gc.value) || 0;
+            const isPercent = gc.type === 'percent';
+            // Procent liczymy od kwoty rachunku — tak samo, jak liczy to rozliczenie.
+            const baseG = toGrosze((billData && billData.totalAmount) || 0);
+            return { wartosc, isPercent, totalG: isPercent ? Math.round(baseG * wartosc / 100) : toGrosze(wartosc) };
+        };
+
+        const forAllLineHtml = (gc, { heads, cur, akcja }) => {
+            const { wartosc, isPercent, totalG } = forAllValue(gc);
+            const perHeadG = heads > 0 ? Math.ceil(totalG / heads) : 0;
+            // Przy procencie zostaje na ekranie SAM procent obok nazwy, a po prawej
+            // stoi już kwota w złotówkach: „15%" i „18,30" mówią razem to, czego
+            // żadne z nich nie mówi osobno.
+            return `
+                <div class="receipt-line">
+                    <span class="global-cost-mark" aria-hidden="true"><i class="fas fa-users"></i></span>
+                    <span class="flex-grow min-w-0">
+                        <span class="block font-bold leading-tight truncate">${escapeHtml(gc.description)}${isPercent ? ` <span class="text-ink-3 font-semibold">${wartosc}%</span>` : ''}</span>
+                        <span class="mt-1.5 flex items-center gap-2 min-h-[1.75rem]">
+                            <span class="text-xs text-ink-3">Dla wszystkich${heads > 0 ? ` · ${fmtMoney(perHeadG, cur)}/os.` : ''}</span>
+                        </span>
+                    </span>
+                    <span class="flex items-center gap-2 flex-shrink-0">
+                        <span class="text-xl">${amountHtml(totalG, cur, 'text-ink', { withCurrency: false })}</span>
+                        ${akcja}
+                    </span>
+                </div>`;
+        };
+
+        const activeHeadCount = () => Object.values((billData && billData.participants) || {})
+            .filter((p) => p.status !== PARTICIPANT_OUT).length;
+
+        // STARE WPISY NA RACHUNKU „PO RÓWNO" — i nic poza tym.
+        //
+        // W tym trybie pozycja dla wszystkich nie ma czego robić: kwota rachunku i tak
+        // dzieli się przez liczbę osób, więc napiwek osobną linią daje wynik co do grosza
+        // taki sam jak napiwek wliczony w kwotę. Dokładał za to własną gałąź błędu
+        // („przekraczają kwotę rachunku"), osiągalną wyłącznie tutaj.
+        //
+        // Nie wolno go jednak UKRYĆ, bo jego kwota nadal się liczy — pieniądze niewidoczne,
+        // a policzone, to najgorsza możliwa usterka w aplikacji o cudzych pieniądzach.
+        // Sekcja pokazuje się więc wyłącznie wtedy, gdy taki wpis istnieje, i mówi wprost,
+        // co z nim zrobić. Dodać nowego nie ma jak.
         const renderGlobalCosts = () => {
             const list = document.getElementById('global-costs-list');
+            const section = document.getElementById('global-costs-section');
             if (!list || !billData) return;
             const costs = billData.globalCosts || [];
             const cur = billData.currency || 'PLN';
             const header = document.getElementById('global-costs-header');
             const tear = document.getElementById('global-tear');
             const tearTop = document.getElementById('global-tear-top');
-            const heads = Object.values(billData.participants || {})
-                .filter((p) => p.status !== PARTICIPANT_OUT).length;
 
-            if (header) {
-                // Zdanie „dzielą się po równo między wszystkich" stało tu pół dnia
-                // i wyleciało na życzenie właściciela: to samo mówi już podpis przy
-                // każdym wierszu („Dla wszystkich · 3,50/os."), a tam mówi to w miejscu,
-                // gdzie ktoś patrzy, i od razu w złotówkach.
-                header.innerHTML = `
-                    <div class="mb-3">
-                        <h3 class="font-display text-xl font-extrabold tracking-tight">Koszty wspólne${costs.length ? ` (${costs.length})` : ''}</h3>
-                    </div>`;
-            }
-
-            if (costs.length === 0) {
+            // W trybie „ze swoimi kosztami" te wpisy stoją na wspólnym wydruku razem
+            // z pozycjami — tutaj nie mają czego robić drugi raz.
+            const pokaz = billSplitMode(billData) === 'even' && costs.length > 0;
+            if (section) section.classList.toggle('hidden', !pokaz);
+            if (!pokaz) {
                 list.className = '';
                 if (tear) tear.classList.add('hidden');
                 if (tearTop) tearTop.classList.add('hidden');
@@ -7203,36 +7370,23 @@
                 return;
             }
 
+            if (header) {
+                header.innerHTML = `
+                    <div class="mb-3">
+                        <h3 class="font-display text-xl font-extrabold tracking-tight">Pozycje dla wszystkich (${costs.length})</h3>
+                        <p class="text-sm text-ink-2 mt-1">Ten rachunek dzieli się po równo, więc te kwoty i tak rozłożyłyby się tak samo, gdyby siedziały w kwocie rachunku. Zostały z wcześniejszej wersji aplikacji — możesz je tu usunąć i doliczyć do kwoty wyżej.</p>
+                    </div>`;
+            }
+
             if (tear) tear.classList.remove('hidden');
             if (tearTop) tearTop.classList.remove('hidden');
             list.className = 'receipt card overflow-hidden';
-            list.innerHTML = costs.map((gc) => {
-                // Number() zamiast .toFixed() wprost: koszt wspólny wpisany z konsoli jako tekst
-                // wywalał cały render listy (a z nim ekran rachunku).
-                const gcValue = Number(gc.value) || 0;
-                const isPercent = gc.type === 'percent';
-                // Procent liczymy od sumy pozycji — tak samo, jak liczy to rozliczenie.
-                const baseG = toGrosze(billData.totalAmount || 0);
-                const totalG = isPercent ? Math.round(baseG * gcValue / 100) : toGrosze(gcValue);
-                const perHeadG = heads > 0 ? Math.ceil(totalG / heads) : 0;
-                // Przy procencie zostaje na ekranie SAM procent obok nazwy, a po prawej
-                // stoi już kwota w złotówkach: „15%" i „18,30" mówią razem to, czego
-                // żadne z nich nie mówi osobno.
-                return `
-                    <div class="receipt-line">
-                        <span class="global-cost-mark" aria-hidden="true"><i class="fas fa-users"></i></span>
-                        <span class="flex-grow min-w-0">
-                            <span class="block font-bold leading-tight truncate">${escapeHtml(gc.description)}${isPercent ? ` <span class="text-ink-3 font-semibold">${gcValue}%</span>` : ''}</span>
-                            <span class="mt-1.5 flex items-center gap-2 min-h-[1.75rem]">
-                                <span class="text-xs text-ink-3">Dla wszystkich${heads > 0 ? ` · ${fmtMoney(perHeadG, cur)}/os.` : ''}</span>
-                            </span>
-                        </span>
-                        <span class="flex items-center gap-2 flex-shrink-0">
-                            <span class="text-xl">${amountHtml(totalG, cur, 'text-ink', { withCurrency: false })}</span>
-                            <button class="remove-global-cost-btn w-11 h-11 rounded-full flex items-center justify-center text-ink-3 flex-shrink-0" data-cost-id="${gc.id}" title="Usuń koszt wspólny" aria-label="Usuń koszt wspólny: ${escapeHtml(gc.description)}"><i class="fas fa-trash text-xs"></i></button>
-                        </span>
-                    </div>`;
-            }).join('');
+            const heads = activeHeadCount();
+            list.innerHTML = costs.map((gc) => forAllLineHtml(gc, {
+                heads,
+                cur,
+                akcja: `<button class="remove-global-cost-btn w-11 h-11 rounded-full flex items-center justify-center text-ink-3 flex-shrink-0" data-cost-id="${gc.id}" title="Usuń pozycję" aria-label="Usuń pozycję dla wszystkich: ${escapeHtml(gc.description)}"><i class="fas fa-trash text-xs"></i></button>`,
+            })).join('');
         };
 
         const resetItemSearch = () => {
@@ -7508,17 +7662,58 @@
 
         // Edytor pozycji — ten sam modal dodaje i edytuje (editingItemId = null → dodawanie).
         let editingItemId = null;
+        // Czy edytowana pozycja jest „dla wszystkich" (dawny koszt wspólny) i — przy takiej —
+        // czy jej wartość jest kwotą, czy procentem kwoty rachunku. Stan arkusza, nie danych:
+        // do bazy trafia dopiero przy zapisie, do właściwej tablicy.
+        let editingItemForAll = false;
+        let editingItemValueMode = 'amount';
+
+        // Przełącznik „Dla wszystkich" przestawia CAŁY arkusz, bo pozycja dla wszystkich
+        // odpowiada na inne pytania: nie „kto to wziął" (nikt nie musi stukać) i nie „ile
+        // sztuk" (napiwek nie ma sztuk), za to na „kwota czy procent rachunku".
+        const syncItemForAllUi = () => {
+            const toggle = document.getElementById('item-for-all');
+            if (toggle) toggle.setAttribute('aria-pressed', String(editingItemForAll));
+            const ludzie = document.getElementById('item-people-block');
+            if (ludzie) ludzie.classList.toggle('hidden', editingItemForAll);
+            const ilosc = document.getElementById('item-quantity-wrap');
+            if (ilosc) ilosc.classList.toggle('hidden', editingItemForAll);
+            const trybWrap = document.getElementById('item-value-mode-wrap');
+            if (trybWrap) trybWrap.classList.toggle('hidden', !editingItemForAll);
+            document.querySelectorAll('.item-value-mode-btn').forEach((b) => {
+                b.setAttribute('aria-pressed', String(b.dataset.valueMode === editingItemValueMode));
+            });
+            const procent = editingItemForAll && editingItemValueMode === 'percent';
+            const etykieta = document.getElementById('item-amount-label');
+            if (etykieta) etykieta.textContent = procent
+                ? 'Ile procent kwoty rachunku'
+                : (editingItemForAll ? 'Kwota do podziału po równo' : 'Cena łączna, jak na paragonie');
+            const jednostka = document.getElementById('item-amount-currency');
+            if (jednostka) jednostka.textContent = procent ? '%' : (billData ? (billData.currency || 'PLN') : 'PLN');
+            const pole = document.getElementById('shared-cost-amount');
+            if (pole) pole.placeholder = procent ? 'np. 10' : '0,00';
+        };
 
         const openItemModal = (itemId) => {
             if (!billData) return;
             editingItemId = itemId || null;
-            const item = itemId ? (billData.sharedCosts || []).find(i => i.id === itemId) : null;
+            let item = itemId ? (billData.sharedCosts || []).find(i => i.id === itemId) : null;
+            // Ołówek przy linii „dla wszystkich" niesie ten sam identyfikator, co przy
+            // pozycji imiennej — szukamy więc w obu tablicach i z miejsca znalezienia
+            // bierzemy tryb arkusza.
+            const forAllItem = (!item && itemId) ? (billData.globalCosts || []).find(g => g.id === itemId) : null;
+            editingItemForAll = !!forAllItem;
+            editingItemValueMode = (forAllItem && forAllItem.type === 'percent') ? 'percent' : 'amount';
 
-            document.getElementById('item-modal-title').textContent = item ? 'Edytuj pozycję' : 'Dodaj pozycję';
-            document.getElementById('shared-cost-desc').value = item ? (item.description || '') : '';
+            document.getElementById('item-modal-title').textContent = (item || forAllItem) ? 'Edytuj pozycję' : 'Dodaj pozycję';
+            document.getElementById('shared-cost-desc').value = (item || forAllItem)
+                ? ((item || forAllItem).description || '')
+                : '';
             document.getElementById('item-quantity').value = item ? itemQuantity(item) : 1;
-            document.getElementById('shared-cost-amount').value = item ? String(item.amount ?? '').replace('.', ',') : '';
-            document.getElementById('item-amount-currency').textContent = billData.currency || 'PLN';
+            document.getElementById('shared-cost-amount').value = forAllItem
+                ? String(forAllItem.value ?? '').replace('.', ',')
+                : (item ? String(item.amount ?? '').replace('.', ',') : '');
+            syncItemForAllUi();
 
             const picked = item ? itemPickers(item) : [];
             const wrap = document.getElementById('shared-cost-participants');
@@ -7540,7 +7735,7 @@
             };
             syncPersonSearchCount(itemPeopleWrap);
 
-            // Rozbicie na sztuki ma sens tylko dla istniejącej pozycji o ilości > 1.
+            // Rozbicie na sztuki ma sens tylko dla istniejącej pozycji IMIENNEJ o ilości > 1.
             const splitBtn = document.getElementById('item-split-btn');
             splitBtn.classList.toggle('hidden', !(item && itemQuantity(item) > 1));
 
@@ -7548,14 +7743,22 @@
             // dodawaniu nowej nie ma czego usuwać, a przycisk „Usuń" obok pustego
             // formularza tylko rozprasza.
             const deleteBtn = document.getElementById('item-delete-btn');
-            deleteBtn.classList.toggle('hidden', !item);
-            deleteBtn.dataset.costId = item ? item.id : '';
+            const istnieje = item || forAllItem;
+            deleteBtn.classList.toggle('hidden', !istnieje);
+            deleteBtn.dataset.costId = istnieje ? istnieje.id : '';
             deleteBtn.onclick = async () => {
                 if (!editingItemId) return;
                 const id = editingItemId;
-                const removed = (billData.sharedCosts || []).find(x => x.id === id);
+                const zDlaWszystkich = editingItemForAll;
+                const removed = zDlaWszystkich
+                    ? (billData.globalCosts || []).find(x => x.id === id)
+                    : (billData.sharedCosts || []).find(x => x.id === id);
                 document.getElementById('shared-cost-modal').classList.remove('active');
-                await mutateItems((items) => items.filter(sc => sc.id !== id));
+                if (zDlaWszystkich) {
+                    await updateDoc(itemsDocRef(), { globalCosts: (billData.globalCosts || []).filter(g => g.id !== id) });
+                } else {
+                    await mutateItems((items) => items.filter(sc => sc.id !== id));
+                }
                 showToast('Pozycja usunięta.');
                 logEvent({
                     type: 'item-remove',
@@ -7568,12 +7771,54 @@
         };
 
         const saveItemFromModal = async () => {
+            // Strażnik także TUTAJ, nie tylko przy otwarciu arkusza: między stuknięciem
+            // „Dodaj pozycję" a stuknięciem „Zapisz" płatnik po drugiej stronie mógł zdążyć
+            // podzielić resztę, a wtedy rachunek jest zamrożony i ten zapis by go rozjechał.
+            if (refuseFrozen()) return;
             const description = document.getElementById('shared-cost-desc').value.trim();
             const amount = parseLocalFloat(document.getElementById('shared-cost-amount').value);
             const quantity = Math.max(1, Math.trunc(parseLocalFloat(document.getElementById('item-quantity').value)) || 1);
             const sharedBy = selectedPersonIds('shared-cost-participants');
             if (!description) { showToast('Podaj nazwę pozycji.', true); return; }
+
+            // POZYCJA DLA WSZYSTKICH IDZIE DO INNEJ TABLICY, bo liczy się inaczej: dzieli się
+            // po równo na AKTUALNY skład (a nie na migawkę listy chętnych), nigdy nie zostaje
+            // bez właściciela i umie być procentem. Tablicę `globalCosts` zostawiamy bez zmian
+            // — to jest przebudowa POJĘCIA w interfejsie, nie migracja danych: matematyka
+            // rachunków (functions/calc.js) i wszystkie jej testy zostają nietknięte.
+            if (editingItemForAll) {
+                const procent = editingItemValueMode === 'percent';
+                if (!(amount > 0)) { showToast(procent ? 'Podaj procent.' : 'Podaj kwotę pozycji.', true); return; }
+                if (procent && amount > 100) { showToast('Procent musi być w przedziale 0–100.', true); return; }
+                const wpis = { id: editingItemId || generateId(), description, type: procent ? 'percent' : 'amount', value: amount };
+                const stare = billData.globalCosts || [];
+                // Ta sama pozycja mogła przed chwilą być imienna — przełącznik „Dla wszystkich"
+                // przenosi ją między tablicami, więc ze starej trzeba ją wtedy wyjąć.
+                const przeniesiona = !!editingItemId && (billData.sharedCosts || []).some(x => x.id === editingItemId);
+                await updateDoc(itemsDocRef(), {
+                    globalCosts: stare.some(g => g.id === wpis.id)
+                        ? stare.map(g => (g.id === wpis.id ? wpis : g))
+                        : [...stare, wpis],
+                    ...(przeniesiona ? { sharedCosts: (billData.sharedCosts || []).filter(x => x.id !== editingItemId) } : {}),
+                });
+                document.getElementById('shared-cost-modal').classList.remove('active');
+                showToast(editingItemId ? 'Zapisano pozycję.' : 'Dodano pozycję.');
+                logEvent({
+                    type: editingItemId ? 'item-edit' : 'item-add',
+                    billId: currentBillId,
+                    label: `${editingItemId ? 'poprawił/a' : 'dodał/a'} pozycję dla wszystkich „${description}" (${procent ? `${amount}%` : fmtMoney(toGrosze(amount), billData.currency)})`,
+                });
+                editingItemId = null;
+                return;
+            }
+
             if (!(amount > 0)) { showToast('Podaj cenę pozycji.', true); return; }
+            // Pozycja przestała być „dla wszystkich" — wypada ze starej tablicy, zanim
+            // wejdzie do nowej. Inaczej ta sama rzecz liczyłaby się dwa razy.
+            if (editingItemId && (billData.globalCosts || []).some(g => g.id === editingItemId)) {
+                await updateDoc(itemsDocRef(), { globalCosts: (billData.globalCosts || []).filter(g => g.id !== editingItemId) });
+                editingItemId = null;
+            }
 
             const newId = generateId();
             await mutateItems((fresh) => {
@@ -7732,7 +7977,7 @@
             const conversion = getPlnConversionHtml(pt.total, cur, billData.exchangeRatePLN);
             const rows = breakdownRows(row, [
                 ['Pozycje z paragonu', pt.sharedAmount],
-                ['Koszty wspólne', pt.globalCostsAmount],
+                ['Dla wszystkich', pt.globalCostsAmount],
                 ['Koszt tylko Twój', pt.individualAmount],
             ], rest, pt.restAmount, true);
             // ZNACZNIK „WSTĘPNIE" PRZY SAMEJ KWOCIE (zgłoszenie kolegi właściciela
@@ -7834,7 +8079,7 @@
             const rows = breakdownRows(row, [
                 ...(isMe ? [] : [['Koszty własne', pt.individualAmount]]),
                 ['Pozycje', pt.sharedAmount],
-                ['Koszty wspólne', pt.globalCostsAmount],
+                ['Dla wszystkich', pt.globalCostsAmount],
             ], rest, pt.restAmount);
             return `<div class="mt-3 pt-3 border-t border-ink/10 text-sm space-y-0.5">
                 ${rows}
@@ -8046,11 +8291,17 @@
             // a rozliczenia go nie widziały i nic nie tłumaczyło dlaczego. Dla kogoś, kto
             // widzi aplikację pierwszy raz, wygląda to jak usterka.
             if (canConfirm) {
-                confirmationBanner.innerHTML = `
-                    <div class="card p-4 flex flex-wrap justify-between items-center gap-3">
-                        <span class="text-sm text-ink-2"><b class="text-ink">Ten rachunek nie wchodzi jeszcze do rozliczeń.</b> Potwierdź, że to Ty wyłożyłeś/aś pieniądze — dopiero wtedy ekipa zobaczy, ile Ci oddać.</span>
-                        <button id="confirm-payer-btn" class="btn btn-primary flex-shrink-0">Potwierdzam</button>
-                    </div>`;
+                // Ta gałąź była JEDYNĄ bez znaczka stanu, więc jej tekst startował w innym
+                // miejscu niż w czterech pozostałych — i to ona najbardziej psuła wrażenie
+                // przypadkowości. Dostaje znaczek „Twój ruch": mówi to samo, co błękit
+                // `action` w `billStatus`, czyli że czekamy dokładnie na tę osobę.
+                confirmationBanner.innerHTML = billBannerHtml({
+                    chipClass: 'chip text-info',
+                    chip: 'Twój ruch',
+                    title: 'Ten rachunek nie wchodzi jeszcze do rozliczeń.',
+                    body: 'Potwierdź, że to Ty wyłożyłeś/aś pieniądze — dopiero wtedy ekipa zobaczy, ile Ci oddać.',
+                    actions: '<button id="confirm-payer-btn" class="btn btn-primary w-full">Potwierdzam</button>',
+                });
                 document.getElementById('confirm-payer-btn').onclick = async () => {
                      await updateDoc(doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/bills`, currentBillId), { payerConfirmed: true });
                 };
@@ -8068,48 +8319,56 @@
                 // Po otwarciu bramy baner wraca do swojej starej roli, ale niesie jeszcze
                 // jedno słowo: że rozliczanie ruszyło. Bez tego moment odblokowania byłby
                 // niewidoczny — a to jest moment, na który czeka cała ekipa.
-                const otwarteHtml = (gate.reason === 'closed' || gate.reason === 'exact')
-                    ? ` <b class="text-ink">Rachunek gotowy — można się rozliczać.</b>`
-                    : '';
-                const bannerText = isCurrentUserThePayer
-                    ? (billFrozen(billData)
-                        ? `Wyłożyłeś/aś pieniądze za ten rachunek. ${(billData.restSettledG || 0) > 0 ? 'Reszta jest podzielona, więc kwoty i pozycje są zamrożone — cofnij podział' : 'Rachunek jest domknięty, więc kwoty i pozycje są zamrożone — cofnij domknięcie'}, żeby coś poprawić.${otwarteHtml}`
-                        : `Wyłożyłeś/aś pieniądze za ten rachunek. Kwotę wciąż możesz poprawić.${otwarteHtml}`)
-                    : `Główne pola rachunku zablokował/a <strong>${escapeHtml(payerName)}</strong>.${otwarteHtml}`;
+                // Zdanie „można się rozliczać" było dotąd DOKLEJANE na koniec akapitu jako
+                // pogrubiony ogon — czyli najważniejsza wiadomość na tym ekranie stała
+                // w miejscu, do którego oko dociera ostatnie. W szkielecie kafelka
+                // najważniejsze zdanie jest z definicji tytułem, więc awansuje.
+                const gotowy = gate.reason === 'closed' || gate.reason === 'exact';
+                const tytulPlatnika = gotowy
+                    ? 'Rachunek gotowy — można się rozliczać.'
+                    : (isCurrentUserThePayer
+                        ? 'Wyłożyłeś/aś pieniądze za ten rachunek.'
+                        : `Główne pola rachunku zablokował/a ${escapeHtml(payerName)}.`);
+                const trescPlatnika = isCurrentUserThePayer
+                    ? `${gotowy ? 'Wyłożyłeś/aś pieniądze za ten rachunek. ' : ''}${billFrozen(billData)
+                        ? `${(billData.restSettledG || 0) > 0 ? 'Reszta jest podzielona, więc kwoty i pozycje są zamrożone — cofnij podział' : 'Rachunek jest domknięty, więc kwoty i pozycje są zamrożone — cofnij domknięcie'}, żeby coś poprawić.`
+                        : 'Kwotę wciąż możesz poprawić.'}`
+                    : (gotowy ? `Główne pola rachunku zablokował/a <strong>${escapeHtml(payerName)}</strong>.` : '');
                 // DROGA POWROTNA DLA PŁATNIKA. Bez niej jedynym sposobem na otwarcie
                 // zamkniętego rachunku była cudza prośba „To nie moje" — czyli człowiek,
                 // który sam się przed chwilą pomylił, nie miał czym tego naprawić.
                 // Cicho i bez koloru: to jest wyjście awaryjne, nie zaproszenie.
                 cofnijZamkniecieHtml = (gate.reason === 'closed' && canCloseBill(billData, myGroupMember && myGroupMember.id))
-                    ? `<button id="reopen-bill-btn" class="tap min-h-tap w-full mt-2 text-sm font-bold text-ink-3">${(billData.restSettledG || 0) > 0 ? 'Cofnij podział reszty' : 'Cofnij domknięcie'}</button>`
+                    ? `<button id="reopen-bill-btn" class="tap min-h-tap w-full text-sm font-bold text-ink-3">${(billData.restSettledG || 0) > 0 ? 'Cofnij podział reszty' : 'Cofnij domknięcie'}</button>`
                     : '';
                 // Stempel foliowy znaczy „potwierdzone" — tu potwierdzone jest, kto wyłożył pieniądze.
-                confirmationBanner.innerHTML = `
-                    <div class="card p-4">
-                        <div class="flex items-center gap-3">
-                            <span class="chip text-due text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Płatnik</span>
-                            <span class="text-sm text-ink-2">${bannerText}</span>
-                        </div>
-                        ${cofnijZamkniecieHtml}
-                    </div>`;
+                confirmationBanner.innerHTML = billBannerHtml({
+                    chipClass: 'chip text-due',
+                    chip: 'Płatnik',
+                    title: tytulPlatnika,
+                    body: trescPlatnika,
+                    actions: cofnijZamkniecieHtml,
+                });
                 const reopenBtn = document.getElementById('reopen-bill-btn');
                 if (reopenBtn) reopenBtn.onclick = () => reopenBillWithConfirm();
             } else if (billData.payerId) {
                 // Płatnik wskazany, ale to nie ja i jeszcze nie potwierdził.
                 const payerName = (billData.participants[billData.payerId] || {}).name || 'Płatnik';
-                confirmationBanner.innerHTML = `
-                    <div class="card p-4 flex items-center gap-3">
-                        <span class="chip text-info text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Czeka</span>
-                        <span class="text-sm text-ink-2"><b class="text-ink">Ten rachunek nie wchodzi jeszcze do rozliczeń.</b> Czekamy, aż <strong>${escapeHtml(payerName)}</strong> potwierdzi, że wyłożył/a pieniądze. Do tego czasu nikomu nie nalicza się tu dług.</span>
-                    </div>`;
+                confirmationBanner.innerHTML = billBannerHtml({
+                    chipClass: 'chip text-info',
+                    chip: 'Czeka',
+                    title: 'Ten rachunek nie wchodzi jeszcze do rozliczeń.',
+                    body: `Czekamy, aż <strong>${escapeHtml(payerName)}</strong> potwierdzi, że wyłożył/a pieniądze. Do tego czasu nikomu nie nalicza się tu dług.`,
+                });
             } else {
                 // Płatnika w ogóle nie ma. To też blokuje rozliczenie, a pole wyżej mówi
                 // tylko „Wskaż osobę…" — bez słowa o tym, co się bez tego nie stanie.
-                confirmationBanner.innerHTML = `
-                    <div class="card p-4 flex items-center gap-3">
-                        <span class="chip text-info text-[0.6rem] font-bold px-2 py-1 flex-shrink-0">Czeka</span>
-                        <span class="text-sm text-ink-2"><b class="text-ink">Ten rachunek nie wchodzi jeszcze do rozliczeń.</b> Wskaż wyżej, kto wyłożył pieniądze — bez tego nie ma komu oddawać.</span>
-                    </div>`;
+                confirmationBanner.innerHTML = billBannerHtml({
+                    chipClass: 'chip text-info',
+                    chip: 'Czeka',
+                    title: 'Ten rachunek nie wchodzi jeszcze do rozliczeń.',
+                    body: 'Wskaż wyżej, kto wyłożył pieniądze — bez tego nie ma komu oddawać.',
+                });
             }
 
             // TRYB PODZIAŁU. Jedna decyzja o kształcie rachunku, podejmowana wtedy, gdy
@@ -8159,7 +8418,10 @@
             // Powrót do „po równo" jest możliwy tylko wtedy, gdy nie ma czego zgubić.
             // Przy rozpisanych pozycjach przełączenie kasowałoby czyjś wybór bez pytania,
             // więc zamiast tego mówimy wprost, co stoi na przeszkodzie.
-            const hasItems = ((billData.sharedCosts) || []).length > 0;
+            // Pozycje dla wszystkich liczą się tu tak samo, jak imienne: powrót do „po równo"
+            // zepchnąłby je do sekcji starych wpisów, czyli po cichu wytworzyłby stan, który
+            // ta sekcja ma tylko sprzątać po dawnej wersji aplikacji.
+            const hasItems = (((billData.sharedCosts) || []).length + ((billData.globalCosts) || []).length) > 0;
             const hasOwn = activeParticipants.some((p) => Number(p.individualAmount) > 0);
             const evenBtn = document.getElementById('bill-mode-even');
             if (evenBtn) {
@@ -8248,7 +8510,7 @@
                     breakdownRows.innerHTML = [
                         e.shared > 0 ? row('Pozycje', e.shared) : '',
                         e.individual > 0 ? row('Koszty własne', e.individual) : '',
-                        e.global !== 0 ? row('Koszty ogólne', e.global) : '',
+                        e.global !== 0 ? row('Dla wszystkich', e.global) : '',
                         row('Razem', control.enteredSubtotal, true),
                         row('Kwota rachunku', control.expectedTotal),
                     ].join('');
@@ -8268,7 +8530,7 @@
                     // tylko arytmetyka: kwota rachunku została wpisana przed ich dodaniem.
                     const toKosztyOgolne = e.global > 0 && Math.abs(e.global - control.diff) < 0.005;
                     whyEl.innerHTML = toKosztyOgolne
-                        ? `Różnica to dokładnie tyle, ile wynoszą koszty ogólne. Wygląda na to, że kwota rachunku (${diffText(control.expectedTotal)}) została wpisana, zanim ktoś je dopisał — wtedy wystarczy ją podnieść.`
+                        ? `Różnica to dokładnie tyle, ile wynoszą pozycje dla wszystkich. Wygląda na to, że kwota rachunku (${diffText(control.expectedTotal)}) została wpisana, zanim ktoś je dopisał — wtedy wystarczy ją podnieść.`
                         : `Najczęściej znaczy to jedno z dwóch:<br>• ta sama pozycja została wpisana dwa razy,<br>• albo kwota rachunku nie obejmuje jeszcze czegoś, co zostało dopisane (napiwek, serwis, opłata za nakrycie).`;
                 }
 
@@ -8508,7 +8770,6 @@
             renderGlobalCosts();
 
             document.getElementById('add-shared-cost-btn').disabled = false;
-            document.getElementById('add-global-cost-btn').disabled = false;
             // FIX: The variable to check if the delete button should be shown is now `isCurrentUserThePayer`
             document.getElementById('delete-bill-btn-advanced').style.display = isCurrentUserThePayer ? 'inline-block' : 'none';
 
@@ -8539,7 +8800,7 @@
                 <p><b>Po równo.</b> Cała kwota rachunku dzieli się na uczestników i nikt niczego nie uzupełnia. Rachunek jest gotowy od razu, a pozycje z paragonu w ogóle nie są potrzebne.</p>
                 <p><b>Ze swoimi kosztami.</b> Każdy stuka na paragonie to, co jadł, i wpisuje swoje koszty własne. Cena pozycji dzieli się po równo między wszystkich, którzy ją stuknęli.</p>
                 <ul class="list-disc pl-5 space-y-1">
-                    <li><b>Koszt wspólny</b> (napiwek, serwis) dolicza się do całości i dzieli po równo — w obu sposobach tak samo.</li>
+                    <li><b>Pozycja dla wszystkich</b> (napiwek, serwis) dzieli się po równo i nikt nie musi jej stukać. Zaznaczasz to w arkuszu pozycji; kwotę można podać też jako procent rachunku. W trybie „po równo" nie jest potrzebna: tam cała kwota i tak rozkłada się tak samo.</li>
                     <li>O tym, czego nikt nie weźmie imiennie, decyduje na końcu <b>płatnik</b>: dzieli resztę po równo albo wrzuca ją tym, którzy nie stuknęli swojego.</li>
                     <li>Grosze zaokrąglają się w górę, żeby płatnik nigdy nie był stratny.</li>
                 </ul>
@@ -8796,6 +9057,9 @@
             document.querySelectorAll('.receipt-line').forEach(tile => {
                 tile.onclick = async (e) => {
                     if (e.target.closest('.item-edit-btn') || e.target.closest('.remove-shared-cost-btn')) return;
+                    // Pozycji dla wszystkich się nie stuka: dotyczy każdego z definicji.
+                    // Odkąd stoi na tym samym wydruku, łapie ten sam nasłuch (2026-08-30).
+                    if (!tile.dataset.itemId) return;
                     const my = myMemberNow();
                     if (!my) { showToast('Najpierw dołącz do grupy.', true); return; }
                     if (!billData.participants[my.id] || billData.participants[my.id].status === 'not_applicable') {
@@ -8857,6 +9121,18 @@
             };
             document.getElementById('save-shared-cost').onclick = saveItemFromModal;
             document.getElementById('item-split-btn').onclick = splitEditedItem;
+            // „Dla wszystkich" i wybór kwota/procent. `onclick`, nie `addEventListener`:
+            // ta funkcja biegnie przy KAŻDYM przerysowaniu rachunku, więc nasłuch dokładany
+            // za każdym razem narastałby i po dziesiątej zmianie kwoty jedno stuknięcie
+            // wywoływałoby dziesięć reakcji.
+            document.getElementById('item-for-all').onclick = () => {
+                editingItemForAll = !editingItemForAll;
+                if (!editingItemForAll) editingItemValueMode = 'amount';
+                syncItemForAllUi();
+            };
+            document.querySelectorAll('.item-value-mode-btn').forEach((btn) => {
+                btn.onclick = () => { editingItemValueMode = btn.dataset.valueMode; syncItemForAllUi(); };
+            });
 
             // Odczyt paragonu przez AI
             document.getElementById('parse-receipt-btn').onclick = runParseReceipt;
@@ -8920,52 +9196,10 @@
                 receiptDraft.modifiers[Number(t.dataset.i)].__use = t.checked;
                 renderReceiptPreview();
             };
-            // Rodzaj kosztu wspólnego: arkusz zamiast listy systemowej (DESIGN.md,
-            // „Wybór z listy"). `onclick`, nie `addEventListener` — ta funkcja biegnie
-            // przy KAŻDYM przerysowaniu rachunku, więc nasłuch dokładany za każdym razem
-            // narastał i po dziesiątej zmianie kwoty jedno stuknięcie wywoływało dziesięć
-            // reakcji.
-            const gcTypeBtn = document.getElementById('global-cost-type-select');
-            const setGlobalCostType = (value) => {
-                gcTypeBtn.dataset.value = value;
-                document.getElementById('global-cost-type-label').textContent = value === 'Inne' ? 'Inne (wpisz nazwę)' : value;
-                document.getElementById('global-cost-desc-other').classList.toggle('hidden', value !== 'Inne');
-            };
-            gcTypeBtn.onclick = () => {
-                openChoiceSheet({
-                    title: 'Rodzaj kosztu wspólnego',
-                    current: gcTypeBtn.dataset.value || 'Napiwek',
-                    options: [
-                        { value: 'Napiwek', label: 'Napiwek', hint: 'dla obsługi, dzielony po równo' },
-                        { value: 'Serwis', label: 'Serwis', hint: 'opłata doliczana przez lokal' },
-                        { value: 'Inne', label: 'Inne (wpisz nazwę)', hint: 'np. opłata za rezerwację' },
-                    ],
-                    onPick: (value) => setGlobalCostType(value),
-                });
-            };
-
-            setupModal('global-cost-modal', 'add-global-cost-btn', 'cancel-global-cost', 'save-global-cost', async () => {
-                if (refuseFrozen()) return;
-                let description = gcTypeBtn.dataset.value || 'Napiwek';
-                if (description === 'Inne') description = document.getElementById('global-cost-desc-other').value.trim();
-                const type = document.querySelector('input[name="global-cost-format"]:checked').value;
-                const value = parseLocalFloat(document.getElementById('global-cost-value').value);
-                if (type === 'percent' && (value < 0 || value > 100)) {
-                    showToast("Procent musi być w przedziale 0-100.", true); return;
-                }
-                if (!description || isNaN(value) || value <= 0) { showToast("Wypełnij wszystkie pola poprawnie.", true); return; }
-                await updateDoc(billDocRef, { globalCosts: arrayUnion({ id: generateId(), description, type, value }) });
-                setGlobalCostType('Napiwek');
-                document.getElementById('global-cost-desc-other').value = '';
-                document.getElementById('global-cost-value').value = '';
-            });
-            // POWÓD MÓWIMY PRZY STUKNIĘCIU, NIE PO WYPEŁNIENIU FORMULARZA.
-            // `setupModal` zamyka okno po zapisie niezależnie od wyniku, więc sam strażnik
-            // w zapisie kazałby najpierw wpisać kwotę, a dopiero potem tłumaczył, że nie teraz.
-            document.getElementById('add-global-cost-btn').onclick = () => {
-                if (refuseFrozen()) return;
-                document.getElementById('global-cost-modal').classList.add('active');
-            };
+            // ARKUSZ „Dodaj koszt wspólny" ZNIKNĄŁ 2026-08-30 razem z całym pojęciem.
+            // Napiwek, serwis i wino na stół dodaje się dziś tym samym arkuszem, co każdą
+            // inną pozycję — przełącznikiem „Dla wszystkich" (patrz `openItemModal`).
+            // Uzasadnienie stoi przy tym przełączniku w index.html.
         };
 
         
@@ -9818,15 +10052,38 @@
             //
             // OŚ WYBIERA SIĘ RAZ, na pierwszych pikselach ruchu, i nie zmienia do końca gestu.
             // Bez tego gest ukośny raz przewijałby listę, raz przesuwał stronę.
+            //
+            // GEST ŁAPIE CAŁY EKRAN, NIE SAM KAFELEK (zgłoszenie właściciela 2026-08-30).
+            //
+            // Nasłuchy wisiały na `#settlements-list`, czyli na elemencie wysokim DOKŁADNIE
+            // tyle, ile mierzy treść. Przy jednej sprawie na stronie to pasek na jedną trzecią
+            // ekranu, a wszystko pod nim — czyli większość tego, co widać — było martwe.
+            // Palec przesuwał się po pustym tle i aplikacja nie odpowiadała, więc gest wyglądał
+            // na zepsuty; a gestu, który działa „czasem", ludzie przestają próbować.
+            //
+            // Słucha więc `#app-scroll` — pojemnika, który JEST oknem (`position: fixed;
+            // inset: 0`, patrz src/tailwind.css). Pokrywa całą widoczną powierzchnię niezależnie
+            // od tego, ile jest treści, a pasek nawigacji, arkusze i okna leżą POZA nim, więc
+            // nie da się przypadkiem złapać przesunięcia wewnątrz otwartego arkusza.
+            // Wysokości niczego nie ustawiamy na sztywno: liczba w rodzaju `100dvh - 14rem`
+            // musiałaby zgadywać wysokość nagłówka pokoju i bezpiecznych marginesów telefonu,
+            // a pomyłka w jedną stronę zostawia martwy pas, w drugą — pasek przewijania donikąd.
+            //
+            // Widoczność sprawdzamy przez SZEROKOŚĆ taśmy: element w ukrytej zakładce ma zero,
+            // więc `box.offsetWidth` jest zarazem testem „czy rozliczenia są na wierzchu"
+            // i liczbą, której gest i tak potrzebuje do przeliczenia postępu.
+            // Postęp `--settle-p` dalej zapisujemy na `#settlements-list`, bo to jego
+            // potomkowie (taśma i pigułka) go czytają.
             const settlementsList = document.getElementById('settlements-list');
+            const settleGestureBox = document.getElementById('app-scroll') || settlementsList;
             let swipeX = null, swipeY = null, swipeT = 0, swipeOs = null, swipeW = 1, swipeOd = 0;
 
             const settleBox = () => document.getElementById('settle-panes');
             const settleProgress = (p) => settlementsList.style.setProperty('--settle-p', String(p));
 
-            settlementsList.addEventListener('touchstart', (e) => {
+            settleGestureBox.addEventListener('touchstart', (e) => {
                 const box = settleBox();
-                if (e.touches.length !== 1 || !box) { swipeX = null; return; }
+                if (e.touches.length !== 1 || !box || !box.offsetWidth) { swipeX = null; return; }
                 swipeX = e.touches[0].clientX;
                 swipeY = e.touches[0].clientY;
                 swipeT = Date.now();
@@ -9835,7 +10092,7 @@
                 swipeOd = settleSide === 'due' ? 1 : 0;
             }, { passive: true });
 
-            settlementsList.addEventListener('touchmove', (e) => {
+            settleGestureBox.addEventListener('touchmove', (e) => {
                 if (swipeX === null || !e.touches.length) return;
                 const dx = e.touches[0].clientX - swipeX;
                 const dy = e.touches[0].clientY - swipeY;
@@ -9886,8 +10143,8 @@
                 settleSide = nowa;
                 settlePanesSync();
             };
-            settlementsList.addEventListener('touchend', settleSwipeEnd, { passive: true });
-            settlementsList.addEventListener('touchcancel', settleSwipeEnd, { passive: true });
+            settleGestureBox.addEventListener('touchend', settleSwipeEnd, { passive: true });
+            settleGestureBox.addEventListener('touchcancel', settleSwipeEnd, { passive: true });
 
             settlementsList.addEventListener('click', async (e) => {
                 const settleRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`, id);

@@ -211,8 +211,11 @@ describe("kontrakt bramy rozliczeń: strażnicy w main.js", () => {
     ['ołówek przy pozycji', "document.querySelectorAll('.item-edit-btn')", 600],
     ['kosz przy pozycji', "document.querySelectorAll('.remove-shared-cost-btn')", 900],
     ['dodanie pozycji', "document.getElementById('add-shared-cost-btn').onclick", 200],
-    ['kosz przy koszcie wspólnym', "document.querySelectorAll('.remove-global-cost-btn')", 900],
-    ['dodanie kosztu wspólnego', "setupModal('global-cost-modal'", 300],
+    ['kosz przy pozycji dla wszystkich', "document.querySelectorAll('.remove-global-cost-btn')", 900],
+    // Osobny arkusz „Dodaj koszt wspólny" zniknął 2026-08-30 razem z całym pojęciem:
+    // pozycję dla wszystkich dodaje się dziś tym samym arkuszem, co każdą inną. Kotwicą
+    // jest więc zapis pozycji — jedyna droga, którą oba rodzaje trafiają do rachunku.
+    ['zapis pozycji (także dla wszystkich)', 'const saveItemFromModal = async () => {', 400],
     ['wgranie pozycji z paragonu', "document.getElementById('apply-receipt-btn').onclick", 200],
     ['zmiana kwoty rachunku', "document.getElementById('total-bill-amount').onchange", 600],
     ['zmiana waluty', "title: 'Waluta rachunku',", 700],

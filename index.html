@@ -493,12 +493,21 @@ the verdict, and DESIGN.md
                      palca w chwili, gdy domkniesz ostatnią sprawę, a zamiast domknięcia
                      dostałbyś skok na inną listę.
 
-                     KOLOR PIGUŁKI TO KOLOR STANU, KTÓRY WYBIERA. Czerwone „Do oddania"
-                     nad czerwonym „Nieopłacone" na kafelku, błękitne „Czekają na Ciebie"
-                     nad błękitnym kafelkiem z Twoim ruchem. Filtr i to, co wybiera, mają
-                     wyglądać na tę samą rzecz. Filtry, które nie wybierają stanu pieniędzy
-                     („Wszystkie", „Nie dotyczą Cię", „Ukryte"), zostają szare — kolor
-                     w tej aplikacji ma znaczenie i nie wolno go rozdać wszystkim. -->
+                     KOLOR DOSTAJE FILTR-ZADANIE, NIE FILTR-WIDOK (doprecyzowane 2026-08-30).
+                     Czerwone „Do oddania" nad czerwonym „Nieopłacone" na kafelku, błękitne
+                     „Czekają na Ciebie" i „Do potwierdzenia" nad błękitnym kafelkiem z Twoim
+                     ruchem — filtr i to, co wybiera, mają wyglądać na tę samą rzecz.
+
+                     Reszta zostaje SZARA i to nie jest oszczędność, tylko warunek, żeby
+                     kolor cokolwiek znaczył. „Wyłożyłeś/aś" straciło zieleń dokładnie z tego
+                     powodu (wniosek właściciela): zielony na tej liście znaczy DOMKNIĘTE
+                     („Opłacone", „Rozliczony"), a pod tą pigułką leżą rachunki w każdym
+                     stanie — obiecywałaby zielone wiersze i dawała mieszankę. To nie jest
+                     zadanie, tylko sposób pokrojenia listy, jak „Nie dotyczą Cię" i „Ukryte".
+
+                     Z tego samego powodu „Do potwierdzenia" ZOSTAJE błękitne, choć pieniądze
+                     idą tam do mnie: zieleń mówi „już dobrze, nic nie rób", a ta pigułka woła
+                     o jedno stuknięcie przy cudzych pieniądzach. -->
                 <div id="bill-filters" class="filter-pills mb-3">
                     <button data-filter="all" class="bill-filter-btn filter-pill" aria-pressed="true" title="Rachunki, które Cię dotyczą">Wszystkie<span class="filter-pill-count"></span></button>
                     <button data-filter="waiting" class="bill-filter-btn filter-pill is-info" aria-pressed="false" title="Czekają na Twój ruch">Czekają na Ciebie<span class="filter-pill-count"></span></button>
@@ -522,7 +531,7 @@ the verdict, and DESIGN.md
                          więc słowo nie rozróżniało niczego. Nowy napis to DOKŁADNIE to
                          samo słowo, które nosi kafelek takiego rachunku, i ten sam zielony
                          kolor. Filtr i to, co wybiera, czyta się jako jedną rzecz. -->
-                    <button data-filter="mine" class="bill-filter-btn filter-pill is-due" aria-pressed="false" title="Rachunki, za które to Ty wyłożyłeś/aś pieniądze">Wyłożyłeś/aś<span class="filter-pill-count"></span></button>
+                    <button data-filter="mine" class="bill-filter-btn filter-pill" aria-pressed="false" title="Rachunki, za które to Ty wyłożyłeś/aś pieniądze">Wyłożyłeś/aś<span class="filter-pill-count"></span></button>
                     <!-- „NIE DOTYCZĄ CIĘ", NIE „RESZTA GRUPY". Ta pigułka pokazuje rachunki,
                          na których nie ma Cię wśród uczestników — i jest potrzebna do jednej
                          rzeczy, której nie robi nic innego w aplikacji: sprawdzenia, czy
@@ -835,19 +844,29 @@ the verdict, and DESIGN.md
                 </button>
             </section>
 
-            <!-- KOSZTY WSPÓLNE — działają w OBU trybach podziału: napiwek dzieli się po
-                 równo niezależnie od tego, czy pozycje są rozpisane.
-                 Sekcja wygląda jak druga część wydruku (ta sama ramka, te same linie
-                 oderwania), bo tym właśnie jest: dopiskiem na dole paragonu. -->
-            <section id="global-costs-section" class="mb-3 mt-6">
+            <!-- POZYCJE DLA WSZYSTKICH W TRYBIE „PO RÓWNO" — WYŁĄCZNIE STARE WPISY.
+                 =====================================================================
+                 Do 2026-08-30 stała tu sekcja „Koszty wspólne" z własnym przyciskiem,
+                 widoczna w OBU trybach podziału. Zniknęła jako osobne pojęcie: w trybie
+                 „ze swoimi kosztami" takie pozycje stoją teraz na jednym wydruku razem
+                 z resztą (jeden przycisk „Dodaj pozycję", właściwość „Dla wszystkich"
+                 w arkuszu), a w trybie „po równo" nie mają czego robić — kwota rachunku
+                 i tak dzieli się przez liczbę osób, więc napiwek osobną linią daje wynik
+                 CO DO GROSZA taki sam jak napiwek wliczony w kwotę rachunku. Jedyne, co
+                 tam dokładał, to własna gałąź błędu („koszty wspólne przekraczają kwotę
+                 rachunku"), osiągalna wyłącznie w tym trybie.
+
+                 Sekcja ZOSTAJE mimo to, bo w istniejących pokojach są rachunki „po równo"
+                 z takim wpisem, a jego kwota nadal się LICZY. Ukrycie zrobiłoby z niej
+                 pieniądze niewidoczne, a policzone — najgorszy możliwy rodzaj usterki
+                 w aplikacji o cudzych pieniądzach. Pokazuje się więc TYLKO wtedy, gdy
+                 taki wpis istnieje, bez możliwości dodania nowego i z jednym zdaniem
+                 mówiącym, co z nim zrobić. -->
+            <section id="global-costs-section" class="mb-3 mt-6 hidden">
                 <div id="global-costs-header"></div>
                 <div id="global-tear-top" class="receipt-tear receipt-tear-top hidden" aria-hidden="true"></div>
                 <div id="global-costs-list"></div>
                 <div id="global-tear" class="receipt-tear hidden" aria-hidden="true"></div>
-                <button id="add-global-cost-btn" class="btn btn-dark w-full mt-3">
-                    <i class="fas fa-users" aria-hidden="true"></i>
-                    Dodaj koszt wspólny
-                </button>
             </section>
 
             <!-- UCZESTNICY — ZWINIĘCI. Na ekranie rachunku pracujesz nad swoją częścią;
@@ -1764,31 +1783,72 @@ the verdict, and DESIGN.md
             <div class="sheet-body">
                 <label for="shared-cost-desc" class="block text-sm font-bold text-ink-3">Nazwa</label>
                 <input type="text" id="shared-cost-desc" class="field min-h-tap w-full mt-1.5 mb-4" placeholder="np. Pizza, Wino">
+                <!-- POZYCJA „DLA WSZYSTKICH" — DAWNY KOSZT WSPÓLNY (decyzja właściciela
+                     2026-08-30: „co myślisz o pozbyciu się Koszt wspólny").
+
+                     Do 2026-08-30 to był OSOBNY GATUNEK: własna sekcja na ekranie rachunku,
+                     własny przycisk „Dodaj koszt wspólny", własny arkusz, własny wydruk pod
+                     paragonem i własne zdanie w komunikatach błędu. Dwa pojęcia do nauczenia
+                     się tam, gdzie ludzie widzą jedną rzecz — linię na paragonie.
+
+                     Zostaje JEDNO pojęcie: pozycja. „Dla wszystkich" jest jej WŁAŚCIWOŚCIĄ,
+                     a nie innym bytem. Zdolności nie tracimy ani jednej — bo różnice wobec
+                     zwykłej pozycji są realne i wszystkie zostają:
+                       • dzieli się po równo na AKTUALNY skład, także na tych, którzy dołączą
+                         później (zwykła pozycja to migawka listy chętnych z chwili zapisu);
+                       • nikt jej nie stuka, więc nigdy nie zostaje bez właściciela i nigdy
+                         nie blokuje bramy rozliczeń;
+                       • umie być PROCENTEM kwoty rachunku, czego zwykła pozycja nie potrafi
+                         (15% serwisu doliczone na wierzch rozpisanych pozycji). -->
+                <button type="button" id="item-for-all" class="for-all-toggle w-full mb-4" aria-pressed="false">
+                    <span class="for-all-mark" aria-hidden="true"><i class="fas fa-users"></i></span>
+                    <span class="for-all-text">
+                        <span class="for-all-title">Dla wszystkich</span>
+                        <span class="for-all-hint">Napiwek, serwis, wino na stół. Dzieli się po równo i nikt nie musi jej stukać.</span>
+                    </span>
+                    <span class="for-all-check" aria-hidden="true"><i class="fas fa-check"></i></span>
+                </button>
+
+                <!-- Widoczne WYŁĄCZNIE przy pozycji dla wszystkich: procent ma sens tylko
+                     wtedy, gdy podstawą jest cały rachunek. Przy pozycji imiennej „15%"
+                     nie miałoby od czego się liczyć. -->
+                <div id="item-value-mode-wrap" class="hidden mb-4">
+                    <p class="text-sm font-bold text-ink-3 mb-2">Jak liczyć</p>
+                    <div class="seg w-full">
+                        <button type="button" id="item-value-amount" data-value-mode="amount" class="item-value-mode-btn seg-btn flex-1" aria-pressed="true">Kwota</button>
+                        <button type="button" id="item-value-percent" data-value-mode="percent" class="item-value-mode-btn seg-btn flex-1" aria-pressed="false">Procent rachunku</button>
+                    </div>
+                </div>
+
                 <div class="flex gap-3 mb-4">
-                    <div class="w-20 flex-shrink-0">
+                    <!-- Ilość znika przy pozycji dla wszystkich: napiwek nie ma sztuk,
+                         a puste pole „Ilość: 1" obok „15%" czyta się jak usterka. -->
+                    <div id="item-quantity-wrap" class="w-20 flex-shrink-0">
                         <label for="item-quantity" class="block text-sm font-bold text-ink-3">Ilość</label>
                         <input type="number" id="item-quantity" min="1" step="1" value="1" class="field min-h-tap w-full mt-1.5 text-center">
                     </div>
                     <div class="flex-grow min-w-0">
-                        <label for="shared-cost-amount" class="block text-sm font-bold text-ink-3">Cena łączna, jak na paragonie</label>
+                        <label for="shared-cost-amount" id="item-amount-label" class="block text-sm font-bold text-ink-3">Cena łączna, jak na paragonie</label>
                         <div class="mt-1.5 flex items-center gap-2">
                             <input type="text" inputmode="decimal" id="shared-cost-amount" class="field min-h-tap w-full min-w-0 text-right font-semibold" placeholder="0,00">
                             <span id="item-amount-currency" class="text-ink-3 font-semibold flex-shrink-0">PLN</span>
                         </div>
                     </div>
                 </div>
-                <p class="text-sm font-bold text-ink-3 mb-2">Kto to wziął</p>
-                <p class="text-xs text-ink-3 mb-2">Można zostawić puste. Każdy dopisze się sam, stukając w linię na paragonie.</p>
-                <div class="person-search mb-2" data-search-for="shared-cost-participants">
-                    <button type="button" class="person-search-toggle tap w-11 h-11 rounded-full flex items-center justify-center bg-surface-2 text-ink-2 flex-shrink-0" aria-expanded="false" aria-label="Szukaj osoby" title="Szukaj osoby">
-                        <i class="fas fa-magnifying-glass"></i>
-                    </button>
-                    <input type="text" class="person-search-input field min-h-tap" placeholder="Szukaj imienia" autocomplete="off" spellcheck="false" aria-label="Szukaj osoby">
-                    <span class="person-search-count text-sm font-bold text-ink-3 flex-shrink-0"></span>
+                <div id="item-people-block">
+                    <p class="text-sm font-bold text-ink-3 mb-2">Kto to wziął</p>
+                    <p class="text-xs text-ink-3 mb-2">Można zostawić puste. Każdy dopisze się sam, stukając w linię na paragonie.</p>
+                    <div class="person-search mb-2" data-search-for="shared-cost-participants">
+                        <button type="button" class="person-search-toggle tap w-11 h-11 rounded-full flex items-center justify-center bg-surface-2 text-ink-2 flex-shrink-0" aria-expanded="false" aria-label="Szukaj osoby" title="Szukaj osoby">
+                            <i class="fas fa-magnifying-glass"></i>
+                        </button>
+                        <input type="text" class="person-search-input field min-h-tap" placeholder="Szukaj imienia" autocomplete="off" spellcheck="false" aria-label="Szukaj osoby">
+                        <span class="person-search-count text-sm font-bold text-ink-3 flex-shrink-0"></span>
+                    </div>
+                    <!-- Bez własnego paska przewijania: patrz komentarz przy liście uczestników
+                         w oknie nowego rachunku. Jeden arkusz przewija się w jednym miejscu. -->
+                    <div id="shared-cost-participants" class="space-y-1"></div>
                 </div>
-                <!-- Bez własnego paska przewijania: patrz komentarz przy liście uczestników
-                     w oknie nowego rachunku. Jeden arkusz przewija się w jednym miejscu. -->
-                <div id="shared-cost-participants" class="space-y-1"></div>
 
                 <!-- Kasowanie pozycji mieszka TUTAJ, nie przy linii paragonu. Przy linii
                      stały dwa przyciski po 36 px obok siebie, więc obszary trafienia
@@ -1857,43 +1917,10 @@ the verdict, and DESIGN.md
         </div>
     </div>
 
-    <div id="global-cost-modal" class="modal fixed inset-0 modal-scrim items-end sm:items-center justify-center p-0 sm:p-4">
-        <div class="sheet w-full max-w-md">
-            <div class="sheet-head">
-                <div class="sheet-grip" aria-hidden="true"></div>
-                <div class="sheet-head-row">
-                    <h3 class="sheet-title">Dodaj koszt wspólny</h3>
-                </div>
-                <!-- Nazwa „koszt ogólny" nie mówiła nic o tym, jak się dzieli, więc ludzie
-                     musieli zgadywać. Zdanie pod nagłówkiem rozstrzyga to raz. -->
-                <p class="sheet-lede">Doliczany do rachunku i dzielony <b class="text-ink">po równo między wszystkich uczestników</b>: napiwek, serwis, opłata za rezerwację.</p>
-            </div>
-
-            <div class="sheet-body">
-                <p class="block font-bold mb-2">Rodzaj kosztu</p>
-                <!-- Arkusz zamiast listy systemowej — patrz DESIGN.md, „Wybór z listy". -->
-                <button id="global-cost-type-select" class="field choice-field w-full mb-4" data-value="Napiwek">
-                    <span id="global-cost-type-label">Napiwek</span>
-                    <i class="fas fa-chevron-down choice-field-chevron"></i>
-                </button>
-                <input type="text" id="global-cost-desc-other" class="field mb-4 hidden" placeholder="Wpisz opis, np. Opłata za rezerwację">
-
-                <p class="font-bold mb-2">Jak liczyć</p>
-                <div class="seg mb-4">
-                    <!-- Cel dotykowy to CAŁA etykieta, nie samo 16-pikselowe kółko: min-h-tap
-                         na etykiecie daje 44 px w pionie, a kółko zostaje tylko znacznikiem. -->
-                    <label class="seg-btn cursor-pointer flex items-center gap-2 min-h-tap"><input type="radio" name="global-cost-format" value="fixed" checked class="w-4 h-4 accent-ink">Kwota</label>
-                    <label class="seg-btn cursor-pointer flex items-center gap-2 min-h-tap"><input type="radio" name="global-cost-format" value="percent" class="w-4 h-4 accent-ink">Procent</label>
-                </div>
-                <input type="number" inputmode="decimal" id="global-cost-value" class="field" placeholder="np. 10 albo 15">
-            </div>
-
-            <div class="sheet-foot flex gap-2">
-                <button id="cancel-global-cost" class="btn btn-quiet flex-1">Anuluj</button>
-                <button id="save-global-cost" class="btn btn-primary flex-1">Zapisz</button>
-            </div>
-        </div>
-    </div>
+    <!-- ARKUSZ „Dodaj koszt wspólny" USUNIĘTY 2026-08-30. Koszt wspólny przestał być
+         osobnym gatunkiem: dodaje się go dziś tym samym arkuszem, co każdą inną pozycję
+         (#shared-cost-modal), przełącznikiem „Dla wszystkich". Uzasadnienie stoi przy tym
+         przełączniku i przy sekcji #global-costs-section. -->
 
     <script type="module" src="/src/main.js"></script>
 </body>
