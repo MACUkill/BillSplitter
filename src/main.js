@@ -3401,6 +3401,26 @@
             return d.toLocaleDateString('pl-PL', { day: 'numeric', month: 'short' });
         };
 
+        // PEŁNY ZNACZNIK CZASU — dzień i godzina, BEZ słów „dziś" i „wczoraj".
+        //
+        // Trzecia odmiana istnieje, bo odpowiada na inne pytanie niż dwie poprzednie.
+        // `stampShort` i `stampLong` opisują świeże zdarzenia w rejestrze i na stosach,
+        // gdzie „dziś" niesie więcej niż data. Nagłówek rachunku ogląda się często tygodnie
+        // później i pada tam pytanie „z którego to było wieczoru" — a na nie „dziś"
+        // nie odpowiada wcale.
+        //
+        // Rok dopisujemy wyłącznie wtedy, gdy jest inny niż bieżący: w wyjeździe sprzed
+        // tygodnia „2026" jest szumem, a przy rachunku sprzed roku jest całą odpowiedzią.
+        const stampFull = (t) => {
+            const d = tsDate(t);
+            if (!d) return '';
+            const tenSamRok = d.getFullYear() === new Date().getFullYear();
+            const dzien = d.toLocaleDateString('pl-PL', tenSamRok
+                ? { day: 'numeric', month: 'long' }
+                : { day: 'numeric', month: 'long', year: 'numeric' });
+            return `${dzien}, ${d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}`;
+        };
+
         // === STOS SPRAW =========================================================
         //
         // Jedna nazwa, jedna sprawa na wierzchu, reszta pod spodem. Powód jest
@@ -3921,12 +3941,17 @@
                             <span class="stack-row-sub"><span class="stack-dot is-mute"></span><span class="stack-row-sub-text">${escapeHtml(zaCo || 'plan przelewów')}</span><i class="fas fa-chevron-down stack-row-chevron" aria-hidden="true"></i></span>
                         </span>`,
                 rowActions: ikonaRow,
+                // BEZ POWTÓRZENIA LICZBY RACHUNKÓW (zgłoszenie właściciela 2026-08-30).
+                // Nad szczegółami stoi ten sam wiersz, z którego się je rozwinęło, a on
+                // niesie już podpis „2 rachunki". Podnagłówek powtarzał go dwa centymetry
+                // niżej — czyli jedyna nowa informacja w tym rzędzie to była jego wysokość.
+                // „Razem" zostaje: ono nie powtarza niczego, tylko nazywa sumę nad rozpiską.
                 details: detailBlock([
                     detailRow('Razem', escapeHtml(kwota), 'is-lead'),
                     ile
-                        ? `${detailRow(`${ile} ${plural(ile, 'rachunek', 'rachunki', 'rachunków')}`, '', 'is-head')}${grupa.rachunki
+                        ? grupa.rachunki
                             .map((r) => detailRow(escapeHtml(r.billName || 'Rachunek'), escapeHtml(fmtMoney(r.openG, r.currency))))
-                            .join('')}`
+                            .join('')
                         : detailRow('Przelew z planu — nie należy do żadnego rachunku'),
                     sporneG > 0 ? detailRow('Czeka na wyjaśnienie', escapeHtml(fmtMoney(sporneG, grupa.currency))) : '',
                 ]),
@@ -8361,7 +8386,20 @@
                 document.getElementById('bill-name').textContent = billData.billName;
                 showBillNameEditor(false);
             }
-            
+
+            // KIEDY POWSTAŁ RACHUNEK — pod tytułem, poza blokadą edycji nazwy: to fakt
+            // o rachunku, a nie część pola do wpisywania, więc ma stać także wtedy, gdy
+            // ktoś właśnie poprawia nazwę. `textContent`, nie znaczniki: data nie pochodzi
+            // z bazy jako tekst, tylko powstaje tutaj z pola czasu.
+            const utworzony = document.getElementById('bill-created');
+            if (utworzony) {
+                const kiedy = stampFull(billData.createdAt);
+                utworzony.textContent = kiedy;
+                // Rachunek zapisany offline nie ma jeszcze znacznika z serwera. Pusty wiersz
+                // zostawiałby wtedy dziurę pod tytułem, więc znika w całości aż do synchronizacji.
+                utworzony.classList.toggle('hidden', !kiedy);
+            }
+
             const currencySelect = document.getElementById('currency-select');
             currencySelect.dataset.value = billData.currency;
             document.getElementById('currency-select-label').textContent = billData.currency;

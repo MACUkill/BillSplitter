@@ -671,11 +671,22 @@ the verdict, and DESIGN.md
                      nagłówek jest jedynym miejscem, w którym ta nazwa w ogóle występuje.
                      Pole zamiast nagłówka, a nie osobne okno — kwota rachunku niżej działa
                      dokładnie tak samo, więc to jest ten sam gest, nie nowy. -->
-                <div class="min-w-0 flex-grow flex items-start gap-1">
-                    <h2 id="bill-name" class="font-display text-3xl md:text-4xl font-extrabold tracking-tight leading-tight min-w-0 flex-grow break-words pt-1.5"></h2>
-                    <button id="bill-name-edit-btn" class="tap w-9 h-9 rounded-full flex items-center justify-center text-ink-3 flex-shrink-0 mt-2" title="Zmień nazwę rachunku" aria-label="Zmień nazwę rachunku"><i class="fas fa-pen text-xs"></i></button>
-                    <input type="text" id="bill-name-input" maxlength="60" aria-label="Nazwa rachunku" autocomplete="off"
-                           class="hidden font-display text-3xl md:text-4xl font-extrabold tracking-tight leading-tight min-w-0 flex-grow w-full pt-1.5 bg-transparent border-0 border-b-2 border-ink/20 focus:border-ink outline-none">
+                <div class="min-w-0 flex-grow">
+                    <div class="flex items-start gap-1">
+                        <h2 id="bill-name" class="font-display text-3xl md:text-4xl font-extrabold tracking-tight leading-tight min-w-0 flex-grow break-words pt-1.5"></h2>
+                        <button id="bill-name-edit-btn" class="tap w-9 h-9 rounded-full flex items-center justify-center text-ink-3 flex-shrink-0 mt-2" title="Zmień nazwę rachunku" aria-label="Zmień nazwę rachunku"><i class="fas fa-pen text-xs"></i></button>
+                        <input type="text" id="bill-name-input" maxlength="60" aria-label="Nazwa rachunku" autocomplete="off"
+                               class="hidden font-display text-3xl md:text-4xl font-extrabold tracking-tight leading-tight min-w-0 flex-grow w-full pt-1.5 bg-transparent border-0 border-b-2 border-ink/20 focus:border-ink outline-none">
+                    </div>
+                    <!-- KIEDY POWSTAŁ RACHUNEK (zgłoszenie właściciela 2026-08-30: „brakuje mi
+                         godziny utworzenia rachunku, niech będzie pod tytułem, i tam też data").
+                         Godzina stała wcześniej w wierszu na LIŚCIE rachunków, gdzie biła się
+                         o miejsce ze znaczkiem stanu i kwotą, i stamtąd zeszła. Tutaj miejsca
+                         jest pod dostatkiem, a pytanie „z którego to wieczoru" pada właśnie
+                         wtedy, gdy patrzy się na jeden konkretny rachunek — nie przy skanowaniu
+                         listy. Dlatego pełna data, a nie sama godzina, i bez słów „dziś"
+                         czy „wczoraj": rachunek ogląda się często tygodnie później. -->
+                    <p id="bill-created" class="hidden text-sm text-ink-3 mt-1"></p>
                 </div>
                 <button class="help-btn tap w-12 h-12 rounded-full flex items-center justify-center text-ink-2 bg-surface-2 flex-shrink-0" title="Pomoc: jak to działa?" aria-label="Pomoc">
                     <i class="fas fa-question"></i>
