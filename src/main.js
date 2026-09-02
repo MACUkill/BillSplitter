@@ -1500,7 +1500,11 @@
                 // zapalał się dopiero przy następnej wpłacie albo zmianie w grupie, czyli
                 // często wcale. Po wprowadzeniu bramy widać to wyraźniej: zamknięcie rachunku
                 // ZDEJMUJE zadanie płatnikowi, a otwarcie z powrotem je dokłada.
-                updateNudgeBadge();
+                //
+                // Zmiana rachunku rusza też KWOTY W SKRZYNCE: wiersz przypomnienia pyta
+                // księgę, ile jeszcze zostało (`mojeDlugiG`), więc otwarta skrzynka musi to
+                // zobaczyć — stąd pełne `refreshInboxViews`, a nie sama odznaka.
+                refreshInboxViews();
             });
 
             const settlementsQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/settlements`), orderBy('createdAt', 'desc'));
@@ -1520,7 +1524,13 @@
                 // `updateNudgeBadge`, więc odznaka zapalała się dopiero przy następnej
                 // zmianie dokumentu grupy albo przypomnienia — czyli często wcale.
                 // Sprawa siedziała w skrzynce, a nic o niej nie mówiło.
-                updateNudgeBadge();
+                //
+                // A OD 2026-09-02 TAKŻE SAMA SKRZYNKA. Odznaka gasła, ale otwarta lista pod
+                // nią zostawała ze starym wierszem i żywym przyciskiem „Mam" — licznik mówił
+                // „nic nie czeka", a lista pokazywała sprawę do zrobienia. Ten nasłuch
+                // pamiętał o rejestrze wpłat (niżej) i o Bilansie (przez `renderBalancePanel`),
+                // a o skrzynce nie. Teraz nie ma czego pamiętać.
+                refreshInboxViews();
                 // Rejestr otwarty na ekranie musi widzieć cudze potwierdzenie od razu —
                 // to jedyne miejsce, w którym ktoś czeka na ruch drugiej osoby.
                 const logModal = document.getElementById('settlements-log-modal');
@@ -1530,16 +1540,13 @@
             const nudgesQuery = query(collection(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`), orderBy('createdAt', 'desc'));
             unsubscribeNudges = onSnapshot(nudgesQuery, (snapshot) => {
                 latestNudges = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                updateNudgeBadge();
-                const modal = document.getElementById('nudges-modal');
-                if (modal && modal.classList.contains('active')) renderNudges();
-                // TE SAME SPRAWY STOJĄ W DWÓCH MIEJSCACH, więc muszą się odświeżać w obu
-                // (zgłoszenie właściciela 2026-08-26: „na Bilansie nie działa Oznacz
-                // przeczytane"). Zapis szedł poprawnie i odznaka na dzwonku gasła, ale ten
-                // nasłuch przerysowywał WYŁĄCZNIE skrzynkę spod dzwonka — więc wiersz na
-                // Bilansie zostawał na ekranie do następnej zmiany rachunku albo wpłaty.
-                // Z zewnątrz wygląda to dokładnie jak przycisk, który nic nie robi.
-                renderBalanceWaiting();
+                // TE SAME SPRAWY STOJĄ W KILKU MIEJSCACH, więc muszą się odświeżać we
+                // wszystkich (zgłoszenie właściciela 2026-08-26: „na Bilansie nie działa
+                // Oznacz przeczytane"). Zapis szedł poprawnie i odznaka na dzwonku gasła,
+                // ale ten nasłuch przerysowywał WYŁĄCZNIE skrzynkę spod dzwonka — więc
+                // wiersz na Bilansie zostawał na ekranie do następnej zmiany rachunku albo
+                // wpłaty. Z zewnątrz wygląda to dokładnie jak przycisk, który nic nie robi.
+                refreshInboxViews();
             });
 
             // Dziennik aktywności. Limit 200 wpisów: to jest ślad ostatnich dni pokoju,
@@ -1552,8 +1559,7 @@
             );
             unsubscribeEvents = onSnapshot(eventsQuery, (snapshot) => {
                 latestEvents = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-                const modal = document.getElementById('nudges-modal');
-                if (modal && modal.classList.contains('active')) renderNudges();
+                refreshInboxViews();
                 renderBillHistory();
             }, (error) => {
                 // Dziennik jest dodatkiem, nie warunkiem pracy: gdy reguły w emulatorze
@@ -4832,6 +4838,12 @@
                 }));
         };
 
+        // WPŁATY ROZSTRZYGNIĘTE W TYM WEJŚCIU DO SKRZYNKI (2026-09-02). Powód i reguła
+        // („zbiór decyduje o OBECNOŚCI wiersza, dane o jego WYGLĄDZIE") stoją przy
+        // `inboxItems` w src/nudges.js. Czyszczone przy każdym otwarciu skrzynki, więc
+        // taki wiersz żyje dokładnie jedno wejście — nie dłużej i nie krócej.
+        const rozstrzygnieteWSkrzynce = new Set();
+
         const currentInbox = () => {
             const my = myMemberNow();
             if (!my) return [];
@@ -4855,6 +4867,7 @@
                 })),
                 actionBills: actionBillsForMe(),
                 seenConfirmations: readSeen('confirmations'),
+                keepSettlements: [...rozstrzygnieteWSkrzynce],
             });
         };
 
@@ -5251,6 +5264,45 @@
                         subtitle: 'Sprawa zamknięta.',
                     });
                 }
+                // SPRAWA ZAŁATWIONA PRZED CHWILĄ — wiersz bez przycisków, stojący dokładnie
+                // tam, gdzie stała sprawa, znikający przy następnym otwarciu skrzynki.
+                // Powód: patrz `inboxItems` w src/nudges.js.
+                //
+                // Zdanie mówi, CO ZROBIŁEM („potwierdziłeś", nie „wpłata potwierdzona"),
+                // bo to jest odpowiedź na jedyne pytanie, jakie ktoś ma w tej sekundzie:
+                // czy moje stuknięcie doszło.
+                if (x.kind === 'settlement-resolved') {
+                    const kto = `<b>${escapeHtml(memberName(x.from))}</b>`;
+                    const kwotaHtml = amount ? ` <b>${amount}</b>` : '';
+                    if (x.state === 'confirmed') {
+                        return inboxRowHtml({
+                            icon: 'fa-circle-check', tone: 'is-due',
+                            title: `Potwierdziłeś/aś wpłatę${kwotaHtml} od ${kto}${zaCo}.${listaRachunkow}`,
+                            subtitle: 'Sprawa zamknięta — druga strona dostanie o tym znać.',
+                        });
+                    }
+                    if (x.state === 'insisted') {
+                        return inboxRowHtml({
+                            icon: 'fa-paper-plane', tone: 'is-info',
+                            title: `Podtrzymałeś/aś, że wysłałeś/aś${kwotaHtml} do ${kto}${zaCo}.${listaRachunkow}`,
+                            subtitle: 'Poprosiliśmy o sprawdzenie jeszcze raz.',
+                        });
+                    }
+                    if (x.state === 'disputed') {
+                        return inboxRowHtml({
+                            icon: 'fa-eye', tone: 'is-info',
+                            title: `Zgłosiłeś/aś, że nie widzisz wpłaty${kwotaHtml} od ${kto}${zaCo}.${listaRachunkow}`,
+                            subtitle: 'Druga strona dostanie o tym znać.',
+                        });
+                    }
+                    // `withdrawn` i wszystko, czego jeszcze nie nazwaliśmy: jedno spokojne
+                    // zdanie zamiast pustego wiersza albo zgadywania.
+                    return inboxRowHtml({
+                        icon: 'fa-circle-check', tone: 'is-due',
+                        title: `Sprawa z ${kto} jest załatwiona.`,
+                        subtitle: 'Zniknie z tej listy przy następnym otwarciu skrzynki.',
+                    });
+                }
                 return inboxRowHtml({
                     icon: 'fa-receipt', tone: 'is-info',
                     title: `<b>${escapeHtml(x.title || 'Rachunek')}</b> czeka na Twój ruch.`,
@@ -5555,6 +5607,24 @@
             renderInboxForYou(container, currentInbox().filter((x) => x.level === 1));
         };
 
+        // JEDNO ODŚWIEŻENIE SKRZYNKI NA CAŁĄ APLIKACJĘ (2026-09-02).
+        //
+        // Te same sprawy stoją w TRZECH miejscach — odznaka na dzwonku, lista w skrzynce,
+        // sekcja „Czeka na Ciebie" na Bilansie — a każde z nich było dopisywane do nasłuchów
+        // osobno. Skończyło się trzema poprawkami tego samego błędu: odznaka (2026-08-26),
+        // Bilans (2026-08-26) i skrzynka (2026-09-02, zgłoszenie: „jak zaakceptujesz, że
+        // ktoś zapłacił, trzeba zamknąć i otworzyć modal, żeby zobaczyć zmianę"). Za każdym
+        // razem winna była ta sama rzecz: lista wołanych funkcji była pisana ręcznie
+        // w czterech nasłuchach, więc każdy nowy widok trzeba było dopisać cztery razy.
+        //
+        // Odtąd nasłuch nie decyduje, CO się odświeża — woła to jedno.
+        const refreshInboxViews = () => {
+            updateNudgeBadge();
+            const modal = document.getElementById('nudges-modal');
+            if (modal && modal.classList.contains('active')) renderNudges();
+            renderBalanceWaiting();
+        };
+
         // Potwierdzenie mojej wpłaty nie ma czego „obsłużyć" — samo obejrzenie zamyka sprawę.
         // Wiersz stoi w DWÓCH miejscach (skrzynka i Bilans), więc i gaszenie musi działać
         // z obu — inaczej u kogoś, kto zagląda tylko w jedno, zostaje na zawsze.
@@ -5568,6 +5638,10 @@
 
         const openNudgesModal = () => {
             inboxMode = 'you';
+            // NOWE WEJŚCIE = CZYSTA LISTA. Sprawy rozstrzygnięte przy poprzednim otwarciu
+            // były trzymane wyłącznie po to, żeby nie znikały pod palcem — teraz mogą zejść.
+            // Ta jedna linia jest całym cyklem życia wiersza „załatwione".
+            rozstrzygnieteWSkrzynce.clear();
             renderNudges();
             markConfirmationsSeen();
             document.getElementById('nudges-modal').classList.add('active');
@@ -10538,7 +10612,9 @@
                     const nm = e.target.closest('.inbox-nomoney-btn');
                     if (nm) { nudgesModal.classList.remove('active'); openNoTransferSheet(nm.dataset.id); return; }
                     const ins2 = e.target.closest('.inbox-insist-btn');
-                    if (ins2) { insistSettlement(ins2.dataset.id); return; }
+                    // Do zbioru PRZED zapisem: nasłuch odpala się dopiero po tej obsłudze,
+                    // ale kolejność zapisujemy wprost, żeby nikt jej później nie odwrócił.
+                    if (ins2) { rozstrzygnieteWSkrzynce.add(ins2.dataset.id); insistSettlement(ins2.dataset.id); return; }
                     const oops2 = e.target.closest('.inbox-oops-btn');
                     if (oops2) { nudgesModal.classList.remove('active'); withdrawSettlement(oops2.dataset.id); return; }
 
@@ -10547,7 +10623,7 @@
                     // „Cofnij" — ta sama czynność zachowywała się inaczej zależnie od tego,
                     // gdzie ją stuknąłeś.
                     const c = e.target.closest('.inbox-confirm-btn');
-                    if (c) { confirmSettlement(c.dataset.id); return; }
+                    if (c) { rozstrzygnieteWSkrzynce.add(c.dataset.id); confirmSettlement(c.dataset.id); return; }
                     const b = e.target.closest('.inbox-bill-btn');
                     if (b) {
                         nudgesModal.classList.remove('active');

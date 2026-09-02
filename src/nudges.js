@@ -28,7 +28,9 @@ export function unreadNudgeCount(nudges, myId, myUid) {
 //
 // Funkcja jest czysta i dostaje gotowe dane, żeby próg dało się przetestować bez
 // bazy: to on decyduje, czy użytkownik ufa czerwonej kropce, czy przestaje ją widzieć.
-export function inboxItems({ nudges = [], settlements = [], actionBills = [], myId, myUid, seenConfirmations = [] } = {}) {
+// `keepSettlements` — wpłaty, które PRZESTAŁY być sprawą, ale mają jeszcze chwilę
+// postać na ekranie. Powód przy pętli niżej.
+export function inboxItems({ nudges = [], settlements = [], actionBills = [], myId, myUid, seenConfirmations = [], keepSettlements = [] } = {}) {
   if (!myId) return [];
   const items = [];
 
@@ -55,8 +57,10 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
     });
   });
 
-  settlements.forEach((s) => {
-    if (!s) return;
+  // Sprawa wynikająca z JEDNEJ wpłaty — albo `null`, gdy ta wpłata nikogo teraz nie woła.
+  // Wydzielone z pętli (2026-09-02): pętla musi teraz wiedzieć nie tylko CO dopisać,
+  // ale też CZY cokolwiek dopisała.
+  const sprawaZeWplaty = (s) => {
     // `billId` jedzie dalej, bo od niego zależy, czy wiersz powie „za co". W trybie
     // rachunkowym pięć rachunków odklikniętych naraz daje PIĘĆ wpłat i pięć wierszy —
     // i tak ma zostać (decyzja właściciela: „robimy łopatologicznie bardzo"). Bez nazwy
@@ -66,7 +70,7 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
     // WYCOFANE ZGŁOSZENIE NIE JEST NICZYJĄ SPRAWĄ. Nadawca sam je zdjął („pomyłka,
     // nie wysłałem"), więc nie ma o co pytać ani czego domykać — zostaje wyłącznie
     // ślad w rejestrze.
-    if (s.withdrawn) return;
+    if (s.withdrawn) return null;
 
     // Ktoś zgłosił wpłatę DO MNIE i czeka na moją odpowiedź.
     //
@@ -77,21 +81,66 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
     // dokładnie tym, czego zabrania próg sygnału (docs/UI-UX.md §10.2).
     const czekaNaMnie = !s.confirmed && (!s.disputed || s.insisted) && !s.stalled;
     if (s.to === myId && s.from !== myId && czekaNaMnie) {
-      items.push({ level: 1, kind: 'confirm-payment', id: s.id, from: s.from, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.createdAtMs, insisted: !!s.insisted });
-      return;
+      return { level: 1, kind: 'confirm-payment', id: s.id, from: s.from, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.createdAtMs, insisted: !!s.insisted };
     }
     // Odbiorca NIE ZNALAZŁ mojego przelewu — i to jest sygnał poziomu 1, bo dług właśnie
     // wrócił na moje saldo. Bez tego wiersza pieniądze wracałyby znikąd i wyglądało
     // to na usterkę aplikacji, a nie na wiadomość od człowieka.
     if (s.from === myId && s.disputed && !s.insisted && !seenConfirmations.includes(s.id)) {
-      items.push({ level: 1, kind: 'payment-disputed', id: s.id, from: s.to, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.disputedAtMs || s.createdAtMs });
-      return;
+      return { level: 1, kind: 'payment-disputed', id: s.id, from: s.to, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.disputedAtMs || s.createdAtMs };
     }
     // Odbiorca potwierdził MOJĄ wpłatę — zamyka pętlę. Bez tego użytkownik nie wie,
     // że skończył. Znika po obejrzeniu (lista `seenConfirmations`).
     if (s.from === myId && s.confirmed && !s.disputed && s.confirmedBy !== myUid && !seenConfirmations.includes(s.id)) {
-      items.push({ level: 1, kind: 'payment-confirmed', id: s.id, from: s.to, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.confirmedAtMs });
+      return { level: 1, kind: 'payment-confirmed', id: s.id, from: s.to, amountG: s.amountG, currency: s.currency, billId: s.billId || null, billIds: s.billIds || null, at: s.confirmedAtMs };
     }
+    return null;
+  };
+
+  // WIERSZ NIE ZNIKA POD PALCEM, KTÓRY WŁAŚNIE W NIEGO STUKNĄŁ (2026-09-02).
+  //
+  // „Mam" i „Wysłałem na pewno" ZDEJMUJĄ sprawę: po zapisie wpłata przestaje spełniać
+  // warunki wyżej, więc wiersz wypada z listy. Gdyby wypadał natychmiast, dostalibyśmy
+  // dwie usterki naraz. Po pierwsze: przy pięciu wpłatach od tej samej osoby (tryb
+  // rachunkowy mnoży przelewy, a sortowanie niżej celowo stawia je obok siebie) drugie
+  // stuknięcie trafiałoby w cel, który właśnie przeskoczył w górę — czyli w „Nie widzę"
+  // sąsiedniej wpłaty. Po drugie: znikanie bez śladu czyta się jak „nie wiem, czy poszło",
+  // a to jest dokładnie ta niepewność, od której zaczęła się ta poprawka.
+  //
+  // Warstwa interfejsu podaje więc identyfikatory wpłat rozstrzygniętych W TYM WEJŚCIU
+  // do skrzynki. Taka wpłata zostaje na liście jako wiersz `settlement-resolved` — bez
+  // przycisków, z aktualnym stanem — i znika dopiero przy następnym otwarciu.
+  //
+  // REGUŁA: mapa decyduje o OBECNOŚCI wiersza, dane decydują o jego WYGLĄDZIE. Dlatego
+  // „Cofnij" nie potrzebuje własnej obsługi — wpłata wraca do stanu sprzed potwierdzenia,
+  // `sprawaZeWplaty` znów zwraca sprawę i wiersz sam z siebie odzyskuje przyciski.
+  const trzymane = new Set(keepSettlements);
+  settlements.forEach((s) => {
+    if (!s) return;
+    const sprawa = sprawaZeWplaty(s);
+    if (sprawa) { items.push(sprawa); return; }
+    if (!trzymane.has(s.id)) return;
+    // Cudza wpłata między dwiema innymi osobami nie jest moją sprawą nawet wtedy, gdy
+    // jej identyfikator trafiłby tu przez pomyłkę.
+    if (s.to !== myId && s.from !== myId) return;
+    items.push({
+      // Poziom 1 — bo wiersz stoi w tym samym miejscu listy, co przed stuknięciem.
+      // `resolved` trzyma go z dala od ODZNAKI: liczba na dzwonku mówi, ile jeszcze
+      // czeka, a ta sprawa już nie czeka. Patrz `badgeCount`.
+      level: 1, resolved: true, kind: 'settlement-resolved', id: s.id,
+      from: s.to === myId ? s.from : s.to,
+      mine: s.from === myId,
+      state: s.withdrawn ? 'withdrawn'
+        : s.confirmed ? 'confirmed'
+        : s.disputed ? (s.insisted ? 'insisted' : 'disputed')
+        : 'open',
+      amountG: s.amountG, currency: s.currency,
+      billId: s.billId || null, billIds: s.billIds || null,
+      // Czas ZGŁOSZENIA, nie rozstrzygnięcia: sortowanie niżej ustawia sprawy po czasie,
+      // więc stempel „przed chwilą" wyrzuciłby wiersz na górę listy — czyli zrobiłby
+      // dokładnie ten skok, któremu całe to trzymanie ma zapobiec.
+      at: s.createdAtMs,
+    });
   });
 
   actionBills.forEach((b) => {
@@ -126,7 +175,9 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
 // Odznaka liczbowa NALEŻY SIĘ WYŁĄCZNIE poziomowi 1. Poziom 2 dostaje kropkę bez
 // liczby, poziom 3 nie zapala niczego — inaczej wracamy do ślepoty na czerwoną kropkę.
 export function badgeCount(items) {
-  return (items || []).filter((x) => x && x.level === 1).length;
+  // Sprawa rozstrzygnięta przed chwilą stoi jeszcze na liście, ale NIE JEST już
+  // czynnością do wykonania — odznaka nad zielonym „Potwierdzone" mówiłaby nieprawdę.
+  return (items || []).filter((x) => x && x.level === 1 && !x.resolved).length;
 }
 
 export function hasDot(items) {

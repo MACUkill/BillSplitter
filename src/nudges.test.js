@@ -156,3 +156,68 @@ describe('rodzaje przypomnień', () => {
     expect(x.nudgeKind).toBe('debt');
   });
 });
+
+// WIERSZ NIE ZNIKA POD PALCEM (2026-09-02). „Mam" i „Wysłałem na pewno" zdejmują sprawę,
+// więc wiersz wypadał z listy w tej samej sekundzie, w której go stuknięto: przy kilku
+// wpłatach od tej samej osoby drugie stuknięcie trafiało w cel, który właśnie przeskoczył
+// w górę. `keepSettlements` trzyma taką wpłatę na liście do następnego otwarcia skrzynki.
+describe('wpłaty trzymane po rozstrzygnięciu', () => {
+  const base = { myId: 'm1', myUid: 'u1' };
+
+  it('potwierdzona przeze mnie wpłata zostaje na liście jako wiersz bez czynności', () => {
+    const settlements = [{ id: 's1', from: 'm2', to: 'm1', confirmed: true, confirmedBy: 'u1', amountG: 12000, createdAtMs: 5 }];
+    expect(inboxItems({ ...base, settlements })).toEqual([]);
+
+    const items = inboxItems({ ...base, settlements, keepSettlements: ['s1'] });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'settlement-resolved', id: 's1', level: 1, resolved: true,
+      from: 'm2', mine: false, state: 'confirmed', amountG: 12000,
+    });
+  });
+
+  it('trzymany wiersz NIE liczy się do odznaki — sprawa już nie czeka', () => {
+    const settlements = [{ id: 's1', from: 'm2', to: 'm1', confirmed: true, confirmedBy: 'u1' }];
+    const items = inboxItems({ ...base, settlements, keepSettlements: ['s1'] });
+    expect(items).toHaveLength(1);
+    expect(badgeCount(items)).toBe(0);
+    expect(hasDot(items)).toBe(false);
+  });
+
+  it('„Wysłałem na pewno" zdejmuje sprawę, ale wiersz zostaje ze stanem `insisted`', () => {
+    const settlements = [{ id: 's2', from: 'm1', to: 'm2', disputed: true, insisted: true, createdAtMs: 5 }];
+    expect(inboxItems({ ...base, settlements })).toEqual([]);
+
+    const [x] = inboxItems({ ...base, settlements, keepSettlements: ['s2'] });
+    expect(x).toMatchObject({ kind: 'settlement-resolved', from: 'm2', mine: true, state: 'insisted' });
+  });
+
+  it('wycofana wpłata trzyma się na ekranie ze stanem `withdrawn`', () => {
+    const settlements = [{ id: 's3', from: 'm1', to: 'm2', withdrawn: true, createdAtMs: 5 }];
+    const [x] = inboxItems({ ...base, settlements, keepSettlements: ['s3'] });
+    expect(x.state).toBe('withdrawn');
+  });
+
+  it('„Cofnij" nie potrzebuje własnej obsługi: sprawa wraca, a z nią przyciski', () => {
+    // Ta sama wpłata i ta sama lista trzymanych — zmieniły się WYŁĄCZNIE dane.
+    const settlements = [{ id: 's1', from: 'm2', to: 'm1', confirmed: false }];
+    const items = inboxItems({ ...base, settlements, keepSettlements: ['s1'] });
+    expect(items[0].kind).toBe('confirm-payment');
+    expect(items[0].resolved).toBeUndefined();
+    expect(badgeCount(items)).toBe(1);
+  });
+
+  it('cudza wpłata między dwiema innymi osobami nie wchodzi, choćby ktoś wpisał jej numer', () => {
+    const settlements = [{ id: 's8', from: 'm2', to: 'm3', confirmed: true, confirmedBy: 'u2' }];
+    expect(inboxItems({ ...base, settlements, keepSettlements: ['s8'] })).toEqual([]);
+  });
+
+  it('trzymany wiersz stoi tam, gdzie stał: czas ZGŁOSZENIA, nie rozstrzygnięcia', () => {
+    const settlements = [
+      { id: 's-stara', from: 'm2', to: 'm1', confirmed: true, confirmedBy: 'u1', createdAtMs: 1, confirmedAtMs: 9999 },
+      { id: 's-nowa', from: 'm2', to: 'm1', confirmed: false, createdAtMs: 100 },
+    ];
+    const items = inboxItems({ ...base, settlements, keepSettlements: ['s-stara'] });
+    expect(items.map((x) => x.id)).toEqual(['s-nowa', 's-stara']);
+  });
+});
