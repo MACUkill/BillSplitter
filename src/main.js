@@ -5103,9 +5103,19 @@
         const nudgeRef = (id) => doc(db, `artifacts/${appId}/public/data/groups/${currentGroupId}/nudges`, id);
 
         // Inbox dłużnika: przypomnienia skierowane do mnie, z deep-linkiem „Ureguluj".
-        // SKRZYNKA — dwa segmenty. „Dla Ciebie" to sprawy czekające na mój ruch,
-        // „Wszystko" to rejestr, z którego nic nie zapala sygnału.
-        let inboxMode = 'you';
+        //
+        // SEGMENT „WSZYSTKO" USUNIĘTY (2026-09-02). Był słabszą kopią rejestru wpłat:
+        // te same wpłaty bez stanu, bez filtrów i bez przełącznika „Moje / Wszystkie",
+        // te same zmiany kwot, które rejestr pokazuje jako `bill-amount`, i ta sama
+        // historia rachunku, która ma własne miejsce na ekranie rachunku. Trzy widoki
+        // tych samych zdarzeń uczą, że żaden nie jest tym właściwym — a to jest wprost
+        // przeciwko regule „KAŻDA SPRAWA MA JEDEN DOM" spisanej kawałek niżej.
+        //
+        // Cena: ślad przypomnień („kto komu i kiedy przypomniał") traci widok. Dokumenty
+        // zostają w bazie; jeśli okaże się potrzebny, jego miejsce jest w REJESTRZE jako
+        // kolejny filtr, a nie w osobnej liście w innym arkuszu.
+        //
+        // Skrzynka jest odtąd jedną rzeczą: listą tego, co czeka na mój ruch.
 
         // `dismissHtml` — SPRZĄTANIE MA WAGĘ SPRZĄTANIA (2026-09-02). Do teraz „Oznacz
         // przeczytane" stało w rzędzie akcji jako pełny przycisk, obok „Ureguluj" i tej
@@ -5140,7 +5150,6 @@
         //               potwierdzenie nie jest wiadomością, tylko stanem pieniędzy:
         //               dopóki jej nie potwierdzę, wielka liczba wyżej kłamie.
         //   RACHUNKI  — rachunki czekające na mój ruch. Tam stoi chip, filtr i kropka.
-        const INBOX_SALDO_KINDS = ['confirm-payment', 'payment-confirmed'];
 
         const renderInboxForYou = (container, items = currentInbox()) => {
             if (items.length === 0) {
@@ -5576,72 +5585,14 @@
         // Skład grupy mieszka w ustawieniach pokoju i jest tam pełniejszy: widać, kto ma
         // sposób płatności, a kto jeszcze nie zajął swojego imienia.
 
-        // „Wszystko" — rejestr zdarzeń, które da się odtworzyć z danych, jakie już mamy:
-        // przypomnienia i wpłaty. Pełna Aktywność (kto co odkliknął, edycje pozycji)
-        // wymaga osobnej kolekcji zdarzeń i jest rozpisana w §10.2 jako oddzielna partia.
-        const renderInboxAll = (container) => {
-            const ms = (t) => (t && t.toMillis) ? t.toMillis() : 0;
-            const events = [
-                ...latestNudges.map((n) => {
-                    // Rejestr musi nazywać rzecz po imieniu: od 2026-08-26 przypomnienie
-                    // bywa prośbą o stuknięcie pozycji albo o otwarcie rachunku, a nie
-                    // o pieniądze. Jedno zdanie dla trzech różnych spraw kłamałoby o dwóch.
-                    const odHtml = `<b>${escapeHtml(memberName(n.from))}</b>`;
-                    const doHtml = `<b>${escapeHtml(memberName(n.to))}</b>`;
-                    const rachunekHtml = n.billName ? ` (${escapeHtml(n.billName)})` : '';
-                    if (n.kind === 'fill') {
-                        return { at: ms(n.createdAt), icon: 'fa-hand-pointer', tone: 'is-info',
-                            title: `${odHtml} poprosił/a ${doHtml} o stuknięcie swoich pozycji${rachunekHtml}.` };
-                    }
-                    if (n.kind === 'reopen') {
-                        return { at: ms(n.createdAt), icon: 'fa-rotate-left', tone: 'is-info',
-                            title: `${odHtml} poprosił/a ${doHtml} o cofnięcie podziału reszty${rachunekHtml}.` };
-                    }
-                    return { at: ms(n.createdAt), icon: 'fa-bell', tone: 'is-owe',
-                        title: `${odHtml} przypomniał/a ${doHtml} o zaległości${n.amountG ? ` ${fmtMoney(Number(n.amountG), n.currency || 'PLN')}` : ''}.` };
-                }),
-                ...latestSettlements.map((s) => ({
-                    at: ms(s.confirmedAt) || ms(s.createdAt),
-                    icon: s.confirmed ? 'fa-circle-check' : 'fa-clock',
-                    tone: s.confirmed ? 'is-due' : 'is-info',
-                    // `toGrosze(s.amount)`, NIE `s.amountG` (poprawione 2026-08-26). Wpłata
-                    // zapisuje kwotę w złotych, w polu `amount` — pola `amountG` nie ma na
-                    // niej nigdy, więc dziennik aktywności pokazywał przy KAŻDEJ wpłacie
-                    // „0,00". Przypomnienia mają `amountG` i stąd wzięła się ta pomyłka:
-                    // dwa sąsiednie wiersze, dwa różne kształty danych.
-                    title: `<b>${escapeHtml(memberName(s.from))}</b> → <b>${escapeHtml(memberName(s.to))}</b>: ${fmtMoney(toGrosze(s.amount || 0), s.currency || 'PLN')}${
-                        settlementForWhat(s)}${s.confirmed ? ' · potwierdzone' : ' · czeka na potwierdzenie'}`,
-                })),
-                // Dziennik aktywności: kto zmienił kwotę, kto co odkliknął, kto dopisał
-                // osobę. Zero sygnału (poziom 3), ale ślad zostaje.
-                ...latestEvents.map((ev) => ({
-                    at: ms(ev.createdAt), icon: 'fa-clock-rotate-left', tone: 'is-info',
-                    title: `<b>${escapeHtml(ev.byName || memberName(ev.by))}</b> ${escapeHtml(ev.label || '')}`,
-                })),
-            ].sort((a, b) => b.at - a.at);
-
-            if (events.length === 0) {
-                container.innerHTML = `<p class="text-ink-3 text-sm py-6 text-center">Jeszcze nic się nie wydarzyło.</p>`;
-                return;
-            }
-            container.innerHTML = events.map((e) => inboxRowHtml({
-                icon: e.icon, tone: e.tone, title: e.title,
-                subtitle: e.at ? new Date(e.at).toLocaleString('pl-PL', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : '',
-            })).join('');
-        };
-
         const renderNudges = () => {
             const container = document.getElementById('nudges-list');
             if (!container) return;
             const my = myMemberNow();
             const uid = currentUser && currentUser.uid;
-            document.querySelectorAll('.inbox-mode-btn').forEach((btn) => {
-                btn.setAttribute('aria-pressed', String(btn.dataset.inbox === inboxMode));
-            });
             const unread = my ? unreadNudgeCount(latestNudges, my.id, uid) : 0;
             const readAllBtn = document.getElementById('nudges-readall-btn');
-            if (readAllBtn) readAllBtn.classList.toggle('hidden', unread === 0 || inboxMode !== 'you');
-            if (inboxMode === 'all') { renderInboxAll(container); return; }
+            if (readAllBtn) readAllBtn.classList.toggle('hidden', unread === 0);
             // Rachunki czekające na mój ruch NIE wchodzą do skrzynki — mają własny dom
             // na zakładce „Rachunki" (chip, filtr, kropka). Wchodzą za to nadal do
             // `currentInbox`, bo z nich liczy się właśnie ta kropka.
@@ -5677,7 +5628,6 @@
         };
 
         const openNudgesModal = () => {
-            inboxMode = 'you';
             // NOWE WEJŚCIE = CZYSTA LISTA. Sprawy rozstrzygnięte przy poprzednim otwarciu
             // były trzymane wyłącznie po to, żeby nie znikały pod palcem — teraz mogą zejść.
             // Ta jedna linia jest całym cyklem życia wiersza „załatwione".
@@ -10679,10 +10629,6 @@
             };
             wireInboxActions(document.getElementById('nudges-list'));
             wireInboxActions(document.getElementById('balance-waiting-list'));
-
-            document.querySelectorAll('.inbox-mode-btn').forEach((btn) => {
-                btn.onclick = () => { inboxMode = btn.dataset.inbox; renderNudges(); };
-            });
 
             // Kompozytor przypomnienia
             const nudgeComposeModal = document.getElementById('nudge-compose-modal');

@@ -527,8 +527,8 @@ Poza paskiem, ale wewnątrz pokoju:
 - **Ekran rachunku** — pasek zostaje widoczny (dziś znika, `src/main.js:467-473`).
 - **Ustawienia pokoju** — arkusz spod **nazwy pokoju** w nagłówku, z chevronem.
   Wchłania zwijaną sekcję „Pokój" (`index.html:289-327`), która znika z pulpitu.
-- **Skrzynka** — arkusz spod dzwonka (`#nudges-bell`), dwa segmenty: **Dla Ciebie**
-  i **Wszystko**. Opis w 10.2.
+- **Skrzynka** — arkusz spod dzwonka (`#nudges-bell`), jedna lista: sprawy czekające
+  na mój ruch. Opis w 10.2.
 
 Ekrany poza pokojem (`start`, `join`, `loading`) paska nie mają — nie ma czego przełączać.
 
@@ -573,10 +573,16 @@ ukrycie rachunku, dołączenie kogoś do pokoju, zmiana nazwy pokoju, usunięcie
 5. Push wychodzi wyłącznie z poziomu 1 i tylko wtedy, gdy aplikacja jest zamknięta;
    przy otwartej wystarcza toast, jak dziś (`onMessage`, `src/main.js:2551`).
 
-**Skrzynka** ma dwa segmenty: **Dla Ciebie** (poziom 1 i 2, domyślny, tu żyje odznaka)
-oraz **Wszystko** (pełna Aktywność, poziom 3, agregowana po człowieku i oknie czasu —
-„Kasia odkliknęła 4 pozycje · 19:41"). Historia zmian jednego rachunku jest dostępna
-także z ekranu tego rachunku, bo tam jest jej kontekst.
+**Skrzynka** to JEDNA lista: sprawy poziomu 1 i 2, tu żyje odznaka. Poziom 3 nie ma
+w niej domu — mieszka w **rejestrze wpłat** (arkusz z zakładki Rozliczenia, z filtrami
+i przełącznikiem „Moje / Wszystkie") oraz w **historii zmian** na ekranie rachunku,
+bo tam jest jej kontekst.
+
+Segment „Wszystko" istniał tu do 2026-09-02 i został usunięty: powtarzał rejestr
+w słabszej postaci (te same wpłaty bez stanu i bez filtrów), czyli łamał regułę
+„każda sprawa ma jeden dom". Cena jest jedna i świadoma — ślad przypomnień („kto komu
+i kiedy przypomniał") nie ma dziś widoku. Dokumenty zostają w bazie; gdyby okazał się
+potrzebny, jego miejsce jest w rejestrze jako kolejny filtr.
 
 ### 10.3 Ustawienia — trzy zbiory, dwa wejścia
 
@@ -836,7 +842,7 @@ decyduje, czy użytkownik ufa czerwonej kropce, czy przestaje ją widzieć.
 |---|---|---|
 | **1** | odznaka **liczbowa** przy dzwonku | przypomnienie do mnie (nieprzeczytane), cudza wpłata do mnie czekająca na moje potwierdzenie, potwierdzenie mojej wpłaty przez odbiorcę |
 | **2** | **kropka** na zakładce „Rachunki", bez liczby | rachunek czekający na mój ruch (ton `action` z `billStatus`) |
-| **3** | nic | reszta — do obejrzenia w segmencie „Wszystko" |
+| **3** | nic | reszta — do obejrzenia w rejestrze wpłat i w historii zmian rachunku |
 
 **Reguły, które kod faktycznie egzekwuje:**
 
@@ -849,15 +855,16 @@ decyduje, czy użytkownik ufa czerwonej kropce, czy przestaje ją widzieć.
 - Stan „widziane" mieszka w `localStorage` per pokój — to sprawa tego telefonu,
   nie fakt o rachunku.
 
-**Skrzynka** (dzwonek w nagłówku): dwa segmenty. „Dla Ciebie" pokazuje sprawy poziomu 1
-i 2 z akcją przy każdej (Ureguluj, Potwierdzam, Otwórz rachunek). „Wszystko" to rejestr
-złożony z przypomnień i wpłat.
+**Skrzynka** (dzwonek w nagłówku): jedna lista. Pokazuje sprawy poziomu 1 i 2 z akcją
+przy każdej (Ureguluj, Potwierdzam, Otwórz rachunek) i nic poza tym. Sprzątanie wiersza
+to ikona × w rogu, nie przycisk w rzędzie akcji — sprzątanie ma wagę sprzątania.
 
-**Świadome ograniczenie:** pełna Aktywność z §10.2 poziom 3 (kto co odkliknął, edycje
-pozycji, zmiany składu) wymaga osobnej kolekcji zdarzeń w Firestore — nie da się jej
-odtworzyć z dzisiejszych danych. Segment „Wszystko" pokazuje więc to, co jest zapisane:
-przypomnienia i wpłaty. Dopisanie kolekcji zdarzeń zostaje jako osobna partia, razem
-z **historią zmian rachunku**, bo to ten sam mechanizm.
+**Nic, co stukniesz w tej liście, nie ucieka spod palca** (2026-09-02). Sprawa
+rozstrzygnięta stuknięciem — potwierdzona wpłata, podtrzymany przelew, zdjęte
+przypomnienie — zostaje na swoim miejscu jako wiersz bez czynności i znika dopiero
+przy następnym otwarciu skrzynki. Inaczej sąsiedni wiersz wskakuje pod palec, który
+jeszcze nie zdążył się podnieść. Wyjątek: „Zdejmij wszystkie" czyści listę od razu,
+bo pusta lista JEST odpowiedzią na tę prośbę.
 
 ---
 
@@ -950,8 +957,9 @@ Gdzie widać:
 
 - **Historia zmian** na ekranie rachunku — zwinięta, z licznikiem wpisów. Tam jest jej
   kontekst.
-- **Skrzynka → Wszystko** — dziennik zmieszany z przypomnieniami i wpłatami, najnowsze
-  pierwsze. Poziom 3 progu: zero sygnału, wchodzisz kiedy chcesz wiedzieć.
+- **Rejestr wpłat** — wpłaty i zmiany kwot, najnowsze pierwsze, z filtrami
+  i przełącznikiem „Moje / Wszystkie". Poziom 3 progu: zero sygnału, wchodzisz kiedy
+  chcesz wiedzieć.
 
 Testy reguł (`npm run test:rules`, 32 przypadki) pilnują trzech rzeczy: dopisać można
 tylko w swoim imieniu, wpisu nie da się zmienić ani skasować (także własnego), a czytać
