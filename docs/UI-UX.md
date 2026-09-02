@@ -863,7 +863,7 @@ to ikona × w rogu, nie przycisk w rzędzie akcji — sprzątanie ma wagę sprz�
 rozstrzygnięta stuknięciem — potwierdzona wpłata, podtrzymany przelew, zdjęte
 przypomnienie — zostaje na swoim miejscu jako wiersz bez czynności i znika dopiero
 przy następnym otwarciu skrzynki. Inaczej sąsiedni wiersz wskakuje pod palec, który
-jeszcze nie zdążył się podnieść. Wyjątek: „Zdejmij wszystkie" czyści listę od razu,
+jeszcze nie zdążył się podnieść. Wyjątek: „Zdejmij przypomnienia" czyści je od razu,
 bo pusta lista JEST odpowiedzią na tę prośbę.
 
 ---

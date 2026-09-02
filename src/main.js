@@ -10570,7 +10570,7 @@
                 if (!toMark.length) return;
                 await Promise.all(toMark.map(x => updateDoc(nudgeRef(x.id), { readBy: arrayUnion(uid) })));
                 // TU wiersze mają zniknąć od razu i nie trafiają do `trzymaneWSkrzynce`:
-                // „zdejmij wszystkie" jest prośbą o pustą listę, więc pusta lista JEST
+                // „Zdejmij przypomnienia" jest prośbą o pustą listę, więc pusta lista JEST
                 // odpowiedzią. Trzymanie dotyczy pojedynczego stuknięcia w wiersz, po
                 // którym pod palcem zostaje sąsiad.
                 showToast('Zdjęto z listy.');
