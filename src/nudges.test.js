@@ -207,6 +207,16 @@ describe('wpłaty trzymane po rozstrzygnięciu', () => {
     expect(badgeCount(items)).toBe(1);
   });
 
+  // Wyścig, który zdarza się naprawdę: podtrzymuję („Wysłałem na pewno"), a odbiorca
+  // w ciągu sześciu sekund cofa swoje zgłoszenie braku przelewu. Spór znika BEZ mojego
+  // udziału i wpłata jest znów zwykła, czekająca. Wiersz nie ma prawa powiedzieć wtedy
+  // „załatwione" — stąd osobny stan zamiast wspólnego worka.
+  it('gdy druga strona cofnie swoje zgłoszenie, trzymana wpłata wraca do stanu `open`', () => {
+    const settlements = [{ id: 's4', from: 'm1', to: 'm2', insisted: true, disputed: false, createdAtMs: 5 }];
+    const [x] = inboxItems({ ...base, settlements, keepSettlements: ['s4'] });
+    expect(x).toMatchObject({ kind: 'settlement-resolved', state: 'open', mine: true });
+  });
+
   it('cudza wpłata między dwiema innymi osobami nie wchodzi, choćby ktoś wpisał jej numer', () => {
     const settlements = [{ id: 's8', from: 'm2', to: 'm3', confirmed: true, confirmedBy: 'u2' }];
     expect(inboxItems({ ...base, settlements, keepSettlements: ['s8'] })).toEqual([]);

@@ -1478,7 +1478,10 @@
                 // już nie odświeżało. Stosy „Do potwierdzenia" i „Do wyjaśnienia" były więc
                 // puste dokładnie dla kogoś, kogo aplikacja właśnie tam przysłała.
                 if (currentBillId && billData) withFocusPreserved(renderBillScreen);
-                updateNudgeBadge();
+                // Skład grupy i ksywki wchodzą do KAŻDEGO zdania w skrzynce („Bartek zgłosił
+                // wpłatę"), a tryb rozliczeń zmienia to, co wiersz w ogóle pokazuje — więc ten
+                // nasłuch też odświeża całą trójkę, nie samą odznakę.
+                refreshInboxViews();
                 savePushToken(); // token mógł powstać zanim wiedzieliśmy, kim jest użytkownik
                 if (currentScreenName === 'profile') renderProfile();
             });
@@ -5283,24 +5286,38 @@
                     }
                     if (x.state === 'insisted') {
                         return inboxRowHtml({
-                            icon: 'fa-paper-plane', tone: 'is-info',
+                            icon: 'fa-paper-plane', tone: 'is-due',
                             title: `Podtrzymałeś/aś, że wysłałeś/aś${kwotaHtml} do ${kto}${zaCo}.${listaRachunkow}`,
                             subtitle: 'Poprosiliśmy o sprawdzenie jeszcze raz.',
                         });
                     }
                     if (x.state === 'disputed') {
                         return inboxRowHtml({
-                            icon: 'fa-eye', tone: 'is-info',
+                            icon: 'fa-eye', tone: 'is-due',
                             title: `Zgłosiłeś/aś, że nie widzisz wpłaty${kwotaHtml} od ${kto}${zaCo}.${listaRachunkow}`,
                             subtitle: 'Druga strona dostanie o tym znać.',
                         });
                     }
-                    // `withdrawn` i wszystko, czego jeszcze nie nazwaliśmy: jedno spokojne
-                    // zdanie zamiast pustego wiersza albo zgadywania.
+                    if (x.state === 'withdrawn') {
+                        return inboxRowHtml({
+                            icon: 'fa-rotate-left', tone: 'is-due',
+                            title: `Zgłoszenie wpłaty${kwotaHtml} zostało wycofane.${listaRachunkow}`,
+                            subtitle: 'Zostaje wyłącznie ślad w rejestrze.',
+                        });
+                    }
+                    // ZOSTAJE `open` — I NIE WOLNO TU POWIEDZIEĆ „ZAŁATWIONE".
+                    //
+                    // Dane wracają do tego stanu bez mojego udziału. Stukam „Wysłałem na pewno",
+                    // wiersz zostaje trzymany, a odbiorca w ciągu sześciu sekund cofa swoje
+                    // zgłoszenie braku przelewu — wtedy spór znika i wpłata jest znów zwykłą,
+                    // czekającą na potwierdzenie. Zdanie „sprawa załatwiona" mówiłoby wtedy
+                    // nieprawdę o cudzych pieniądzach. Mówimy więc, jak jest.
                     return inboxRowHtml({
-                        icon: 'fa-circle-check', tone: 'is-due',
-                        title: `Sprawa z ${kto} jest załatwiona.`,
-                        subtitle: 'Zniknie z tej listy przy następnym otwarciu skrzynki.',
+                        icon: 'fa-clock', tone: 'is-due',
+                        title: x.mine
+                            ? `Twoja wpłata${kwotaHtml} do ${kto}${zaCo} czeka na potwierdzenie.${listaRachunkow}`
+                            : `Wpłata${kwotaHtml} od ${kto}${zaCo} czeka na Twoje potwierdzenie.${listaRachunkow}`,
+                        subtitle: 'Wiersz zniknie przy następnym otwarciu skrzynki.',
                     });
                 }
                 return inboxRowHtml({
@@ -5632,8 +5649,7 @@
             const confirmations = currentInbox().filter((x) => x.kind === 'payment-confirmed').map((x) => x.id);
             if (!confirmations.length) return;
             writeSeen('confirmations', [...readSeen('confirmations'), ...confirmations]);
-            updateNudgeBadge();
-            renderBalanceWaiting();
+            refreshInboxViews();
         };
 
         const openNudgesModal = () => {
@@ -9802,7 +9818,7 @@
                 onMessage(messaging, (payload) => {
                     const d = (payload && payload.data) || {};
                     showToast(d.body || d.title || 'Nowe przypomnienie.');
-                    if (currentGroupId) updateNudgeBadge();
+                    if (currentGroupId) refreshInboxViews();
                 });
                 if (Notification.permission === 'granted') await acquirePushTokenWithRetry();
                 renderPushToggle();
