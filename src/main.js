@@ -5319,21 +5319,21 @@
                     }
                     if (x.state === 'insisted') {
                         return inboxRowHtml({
-                            icon: 'fa-paper-plane', tone: 'is-info',
+                            icon: 'fa-paper-plane', tone: 'is-due',
                             title: `Podtrzymałeś/aś, że wysłałeś/aś${kwotaHtml} do ${kto}${zaCo}.${listaRachunkow}`,
                             subtitle: 'Poprosiliśmy o sprawdzenie jeszcze raz.',
                         });
                     }
                     if (x.state === 'disputed') {
                         return inboxRowHtml({
-                            icon: 'fa-eye', tone: 'is-info',
+                            icon: 'fa-eye', tone: 'is-due',
                             title: `Zgłosiłeś/aś, że nie widzisz wpłaty${kwotaHtml} od ${kto}${zaCo}.${listaRachunkow}`,
                             subtitle: 'Druga strona dostanie o tym znać.',
                         });
                     }
                     if (x.state === 'withdrawn') {
                         return inboxRowHtml({
-                            icon: 'fa-rotate-left', tone: 'is-info',
+                            icon: 'fa-rotate-left', tone: 'is-due',
                             title: `Zgłoszenie wpłaty${kwotaHtml} zostało wycofane.${listaRachunkow}`,
                             subtitle: 'Zostaje wyłącznie ślad w rejestrze.',
                         });
@@ -5346,7 +5346,7 @@
                     // czekającą na potwierdzenie. Zdanie „sprawa załatwiona" mówiłoby wtedy
                     // nieprawdę o cudzych pieniądzach. Mówimy więc, jak jest.
                     return inboxRowHtml({
-                        icon: 'fa-clock', tone: 'is-info',
+                        icon: 'fa-clock', tone: 'is-due',
                         title: x.mine
                             ? `Twoja wpłata${kwotaHtml} do ${kto}${zaCo} czeka na potwierdzenie.${listaRachunkow}`
                             : `Wpłata${kwotaHtml} od ${kto}${zaCo} czeka na Twoje potwierdzenie.${listaRachunkow}`,
