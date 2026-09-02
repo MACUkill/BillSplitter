@@ -264,6 +264,28 @@ describe("kontrakt bramy rozliczeń: strażnicy w main.js", () => {
   });
 });
 
+// KONTRAKT LISTY RACHUNKÓW — kwota na kafelku mówi, ILE ZOSTAŁO (zgłoszenie 2026-09-02).
+//
+// `billStatus` liczy kwotę z `myTotal`, czyli z całego mojego udziału, i nie odejmuje
+// wpłat. W trybie rachunkowym dawało to opłacony rachunek z zielonym znaczkiem
+// „Opłacone" i pełną kwotą na czerwono tuż obok — dwa sprzeczne zdania w jednym wierszu.
+// Tego nie wykryje test czystej funkcji: `billStatus` robi dokładnie to, co ma robić,
+// a błąd siedzi w tym, którą liczbę renderer bierze na kafelek.
+describe("kontrakt listy rachunków: kwota to reszta długu, nie cały udział", () => {
+  it("w trybie rachunkowym kafelek bierze kwotę z księgi (openG), nie ze statusu", () => {
+    expect(mainJs).toContain("kwotaHtml = mojDlug ? kwotaWierszaHtml(mojDlug.openG");
+    expect(mainJs).toContain("kwotaHtml = kwotaWierszaHtml(doMnie);");
+  });
+
+  it("kwota zero nie renderuje się wcale — opłacony rachunek nie ma czerwieni", () => {
+    const start = mainJs.indexOf("const kwotaWierszaHtml =");
+    expect(start, "Nie znaleziono budowniczego kwoty wiersza").toBeGreaterThan(-1);
+    const galaz = mainJs.slice(start, start + 320);
+    expect(galaz).toContain("grosze > 0");
+    expect(galaz).toContain("status.amountClass");
+  });
+});
+
 // KONTRAKT SKRZYNKI — przypomnienie nie ma prawa nosić własnej kwoty (audyt 2026-08-27).
 //
 // Wiersz w skrzynce nie znika po spłaceniu długu (gaśnie dopiero po „Oznacz przeczytane"),

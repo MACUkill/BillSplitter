@@ -5319,21 +5319,21 @@
                     }
                     if (x.state === 'insisted') {
                         return inboxRowHtml({
-                            icon: 'fa-paper-plane', tone: 'is-due',
+                            icon: 'fa-paper-plane', tone: 'is-info',
                             title: `Podtrzymałeś/aś, że wysłałeś/aś${kwotaHtml} do ${kto}${zaCo}.${listaRachunkow}`,
                             subtitle: 'Poprosiliśmy o sprawdzenie jeszcze raz.',
                         });
                     }
                     if (x.state === 'disputed') {
                         return inboxRowHtml({
-                            icon: 'fa-eye', tone: 'is-due',
+                            icon: 'fa-eye', tone: 'is-info',
                             title: `Zgłosiłeś/aś, że nie widzisz wpłaty${kwotaHtml} od ${kto}${zaCo}.${listaRachunkow}`,
                             subtitle: 'Druga strona dostanie o tym znać.',
                         });
                     }
                     if (x.state === 'withdrawn') {
                         return inboxRowHtml({
-                            icon: 'fa-rotate-left', tone: 'is-due',
+                            icon: 'fa-rotate-left', tone: 'is-info',
                             title: `Zgłoszenie wpłaty${kwotaHtml} zostało wycofane.${listaRachunkow}`,
                             subtitle: 'Zostaje wyłącznie ślad w rejestrze.',
                         });
@@ -5346,7 +5346,7 @@
                     // czekającą na potwierdzenie. Zdanie „sprawa załatwiona" mówiłoby wtedy
                     // nieprawdę o cudzych pieniądzach. Mówimy więc, jak jest.
                     return inboxRowHtml({
-                        icon: 'fa-clock', tone: 'is-due',
+                        icon: 'fa-clock', tone: 'is-info',
                         title: x.mine
                             ? `Twoja wpłata${kwotaHtml} do ${kto}${zaCo} czeka na potwierdzenie.${listaRachunkow}`
                             : `Wpłata${kwotaHtml} od ${kto}${zaCo} czeka na Twoje potwierdzenie.${listaRachunkow}`,
@@ -6976,14 +6976,35 @@
                 // Czy ten wiersz woła o MÓJ ruch — stąd błękitne tło kafelka i kropka.
                 let wolaMnie = status.tone === 'action';
 
+                // KWOTA MÓWI, ILE ZOSTAŁO — NIE ILE BYŁO (zgłoszenie 2026-09-02:
+                // „czerwone ceny przy rachunkach wprowadzają confusion, jak zapłaciłeś
+                // rachunek i widzisz czerwoną cenę to wydaje się jakbyś go nie zapłacił").
+                //
+                // Zgłaszający zdiagnozował to jako usterkę palety i proponował zdjęcie
+                // czerwieni i zieleni. Palety bym nie ruszał: czerwień znaczy tu „winien
+                // jesteś", a zieleń „dostajesz" (DESIGN.md), i to jest ta sama konwencja,
+                // co w każdej aplikacji bankowej — kierunek pieniędzy, nie ocena.
+                //
+                // Kłamała LICZBA. `billStatus` liczy ją z `myTotal`, czyli z całego mojego
+                // udziału, i nie odejmuje od niej ani grosza wpłat. Opłacony rachunek
+                // pokazywał więc zielony znaczek „Opłacone" i tuż obok pełną kwotę na
+                // czerwono — dwa sprzeczne zdania w jednym wierszu, a wierzy się liczbie.
+                //
+                // `openG` to pole, w którym księga już trzyma „ile jeszcze wisi na tym
+                // rachunku". Stąd czerwień gaśnie razem z długiem, a nie razem z paletą.
+                const kwotaWierszaHtml = (grosze, waluta) => (grosze > 0
+                    ? `<span class="${status.amountClass}">${fmtMoney(grosze, waluta || bill.currency)}</span>`
+                    : '');
                 if (perBillActive && status.tone === 'owe') {
                     chipHtml = mojDlug
                         ? statusChip('text-owe', 'fa-circle-exclamation', 'Nieopłacone')
                         : statusChip('text-due', 'fa-check', 'Opłacone');
+                    kwotaHtml = mojDlug ? kwotaWierszaHtml(mojDlug.openG, mojDlug.currency) : '';
                 } else if (perBillActive && status.tone === 'due' && typeof doMnie === 'number') {
                     chipHtml = doMnie > 0
                         ? statusChip('', 'fa-hourglass-half', 'Czeka na zwrot')
                         : statusChip('text-due', 'fa-check', 'Rozliczony');
+                    kwotaHtml = kwotaWierszaHtml(doMnie);
                 }
                 if (sporneRachunki.has(id)) {
                     chipHtml = statusChip('', 'fa-eye', 'Do wyjaśnienia');
