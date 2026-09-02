@@ -4841,11 +4841,14 @@
                 }));
         };
 
-        // WPŁATY ROZSTRZYGNIĘTE W TYM WEJŚCIU DO SKRZYNKI (2026-09-02). Powód i reguła
+        // SPRAWY RUSZONE W TYM WEJŚCIU DO SKRZYNKI (2026-09-02). Powód i reguła
         // („zbiór decyduje o OBECNOŚCI wiersza, dane o jego WYGLĄDZIE") stoją przy
         // `inboxItems` w src/nudges.js. Czyszczone przy każdym otwarciu skrzynki, więc
         // taki wiersz żyje dokładnie jedno wejście — nie dłużej i nie krócej.
-        const rozstrzygnieteWSkrzynce = new Set();
+        //
+        // Jeden zbiór na wpłaty I przypomnienia: to są identyfikatory dokumentów, a zasada
+        // jest jedna dla całej listy — cokolwiek stukniesz, nie ucieka spod palca.
+        const trzymaneWSkrzynce = new Set();
 
         const currentInbox = () => {
             const my = myMemberNow();
@@ -4870,7 +4873,8 @@
                 })),
                 actionBills: actionBillsForMe(),
                 seenConfirmations: readSeen('confirmations'),
-                keepSettlements: [...rozstrzygnieteWSkrzynce],
+                keepSettlements: [...trzymaneWSkrzynce],
+                keepNudges: [...trzymaneWSkrzynce],
             });
         };
 
@@ -5103,7 +5107,12 @@
         // „Wszystko" to rejestr, z którego nic nie zapala sygnału.
         let inboxMode = 'you';
 
-        const inboxRowHtml = ({ icon, tone, title, subtitle, actionsHtml }) => `
+        // `dismissHtml` — SPRZĄTANIE MA WAGĘ SPRZĄTANIA (2026-09-02). Do teraz „Oznacz
+        // przeczytane" stało w rzędzie akcji jako pełny przycisk, obok „Ureguluj" i tej
+        // samej wielkości. Wiersz miał więc dwie decyzje wyglądające jednakowo, choć tylko
+        // jedna jest sensem wiersza. Zdejmowanie schodzi do ikony w rogu: dalej jest
+        // celem 44 px, ale przestaje udawać czynność.
+        const inboxRowHtml = ({ icon, tone, title, subtitle, actionsHtml, dismissHtml }) => `
             <div class="card p-3">
                 <div class="flex items-start gap-3">
                     <span class="inbox-icon ${tone}"><i class="fas ${icon}"></i></span>
@@ -5111,6 +5120,7 @@
                         <p class="text-sm font-semibold">${title}</p>
                         ${subtitle ? `<p class="text-xs text-ink-3 mt-0.5">${subtitle}</p>` : ''}
                     </div>
+                    ${dismissHtml || ''}
                 </div>
                 ${actionsHtml ? `<div class="flex items-center gap-2 mt-2.5">${actionsHtml}</div>` : ''}
             </div>`;
@@ -5156,9 +5166,23 @@
             myLedgerRows().rows.forEach((r) => {
                 if (r.dir === 'owe') mojeDlugiG.set(`${r.other}|${r.currency}`, r.amountG);
             });
+            // Ikona zdejmowania. Podpis niesie `aria-label` i `title`, bo sam krzyżyk nic
+            // nie mówi czytnikowi ekranu ani nikomu, kto go widzi pierwszy raz.
+            const zdejmijHtml = (id) => `<button class="nudge-read-btn icon-btn-sm is-quiet tap" data-id="${escapeHtml(id)}" aria-label="Zdejmij z listy" title="Zdejmij z listy"><i class="fas fa-xmark"></i></button>`;
             container.innerHTML = items.map((x) => {
                 const amount = x.amountG ? fmtMoney(Number(x.amountG), x.currency || 'PLN') : '';
                 if (x.kind === 'nudge') {
+                    // ZDJĘTE PRZED CHWILĄ — wiersz stoi tam, gdzie stał, ale już niczego
+                    // nie żąda. Bez tego lista podskakiwałaby pod palcem: przy pięciu
+                    // przypomnieniach zdjęcie trzeciego wsuwa czwarte dokładnie pod krzyżyk,
+                    // w który właśnie stuknąłeś — a `readBy` nie ma paska „Cofnij".
+                    if (x.resolved) {
+                        return inboxRowHtml({
+                            icon: 'fa-check', tone: '',
+                            title: `Zdjęte z listy: przypomnienie od <b>${escapeHtml(memberName(x.from))}</b>.`,
+                            subtitle: 'Zniknie stąd przy następnym otwarciu skrzynki.',
+                        });
+                    }
                     // Treść od człowieka idzie jako CYTAT, oddzielona od zdania aplikacji:
                     // ma być jasne, kto to napisał, zwłaszcza gdy ktoś żartuje.
                     const quoted = x.message
@@ -5172,8 +5196,8 @@
                             icon: 'fa-hand-pointer', tone: 'is-info',
                             title: `<b>${escapeHtml(memberName(x.from))}</b> czeka, aż stukniesz swoje pozycje${rachunekHtml}.${quoted}`,
                             subtitle: 'Rachunek nie da się rozliczyć, dopóki coś na nim wisi bez właściciela.',
-                            actionsHtml: `${x.billId ? `<button class="nudge-open-bill-btn btn btn-dark" data-bill="${escapeHtml(x.billId)}">Otwórz rachunek</button>` : ''}
-                                <button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Oznacz przeczytane</button>`,
+                            actionsHtml: x.billId ? `<button class="nudge-open-bill-btn btn btn-dark" data-bill="${escapeHtml(x.billId)}">Otwórz rachunek</button>` : '',
+                            dismissHtml: zdejmijHtml(x.id),
                         });
                     }
                     // „TO NIE MOJE" — prośba o otwarcie rachunku z powrotem. Trafia do tego,
@@ -5200,7 +5224,7 @@
                             icon: 'fa-circle-check', tone: 'is-due',
                             title: `<b>${escapeHtml(memberName(x.from))}</b> przypominał/a o zaległości${amount ? ` <b>${amount}</b>` : ''}.${quoted}`,
                             subtitle: 'Nic już nie wisi — ten dług jest spłacony.',
-                            actionsHtml: `<button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Oznacz przeczytane</button>`,
+                            dismissHtml: zdejmijHtml(x.id),
                         });
                     }
                     // Kwota mogła się zmienić od wysyłki (rachunek poprawiony, część spłacona).
@@ -5213,8 +5237,8 @@
                         icon: 'fa-bell', tone: 'is-owe',
                         title: `<b>${escapeHtml(memberName(x.from))}</b> przypomina o zaległości <b>${fmtMoney(zostaloG, walutaNudge)}</b>.${quoted}${zmianaHtml}`,
                         subtitle: 'Już zapłaciłeś? Zapisz wpłatę, żeby dług zniknął.',
-                        actionsHtml: `<button class="nudge-settle-btn btn btn-danger" data-to="${escapeHtml(x.from)}" data-amount-g="${zostaloG}" data-currency="${escapeHtml(walutaNudge)}">Ureguluj</button>
-                            <button class="nudge-read-btn btn btn-quiet" data-id="${escapeHtml(x.id)}">Oznacz przeczytane</button>`,
+                        actionsHtml: `<button class="nudge-settle-btn btn btn-danger" data-to="${escapeHtml(x.from)}" data-amount-g="${zostaloG}" data-currency="${escapeHtml(walutaNudge)}">Ureguluj</button>`,
+                        dismissHtml: zdejmijHtml(x.id),
                     });
                 }
                 // ZA CO — bez tego wiersz mówi tylko „Bartek zgłosił wpłatę 120,00",
@@ -5657,7 +5681,7 @@
             // NOWE WEJŚCIE = CZYSTA LISTA. Sprawy rozstrzygnięte przy poprzednim otwarciu
             // były trzymane wyłącznie po to, żeby nie znikały pod palcem — teraz mogą zejść.
             // Ta jedna linia jest całym cyklem życia wiersza „załatwione".
-            rozstrzygnieteWSkrzynce.clear();
+            trzymaneWSkrzynce.clear();
             renderNudges();
             markConfirmationsSeen();
             document.getElementById('nudges-modal').classList.add('active');
@@ -10574,7 +10598,11 @@
                 const toMark = latestNudges.filter(x => x.to === my.id && !(Array.isArray(x.readBy) && x.readBy.includes(uid)));
                 if (!toMark.length) return;
                 await Promise.all(toMark.map(x => updateDoc(nudgeRef(x.id), { readBy: arrayUnion(uid) })));
-                showToast('Oznaczono jako przeczytane.');
+                // TU wiersze mają zniknąć od razu i nie trafiają do `trzymaneWSkrzynce`:
+                // „zdejmij wszystkie" jest prośbą o pustą listę, więc pusta lista JEST
+                // odpowiedzią. Trzymanie dotyczy pojedynczego stuknięcia w wiersz, po
+                // którym pod palcem zostaje sąsiad.
+                showToast('Zdjęto z listy.');
             };
             // Wiersze spraw żyją w DWÓCH miejscach: w skrzynce spod dzwonka i w sekcji
             // „Czeka na Ciebie" na Bilansie. Obsługa jest jedna — inaczej ta sama sprawa
@@ -10605,6 +10633,7 @@
                     }
                     const r = e.target.closest('.nudge-read-btn');
                     if (r) {
+                        trzymaneWSkrzynce.add(r.dataset.id);
                         // `fireWrite`, nie `await`: przy braku sieci obietnica z `updateDoc`
                         // nie rozwiązuje się nigdy, a kopia w pamięci wie swoje od razu.
                         fireWrite(
@@ -10630,7 +10659,7 @@
                     const ins2 = e.target.closest('.inbox-insist-btn');
                     // Do zbioru PRZED zapisem: nasłuch odpala się dopiero po tej obsłudze,
                     // ale kolejność zapisujemy wprost, żeby nikt jej później nie odwrócił.
-                    if (ins2) { rozstrzygnieteWSkrzynce.add(ins2.dataset.id); insistSettlement(ins2.dataset.id); return; }
+                    if (ins2) { trzymaneWSkrzynce.add(ins2.dataset.id); insistSettlement(ins2.dataset.id); return; }
                     const oops2 = e.target.closest('.inbox-oops-btn');
                     if (oops2) { nudgesModal.classList.remove('active'); withdrawSettlement(oops2.dataset.id); return; }
 
@@ -10639,7 +10668,7 @@
                     // „Cofnij" — ta sama czynność zachowywała się inaczej zależnie od tego,
                     // gdzie ją stuknąłeś.
                     const c = e.target.closest('.inbox-confirm-btn');
-                    if (c) { rozstrzygnieteWSkrzynce.add(c.dataset.id); confirmSettlement(c.dataset.id); return; }
+                    if (c) { trzymaneWSkrzynce.add(c.dataset.id); confirmSettlement(c.dataset.id); return; }
                     const b = e.target.closest('.inbox-bill-btn');
                     if (b) {
                         nudgesModal.classList.remove('active');

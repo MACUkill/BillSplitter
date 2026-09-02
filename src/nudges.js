@@ -30,13 +30,18 @@ export function unreadNudgeCount(nudges, myId, myUid) {
 // bazy: to on decyduje, czy użytkownik ufa czerwonej kropce, czy przestaje ją widzieć.
 // `keepSettlements` — wpłaty, które PRZESTAŁY być sprawą, ale mają jeszcze chwilę
 // postać na ekranie. Powód przy pętli niżej.
-export function inboxItems({ nudges = [], settlements = [], actionBills = [], myId, myUid, seenConfirmations = [], keepSettlements = [] } = {}) {
+export function inboxItems({ nudges = [], settlements = [], actionBills = [], myId, myUid, seenConfirmations = [], keepSettlements = [], keepNudges = [] } = {}) {
   if (!myId) return [];
   const items = [];
 
+  // Przypomnienia ZDJĘTE W TYM WEJŚCIU do skrzynki — ta sama zasada, co przy wpłatach
+  // niżej: nic, co stuknąłeś, nie ucieka spod palca. Zdjęte przypomnienie zostaje jako
+  // wiersz `resolved` (bez czynności) do następnego otwarcia.
+  const trzymaneNudges = new Set(keepNudges);
   nudges.forEach((n) => {
     if (!n || n.to !== myId) return;
-    if (Array.isArray(n.readBy) && n.readBy.includes(myUid)) return;
+    const zdjete = Array.isArray(n.readBy) && n.readBy.includes(myUid);
+    if (zdjete && !trzymaneNudges.has(n.id)) return;
     // `message` niesie treść napisaną przez człowieka — widzi ją wyłącznie adresat,
     // a tu i tak jesteśmy już po filtrze „do mnie".
     //
@@ -52,6 +57,9 @@ export function inboxItems({ nudges = [], settlements = [], actionBills = [], my
     const rodzaj = n.kind === 'fill' || n.kind === 'reopen' ? n.kind : 'debt';
     items.push({
       level: 1, kind: 'nudge', nudgeKind: rodzaj, id: n.id, from: n.from,
+      // `resolved` trzyma wiersz z dala od odznaki: stoi jeszcze na ekranie, ale niczego
+      // już nie żąda. Patrz `badgeCount`.
+      ...(zdjete ? { resolved: true } : {}),
       amountG: n.amountG, currency: n.currency, message: n.message,
       billId: n.billId || null, billName: n.billName || '', at: n.createdAtMs,
     });

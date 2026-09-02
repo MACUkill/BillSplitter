@@ -285,7 +285,11 @@ describe("kontrakt skrzynki: przypomnienie liczy dług na żywo", () => {
     expect(end, "Gałąź nie ma końca — zmieniła się postać renderera?").toBeGreaterThan(start);
     const galaz = mainJs.slice(start, end);
     expect(galaz).not.toContain("nudge-settle-btn");
-    expect(galaz).toContain("nudge-read-btn");
+    // Sposób zdjęcia wiersza z listy MUSI zostać — inaczej spłacone przypomnienie
+    // zostaje w skrzynce na zawsze, bez żadnego wyjścia. Od 2026-09-02 zdejmowanie
+    // jest ikoną w rogu (`dismissHtml`), a nie przyciskiem w rzędzie akcji.
+    expect(galaz).toContain("dismissHtml: zdejmijHtml(x.id)");
+    expect(mainJs).toContain('class="nudge-read-btn icon-btn-sm');
   });
 });
 

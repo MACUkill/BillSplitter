@@ -231,3 +231,37 @@ describe('wpłaty trzymane po rozstrzygnięciu', () => {
     expect(items.map((x) => x.id)).toEqual(['s-nowa', 's-stara']);
   });
 });
+
+// TA SAMA ZASADA PRZY ZDEJMOWANIU PRZYPOMNIEŃ (2026-09-02). Krzyżyk w rogu jest łatwiejszy
+// do stuknięcia dwa razy niż podpisany przycisk, a `readBy` nie ma paska „Cofnij" — więc
+// wiersz zdjęty przed chwilą musi zostać na miejscu do następnego otwarcia skrzynki.
+describe('przypomnienia trzymane po zdjęciu z listy', () => {
+  const base = { myId: 'm1', myUid: 'u1' };
+
+  it('przeczytane przypomnienie znika — chyba że zdjęto je w tym wejściu', () => {
+    const nudges = [{ id: 'n1', to: 'm1', from: 'm2', readBy: ['u1'], createdAtMs: 5 }];
+    expect(inboxItems({ ...base, nudges })).toEqual([]);
+
+    const [x] = inboxItems({ ...base, nudges, keepNudges: ['n1'] });
+    expect(x).toMatchObject({ kind: 'nudge', id: 'n1', from: 'm2', resolved: true, level: 1 });
+  });
+
+  it('trzymane przypomnienie nie liczy się do odznaki', () => {
+    const nudges = [{ id: 'n1', to: 'm1', from: 'm2', readBy: ['u1'] }];
+    const items = inboxItems({ ...base, nudges, keepNudges: ['n1'] });
+    expect(items).toHaveLength(1);
+    expect(badgeCount(items)).toBe(0);
+  });
+
+  it('nieprzeczytane przypomnienie jest zwykłą sprawą, choćby stało na liście trzymanych', () => {
+    const nudges = [{ id: 'n1', to: 'm1', from: 'm2', readBy: [] }];
+    const [x] = inboxItems({ ...base, nudges, keepNudges: ['n1'] });
+    expect(x.resolved).toBeUndefined();
+    expect(badgeCount([x])).toBe(1);
+  });
+
+  it('cudze przypomnienie nie wchodzi, choćby ktoś wpisał jego numer', () => {
+    const nudges = [{ id: 'n9', to: 'm2', from: 'm3', readBy: ['u2'] }];
+    expect(inboxItems({ ...base, nudges, keepNudges: ['n9'] })).toEqual([]);
+  });
+});
